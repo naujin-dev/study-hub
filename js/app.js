@@ -2664,7 +2664,7 @@ function viewMath() {
 
   <section class="card">
     <h2>빈 시간 채우기</h2>
-    <p class="small muted">고른 시간 안에서 공부(자료 읽기, 문제, 카드, 타이머, 잰 시간)로 기록되지 않은 시간을 찾아 고른 과목 시간으로 넣는다. 1분보다 짧은 틈은 뺀다. 하루는 새벽 2시에 바뀌므로 00:00~01:59 는 고른 날짜의 밤(다음 날 새벽)이다.</p>
+    <p class="small muted">고른 시간 안에서 공부(자료 읽기, 문제, 카드, 타이머, 잰 시간)로 기록되지 않은 시간을 찾아 고른 과목 시간으로 넣는다. 1분보다 짧은 틈은 뺀다. 하루는 새벽 4시에 바뀌므로 00:00~03:59 는 고른 날짜의 밤(다음 날 새벽)이다.</p>
     <form id="gapF" class="row" style="align-items:flex-end">
       <label class="field" style="margin:0"><span>과목</span>${subSel('sub')}</label>
       <label class="field" style="margin:0"><span>날짜</span><input type="date" name="d" value="${esc(q.get('d') || today)}" max="${today}"></label>
@@ -2698,7 +2698,7 @@ function viewMath() {
   $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
   $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 수학 시간 기록을 지울까?')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
 
-  // 날짜는 공부한 날 기준이라 새벽 2시 전 시각은 그다음 날 새벽이다 (예: 22일 01:00 = 23일 새벽 1시)
+  // 날짜는 공부한 날 기준이라 새벽 4시 전 시각은 그다음 날 새벽이다 (예: 22일 03:00 = 23일 새벽 3시)
   const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da + (h < S.DAY_START_HOUR ? 1 : 0), h, mi).getTime(); };
   const find = () => {
     const f = $('#gapF');
@@ -2898,7 +2898,7 @@ function viewHelp() {
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
 - **PDF 원본**: [자료 → PDF 원본 모아보기] 에서 공부 Claude 에게 받은 PDF 를 넣는다. 이 기기에만 저장된다(동기화 안 됨). 자료에 이어 두면 자료 화면 위에 "PDF 원본 보기" 가 생긴다. −/+ 로 크기를 바꾼다.
-- **하루 기준**: 하루는 새벽 2시에 바뀐다. 밤 12시를 넘겨 새벽 1시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
+- **하루 기준**: 하루는 새벽 4시에 바뀐다. 밤 12시를 넘겨 새벽 3시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
 - **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.

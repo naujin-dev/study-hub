@@ -189,6 +189,8 @@ export function startAuto() {
     setStatus('dirty', '올릴 기록 있음');
   });
   let hiddenAt = 0;
+  // 인터넷이 다시 연결되면 오프라인 동안 쌓인 기록을 바로 올린다
+  window.addEventListener('online', () => { if (isOn() && conf().auto) setTimeout(syncNow, 2000); });
   document.addEventListener('visibilitychange', () => {
     if (!isOn() || !conf().auto) return;
     if (document.visibilityState === 'hidden') {

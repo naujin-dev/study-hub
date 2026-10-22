@@ -32,8 +32,8 @@ export function remove(key) {
 }
 
 // ---------- 날짜 ----------
-// 하루는 새벽 2시에 바뀐다. 새벽 1시에 한 공부는 전날 공부로 센다
-export const DAY_START_HOUR = 2;
+// 하루는 새벽 4시에 바뀐다. 새벽 3시에 한 공부는 전날 공부로 센다
+export const DAY_START_HOUR = 4;
 export function dayOf(t) { return ymd(new Date(t - DAY_START_HOUR * 3600000)); }
 export function today() {
   return dayOf(Date.now());
