@@ -53,6 +53,7 @@ python3 -m http.server 8000      # http://localhost:8000
 | 파일 | 내용 |
 | --- | --- |
 | `index.html` | 사이트 전체 (한 페이지) |
+| `version.json` | 사이트 버전. `scripts/bump_version.py` 가 쓴다 |
 | `css/style.css` | 스타일. 라이트/다크 모드 |
 | `js/app.js` | 화면 |
 | `js/data.js` | 자료 불러오기, 형식 검사 |
@@ -65,6 +66,10 @@ python3 -m http.server 8000      # http://localhost:8000
 | `data/exam.json` | 시험 날짜와 과목별 범위 |
 | `data/packs/` | 공부자료 |
 | `data/index.json` | 자료 목록. `scripts/check_packs.py` 가 만든다. 직접 고치지 않는다 |
+
+## 사이트 코드를 고쳤을 때
+
+커밋 전에 `python3 scripts/bump_version.py` 를 돌린다. index.html 의 스크립트 주소에 새 버전 번호를 붙이고 version.json 을 바꾼다. 열려 있던 사이트는 다음에 화면을 켤 때 새 버전을 알아채고 새로 연다. 안 돌리면 태블릿 브라우저가 예전 파일을 계속 쓸 수 있다.
 
 ## 알아둘 것
 

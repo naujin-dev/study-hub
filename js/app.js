@@ -1881,6 +1881,7 @@ function viewSettings() {
     <h2>백업</h2>
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
     <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
+    <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label><button class="btn bad ghost" id="reset">기록 초기화</button></div>
   </section>`;
 
@@ -1952,6 +1953,7 @@ function viewSettings() {
     b.disabled = false; b.textContent = '연결 확인';
   });
 
+  $('#updBtn').addEventListener('click', () => checkUpdate(true));
   // 백업
   $('#exp').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(S.exportAll())], { type: 'application/json' });
@@ -2099,6 +2101,26 @@ function viewHelp() {
 `)}</article>`;
 }
 
+// ---------- 새 버전 확인 ----------
+// 사이트가 바뀌었는데 브라우저가 예전 파일을 쓰고 있으면 새 주소(?v=새 버전)로 다시 연다.
+async function checkUpdate(manual) {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const { v } = await r.json();
+    if (!v || v === window.SH_VERSION) { if (manual) toast('지금이 최신 버전이다.'); return; }
+    const busy = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName) && document.activeElement.value;
+    if (busy && !manual) { toast('새 버전이 있다. 쓰던 글을 마치면 설정 → 새 버전 확인을 누른다.', 5000); return; }
+    let tried = '';
+    try { tried = sessionStorage.getItem('sh.updTried') || ''; } catch (e) {}
+    if (tried === v && !manual) return;
+    try { sessionStorage.setItem('sh.updTried', v); } catch (e) {}
+    reader.flush && reader.flush();
+    location.replace(location.pathname + '?v=' + v + location.hash);
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(false); });
+
 // ---------- 시작 ----------
 applyTheme();
 window.addEventListener('sh-save-failed', () => toast('저장 공간이 부족하다. 설정에서 백업을 받고 동기화를 켜 줘.', 6000));
@@ -2122,4 +2144,5 @@ D.loadAll().then(() => {
   render();
   startTimerLoop();
   SYNC.startAuto();
+  checkUpdate(false);
 });
