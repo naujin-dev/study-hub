@@ -353,3 +353,12 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .clockpill[hidden]{display:none}
 @media (max-width:420px){.clockpill{padding:4px 7px;font-size:.72rem}}
 @media (max-width:480px){.top-in:has(.clockpill:not([hidden])) .dday{display:none}}
+/* PDF 원본 */
+.pdf-box{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:12px;overflow-x:auto}
+.pdf-page{background:#fff;box-shadow:0 2px 10px -4px rgba(0,0,0,.35);max-width:none;flex:none}
+.pdf-page canvas{width:100%;height:auto;display:block}
+.pdf-bar{position:sticky;top:56px;z-index:5;background:var(--paper);padding:6px 0;gap:8px;flex-wrap:wrap}
+.pdf-item{align-items:flex-start;flex-wrap:wrap}
+.pdf-edit summary{list-style:none}
+.pdf-edit summary::-webkit-details-marker{display:none}
+.pdf-edit[open]{flex-basis:100%}

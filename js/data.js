@@ -87,6 +87,7 @@ export function parseImport(text) {
   let packs = [], exam = null, plan = null;
   if (obj && obj.plan && Array.isArray(obj.plan.weeks)) plan = obj.plan;
   if (plan && !obj.packs && !obj.subject && !obj.texts_for) { /* 공부 계획만 */ }
+  else if (obj && Array.isArray(obj.pdfs) && !obj.packs && !obj.subject) { /* PDF 만 */ }
   else if (Array.isArray(obj)) packs = obj;
   else if (obj && Array.isArray(obj.packs)) { packs = obj.packs; exam = obj.exam || null; }
   else if (obj && (obj.subject || obj.texts_for || obj.book_for)) packs = obj.texts_for || obj.book_for ? [] : [obj];
@@ -117,7 +118,9 @@ export function parseImport(text) {
     if (typeof b.book_for !== 'string') errors.push(`${w}: book_for 에 자료 id 를 쓴다.`);
     else errors.push(...validatePack({ id: 'x', subject: 'eng', title: 'x', book: b.book }, w).filter(m => !m.includes(': id 는') && !m.includes('title')));
   });
-  return { packs, exam, errors, textPatches, plan, bookPatches };
+  // PDF 원본 묶음: { "pdfs": [ { name, title, subject, pack, data(base64) } ] } — 이 기기에만 저장한다
+  const pdfs = obj && Array.isArray(obj.pdfs) ? obj.pdfs.filter(x => x && typeof x.data === 'string' && x.data.length > 100) : [];
+  return { packs, exam, errors, textPatches, plan, bookPatches, pdfs };
 }
 
 // ---------- 불러오기 ----------

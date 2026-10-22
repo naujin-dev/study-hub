@@ -6,6 +6,7 @@ import * as HL from './hl.js';
 import * as CH from './charts.js';
 import * as PR from './prompts.js';
 import * as SRC from './src.js';
+import * as PDF from './pdf.js';
 
 const { SUBJECTS, SUBJ, TYPE_NAME } = D;
 const main = document.getElementById('main');
@@ -158,8 +159,9 @@ const routes = {
   '/check': viewCheck,
   '/help': viewHelp,
   '/math': viewMath,
+  '/pdf': viewPdf,
 };
-const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 function render() {
@@ -412,10 +414,12 @@ function viewStudy() {
   <h1>공부자료</h1>
   <form id="sf" class="row" style="margin:8px 0 10px"><input type="search" name="q" placeholder="자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
   ${chipGroup('s', [{ value: '', label: '전체' }, ...SUBJECTS.map(s => ({ value: s.id, label: s.name, dot: true }))], [sel], false)}
+  <p class="small" style="margin:8px 0"><a href="#/pdf${sel ? '?s=' + sel : ''}">PDF 원본 모아보기 <span id="pdfCount"></span> ›</a></p>
   ${results}
   ${groups || '<p class="muted" style="margin-top:16px">자료가 없다. <a href="#/settings">설정 → 자료 가져오기</a></p>'}
   `;
   $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/study' + (r.value ? '?s=' + r.value : ''); }));
+  PDF.listPdfs().then(l => { const n = l.filter(x => !sel || x.subject === sel).length; const el = document.getElementById('pdfCount'); if (el && n) el.textContent = `(${n}개)`; });
   const back = '#/study' + (sel ? '?s=' + sel : '');
   $$('[data-mv]').forEach(b => b.addEventListener('click', async () => {
     const p = D.db().byId[b.dataset.mv];
@@ -550,6 +554,7 @@ function viewPack() {
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.ymd(new Date(bookDone.t)))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
+  <p class="small noprint" id="packPdfs" hidden></p>
   <div class="row noprint" style="margin:12px 0">
     ${qs.length ? `<a class="btn pri" href="#/run?pack=${encodeURIComponent(p.id)}">문제 ${qs.length}개 풀기</a>` : ''}
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
@@ -585,6 +590,14 @@ function viewPack() {
     <div class="row" style="margin-top:8px">${AI.hasKey() ? '<button class="btn pri">묻기</button>' : '<button type="button" class="btn pri" id="askCopy">채팅으로 묻기 (복사)</button> <a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a>'}${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
   </section></aside></div>
   `;
+  // 이 자료에 이어 둔 PDF 원본 (이 기기에 있는 것만)
+  PDF.listPdfs().then(l => {
+    const mine = l.filter(x => x.pack === p.id);
+    const el = document.getElementById('packPdfs');
+    if (!el || !mine.length) return;
+    el.hidden = false;
+    el.innerHTML = 'PDF 원본: ' + mine.map(x => `<a class="btn sm" href="#/pdf?id=${x.id}">${esc(x.title)} 보기</a>`).join(' ');
+  });
   const notes = $('#notes');
   const srcText = $('#srcText');
   const missing = [...HL.paint(notes, notesMarks), ...(srcText ? HL.paint(srcText, srcMarks) : [])];
@@ -2180,17 +2193,31 @@ function viewSettings() {
         if (m) { const hit = engPacks.find(p => new RegExp(`(unit|유닛|단원)\\s*0?${m[1]}(?!\\d)|^0?${m[1]}(?!\\d)`, 'i').test(`${p.title} ${p.unit || ''}`)); if (hit) return hit.id; }
         return '__new';
       };
-      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp, plan: pl, bookPatches: bkp };
+      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp, plan: pl, bookPatches: bkp, pdfs: r.pdfs || [] };
       out.innerHTML = `<div class="${r.errors.length ? 'note' : 'note info'}" style="margin-top:10px">
         <p>${r.packs.length ? `자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.` : ''}${tp.length ? ` 원문 ${tp.reduce((a, t) => a + t.texts.length, 0)}개 (${tp.map(t => esc(D.db().byId[t.texts_for]?.title || t.texts_for + ' (없는 자료)')).join(', ')}).` : ''}${r.exam ? ' 시험 정보도 들어 있다.' : ''}${pl ? ` 공부 계획 ${pl.weeks.length}주, 할 일 ${plCount}개 (지금 있는 계획을 바꾼다. 체크한 것은 그대로).` : ''}</p>
         ${bkp.length ? `<p class="small" style="margin-top:6px">책 문제 ${bkp.reduce((a, b) => a + b.book.length, 0)}개. 묶음마다 어느 영어 자료에 붙일지 고른다. 붙인 자료는 책 문제를 먼저 풀어야 공부자료가 열린다.</p>
           ${bkp.map((b, i) => `<label class="field" style="margin:6px 0"><span>${esc(b.title || b.book_for)} · ${b.book.length}문제</span><select data-bk="${i}">${engPacks.map(p => `<option value="${esc(p.id)}"${guess(b) === p.id ? ' selected' : ''}>${esc(p.title)}</option>`).join('')}<option value="__new"${guess(b) === '__new' ? ' selected' : ''}>새 자료로 만들기</option><option value="__skip">가져오지 않음</option></select></label>`).join('')}` : ''}
         ${okPacks.map(p => `<div class="small">${subjDot(p.subject)} ${esc(p.title)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}${D.db().byId[p.id] ? ' <span class="tag warn">같은 id 덮어씀</span>' : ''}</div>`).join('')}
         ${r.errors.length ? `<details open><summary>고칠 것 ${r.errors.length}개</summary><ul class="small">${r.errors.slice(0, 30).map(m => `<li>${esc(m)}</li>`).join('')}</ul><p class="small">이 목록을 공부자료 Claude 에게 보내고 고쳐 달라고 하면 된다.</p></details>` : ''}
-        ${okPacks.length || r.exam || tp.length || pl || bkp.length ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
+        ${r.pdfs?.length ? `<p class="small" style="margin-top:6px">PDF 원본 ${r.pdfs.length}개 (${fmtSize(r.pdfs.reduce((a, x) => a + x.data.length * 0.75, 0))}). 이 기기에만 저장되고, 자료 화면과 PDF 모아보기에서 열린다.</p>` : ''}
+        ${okPacks.length || r.exam || tp.length || pl || bkp.length || r.pdfs?.length ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
       </div>`;
-      $('#impGo')?.addEventListener('click', async () => {
+      $('#impGo')?.addEventListener('click', async e => {
+        e.currentTarget.disabled = true; e.currentTarget.textContent = '가져오는 중…';
         if (pendingImport.packs.length) D.saveLocalPacks(pendingImport.packs);
+        let pdfN = 0;
+        if (pendingImport.pdfs.length) {
+          const have = await PDF.listPdfs();
+          for (const x of pendingImport.pdfs) {
+            const bin = atob(x.data); const u8 = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+            const old = have.find(h => h.name === x.name && h.size === u8.length);
+            if (old) { await PDF.updatePdf(old.id, { pack: x.pack || old.pack, subject: x.subject || old.subject }); continue; }
+            await PDF.addPdf(new Blob([u8], { type: 'application/pdf' }), { name: x.name, title: x.title, subject: x.subject, pack: x.pack });
+            pdfN++;
+          }
+        }
         let bookN = 0;
         (pendingImport.bookPatches || []).forEach((b, i) => {
           const to = out.querySelector(`[data-bk="${i}"]`)?.value || '__new';
@@ -2209,7 +2236,7 @@ function viewSettings() {
           D.saveExamLocal(sub);
         }
         await D.loadAll();
-        toast(pendingImport.plan && !pendingImport.packs.length ? '공부 계획을 가져왔다. 시험 일정과 계획 화면에서 보인다.' : [pendingImport.packs.length ? `자료 ${pendingImport.packs.length}개` : '', (pendingImport.textPatches || []).length ? `원문 ${pendingImport.textPatches.length}묶음` : '', bookN ? `책 문제 ${bookN}개` : '', pendingImport.exam ? '시험 정보' : ''].filter(Boolean).join(', ') + ' 가져왔다.');
+        toast(pendingImport.plan && !pendingImport.packs.length ? '공부 계획을 가져왔다. 시험 일정과 계획 화면에서 보인다.' : [pendingImport.packs.length ? `자료 ${pendingImport.packs.length}개` : '', (pendingImport.textPatches || []).length ? `원문 ${pendingImport.textPatches.length}묶음` : '', bookN ? `책 문제 ${bookN}개` : '', pdfN ? `PDF ${pdfN}개` : '', pendingImport.exam ? '시험 정보' : ''].filter(Boolean).join(', ') + ' 가져왔다.');
         pendingImport = null;
         render();
       });
@@ -2222,12 +2249,14 @@ function viewSettings() {
     const files = [...e.target.files];
     const texts = await Promise.all(files.map(f => f.text()));
     // 파일 여러 개면 묶어서 검사한다
-    if (texts.length === 1) { $('#impText').value = texts[0]; return check(texts[0]); }
+    // 큰 파일(PDF 가 든 것)은 입력 칸에 넣지 않는다. 태블릿이 멈출 수 있다
+    const showText = t => { $('#impText').value = t.length < 300000 ? t : `(파일 ${files.map(f => f.name).join(', ')} — 너무 커서 여기에는 안 보여 준다)`; };
+    if (texts.length === 1) { showText(texts[0]); return check(texts[0]); }
     try {
-      const packs = [];
-      for (const t of texts) { const r = D.parseImport(t); packs.push(...r.packs); }
-      const merged = JSON.stringify({ packs });
-      $('#impText').value = merged;
+      const packs = [], pdfs = [];
+      for (const t of texts) { const r = D.parseImport(t); packs.push(...r.packs, ...r.textPatches, ...r.bookPatches); pdfs.push(...r.pdfs); }
+      const merged = JSON.stringify({ packs, ...(pdfs.length ? { pdfs } : {}) });
+      showText(merged);
       check(merged);
     } catch (err) { out.innerHTML = `<p class="note">${esc(err.message)}</p>`; }
   });
@@ -2702,9 +2731,115 @@ function viewMath() {
   if (q.get('fill')) show();
 }
 
+// ================= PDF 원본 =================
+// 공부 Claude 에게 받은 PDF 를 이 기기에 넣어 두고 사이트 안에서 본다. 자료에 이어 두면 자료 화면에서 바로 연다.
+let pdfView = null;
+function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+// 파일 이름으로 이어 둘 자료를 찾는다: 자료의 pdf_name 이 같거나, 제목이 파일 이름에 들어 있으면
+function guessPack(name) {
+  const base = name.replace(/\.pdf$/i, '').toLowerCase().replace(/[\s_\-]+/g, '');
+  const ps = D.db().packs;
+  return ps.find(p => p.pdf_name && p.pdf_name.toLowerCase() === name.toLowerCase())
+    || ps.find(p => { const t = p.title.toLowerCase().replace(/[\s_\-]+/g, ''); return t.length >= 3 && (base.includes(t) || t.includes(base)); }) || null;
+}
+async function viewPdf() {
+  const { q } = params();
+  if (pdfView) { pdfView.destroy(); pdfView = null; }
+  const id = q.get('id');
+  if (id) return viewPdfOne(id, q);
+  const sel = q.get('s') || '';
+  const all = await PDF.listPdfs();
+  if (params().path !== '/pdf') return;
+  const list = all.filter(x => !sel || x.subject === sel || (sel === 'none' && !x.subject));
+  const packOpts = cur => `<option value="">자료 없음</option>${SUBJECTS.map(s => { const ps = D.db().packs.filter(p => p.subject === s.id); return ps.length ? `<optgroup label="${s.name}">${ps.map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.title)}</option>`).join('')}</optgroup>` : ''; }).join('')}`;
+  const subjOpts = cur => `<option value="">과목 없음</option>${SUBJECTS.map(s => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${s.name}</option>`).join('')}`;
+  const groups = [...SUBJECTS, { id: null, name: '과목 없음' }].map(s => {
+    const xs = list.filter(x => (x.subject || null) === s.id);
+    if (!xs.length) return '';
+    return `<div class="sec-title"><h2>${s.id ? subjDot(s.id) : ''} ${s.name}</h2><span class="small muted">${xs.length}개</span></div>
+    <section class="card flat"><ul class="list">${xs.map(x => { const pk = x.pack && D.db().byId[x.pack]; return `<li class="item pdf-item">
+      <a class="grow" href="#/pdf?id=${x.id}"><b>${esc(x.title)}</b><br><span class="small muted">${pk ? `자료: ${esc(pk.title)} · ` : ''}${fmtSize(x.size)} · ${S.fmtDate(S.ymd(new Date(x.c)))}</span></a>
+      <details class="pdf-edit"><summary class="btn sm ghost">고치기</summary>
+        <div class="stack" style="margin-top:8px">
+          <label class="field"><span>이름</span><input data-pt="${x.id}" value="${esc(x.title)}"></label>
+          <label class="field"><span>과목</span><select data-ps="${x.id}">${subjOpts(x.subject)}</select></label>
+          <label class="field"><span>이어 둘 자료</span><select data-pp="${x.id}">${packOpts(x.pack)}</select></label>
+          <div class="row"><button class="btn sm pri" data-psave="${x.id}">저장</button><button class="btn sm bad ghost" data-pdel="${x.id}">지우기</button></div>
+        </div></details></li>`; }).join('')}</ul></section>`;
+  }).join('');
+  main.innerHTML = `
+  <p class="small"><a href="#/study${sel && sel !== 'none' ? '?s=' + sel : ''}">← 공부자료</a></p>
+  <h1>PDF 모아보기</h1>
+  <p class="small muted">공부 Claude 에게 받은 PDF 원본을 넣어 두고 여기서 본다. PDF 는 <b>이 기기에만</b> 저장되고 동기화되지 않는다. 다른 기기에서도 보려면 그 기기에서 한 번 더 넣는다.</p>
+  <section class="card">
+    <label class="btn pri">PDF 넣기 (여러 개 가능)<input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden></label>
+    <p class="small muted" style="margin:8px 0 0">파일 이름과 제목이 맞는 자료가 있으면 그 자료에 저절로 이어 둔다. 이어 둔 자료 화면에 "PDF 원본 보기" 가 생긴다.</p>
+    <div id="pdfMsg"></div>
+  </section>
+  ${chipGroup('s', [{ value: '', label: '전체' }, ...SUBJECTS.filter(s => all.some(x => x.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true }))], [sel], false)}
+  ${groups || `<p class="muted" style="margin-top:14px">${all.length ? '이 과목 PDF 가 없다.' : '아직 넣은 PDF 가 없다.'}</p>`}
+  <p class="small muted" style="margin-top:14px">PDF 보기는 <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> (Apache 2.0) 를 쓴다.</p>`;
+  $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/pdf' + (r.value ? '?s=' + r.value : ''); }));
+  $('#pdfIn').addEventListener('change', async e => {
+    const files = [...e.target.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
+    if (!files.length) return;
+    $('#pdfMsg').innerHTML = '<p class="small">저장하는 중…</p>';
+    const done = [];
+    try {
+      for (const f of files) {
+        const pk = guessPack(f.name);
+        await PDF.addPdf(f, { pack: pk?.id || null, subject: pk?.subject || (sel && sel !== 'none' ? sel : null) });
+        done.push(`${esc(f.name)}${pk ? ` → ${esc(pk.title)}` : ''}`);
+      }
+      toast(`PDF ${done.length}개 넣었다.`);
+      render();
+    } catch (err) {
+      $('#pdfMsg').innerHTML = `<p class="note">저장하지 못했다: ${esc(err.message)}. 기기 저장 공간을 확인한다.</p>`;
+    }
+  });
+  $$('[data-psave]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.psave;
+    const pack = $(`[data-pp="${id}"]`).value || null;
+    let subject = $(`[data-ps="${id}"]`).value || null;
+    if (pack && !subject) subject = D.db().byId[pack]?.subject || null;
+    await PDF.updatePdf(id, { title: $(`[data-pt="${id}"]`).value.trim() || 'PDF', subject, pack });
+    toast('저장했다.'); render.keepScroll = true; render();
+  }));
+  $$('[data-pdel]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('이 PDF 를 이 기기에서 지울까? 자료와 기록은 그대로다.')) return;
+    await PDF.deletePdf(b.dataset.pdel); toast('지웠다.'); render.keepScroll = true; render();
+  }));
+}
+async function viewPdfOne(id, q) {
+  const x = await PDF.getPdf(id);
+  if (params().path !== '/pdf') return;
+  if (!x) { main.innerHTML = '<p class="note">이 기기에 없는 PDF 다. <a href="#/pdf">PDF 모아보기</a></p>'; return; }
+  const pk = x.pack && D.db().byId[x.pack];
+  let zoom = Number(S.load('pdfZoom', 1)) || 1;
+  main.innerHTML = `
+  <p class="small"><a href="#/pdf${x.subject ? '?s=' + x.subject : ''}">← PDF 모아보기</a>${pk ? ` · <a href="#/pack?id=${encodeURIComponent(pk.id)}">${esc(pk.title)} 자료 보기</a>` : ''}</p>
+  <div class="row between pdf-bar noprint"><h1 style="margin:0;font-size:1.15rem">${x.subject ? subjDot(x.subject) + ' ' : ''}${esc(x.title)}</h1>
+    <span class="row"><span class="small muted" id="pdfPages"></span><button class="btn sm" id="zOut" aria-label="작게">−</button><span class="small mono" id="zVal">${Math.round(zoom * 100)}%</span><button class="btn sm" id="zIn" aria-label="크게">+</button></span></div>
+  <div id="pdfBox" class="pdf-box"><p class="muted">PDF 여는 중…</p></div>`;
+  const box = $('#pdfBox');
+  const draw = async () => {
+    if (pdfView) { pdfView.destroy(); pdfView = null; }
+    try {
+      pdfView = await PDF.renderPdf(box, x.blob, { zoom, onPages: n => { const el = document.getElementById('pdfPages'); if (el) el.textContent = `${n}쪽`; } });
+    } catch (err) {
+      box.innerHTML = `<p class="note">PDF 를 열지 못했다: ${esc(err.message)}</p>`;
+    }
+  };
+  const setZoom = z => { zoom = Math.min(3, Math.max(0.5, Math.round(z * 4) / 4)); S.save('pdfZoom', zoom); $('#zVal').textContent = Math.round(zoom * 100) + '%'; draw(); };
+  $('#zIn').addEventListener('click', () => setZoom(zoom + 0.25));
+  $('#zOut').addEventListener('click', () => setZoom(zoom - 0.25));
+  draw();
+}
+
 function viewMore() {
   const links = [
     ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 과목별 스톱워치, 빈 시간 채우기'],
+    ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장'],
     ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고'],
     ['#/blank', '백지 복습', '자료를 안 보고 기억나는 것을 다 써 본 뒤 비교 (서울대생 백지 공부법·파인만 기법)'],
     ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로'],
@@ -2757,6 +2892,7 @@ function viewHelp() {
 
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
+- **PDF 원본**: [자료 → PDF 원본 모아보기] 에서 공부 Claude 에게 받은 PDF 를 넣는다. 이 기기에만 저장된다(동기화 안 됨). 자료에 이어 두면 자료 화면 위에 "PDF 원본 보기" 가 생긴다. −/+ 로 크기를 바꾼다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
 - **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.
