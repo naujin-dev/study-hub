@@ -1503,7 +1503,8 @@ function viewPlan() {
   }).join('') : '';
   main.innerHTML = `
   <h1>시험 일정과 계획</h1>
-  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획에서 가져옴</span></div>${weeksHtml}` : ''}
+  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획 · 이 기기와 비공개 Gist 에만 저장</span></div>${weeksHtml}
+  <p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>` : `<p class="note info">Notion 주간 계획 파일(study-hub-plan.json)을 <a href="#/settings">설정 → 자료 가져오기</a> 에서 "파일 고르기" 로 넣으면 여기에 주차별 계획이 나온다. 이 기기와 비공개 Gist 에만 저장된다.</p>`}
   <section class="card">
     <h2>과목별 시험 날짜·범위</h2>
     <p class="small muted">아직 정해지지 않았으면 "미정". 여기서 고친 값은 이 기기에만 저장된다. 저장소의 data/exam.json 이 바뀌면 그 값이 기본값이 된다.</p>
@@ -1539,6 +1540,7 @@ function viewPlan() {
     D.saveExamLocal(out);
     D.loadAll().then(() => { toast('저장했다.'); render(); });
   });
+  $('#planDel')?.addEventListener('click', async () => { if (!confirm('주간 공부 계획을 지울까? 체크한 기록은 남는다.')) return; D.clearPlan(); await D.loadAll(); render(); });
   $('#resetExam').addEventListener('click', () => { if (!confirm('내가 고친 날짜와 범위를 지울까?')) return; D.clearExamLocal(); D.loadAll().then(render); });
   $('#pf').addEventListener('submit', e => {
     e.preventDefault();
@@ -1942,15 +1944,18 @@ function viewSettings() {
       const bad = new Set(r.errors.map(m => m.split(':')[0]));
       const okPacks = r.packs.filter((p, i) => !bad.has(p && p.id ? p.id : `packs[${i}]`));
       const tp = (r.textPatches || []).filter(t => typeof t.texts_for === 'string' && Array.isArray(t.texts) && t.texts.every(x => x && typeof x.body === 'string' && x.body.trim()));
-      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp };
+      const pl = r.plan && !r.errors.some(m => m.startsWith('공부 계획')) ? r.plan : null;
+      const plCount = pl ? pl.weeks.reduce((a, w) => a + w.groups.reduce((b, g) => b + (g.items || []).length, 0), 0) : 0;
+      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp, plan: pl };
       out.innerHTML = `<div class="${r.errors.length ? 'note' : 'note info'}" style="margin-top:10px">
-        <p>${r.packs.length ? `자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.` : ''}${tp.length ? ` 원문 ${tp.reduce((a, t) => a + t.texts.length, 0)}개 (${tp.map(t => esc(D.db().byId[t.texts_for]?.title || t.texts_for + ' (없는 자료)')).join(', ')}).` : ''}${r.exam ? ' 시험 정보도 들어 있다.' : ''}</p>
+        <p>${r.packs.length ? `자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.` : ''}${tp.length ? ` 원문 ${tp.reduce((a, t) => a + t.texts.length, 0)}개 (${tp.map(t => esc(D.db().byId[t.texts_for]?.title || t.texts_for + ' (없는 자료)')).join(', ')}).` : ''}${r.exam ? ' 시험 정보도 들어 있다.' : ''}${pl ? ` 공부 계획 ${pl.weeks.length}주, 할 일 ${plCount}개 (지금 있는 계획을 바꾼다. 체크한 것은 그대로).` : ''}</p>
         ${okPacks.map(p => `<div class="small">${subjDot(p.subject)} ${esc(p.title)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}${D.db().byId[p.id] ? ' <span class="tag warn">같은 id 덮어씀</span>' : ''}</div>`).join('')}
         ${r.errors.length ? `<details open><summary>고칠 것 ${r.errors.length}개</summary><ul class="small">${r.errors.slice(0, 30).map(m => `<li>${esc(m)}</li>`).join('')}</ul><p class="small">이 목록을 공부자료 Claude 에게 보내고 고쳐 달라고 하면 된다.</p></details>` : ''}
-        ${okPacks.length || r.exam || tp.length ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
+        ${okPacks.length || r.exam || tp.length || pl ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
       </div>`;
       $('#impGo')?.addEventListener('click', async () => {
         if (pendingImport.packs.length) D.saveLocalPacks(pendingImport.packs);
+        if (pendingImport.plan) D.savePlan(pendingImport.plan);
         for (const tp2 of pendingImport.textPatches || []) tp2.texts.forEach((t, i) => SRC.saveText({ id: tp2.texts_for }, t.id ? String(t.id) : 'add-' + i, t.title || `본문 ${i + 1}`, t.body));
         if (pendingImport.exam && pendingImport.exam.subjects) {
           const sub = {};
@@ -1958,7 +1963,7 @@ function viewSettings() {
           D.saveExamLocal(sub);
         }
         await D.loadAll();
-        toast(`자료 ${pendingImport.packs.length}개${(pendingImport.textPatches || []).length ? `, 원문 ${pendingImport.textPatches.length}묶음` : ''} 가져왔다.`);
+        toast(pendingImport.plan && !pendingImport.packs.length ? '공부 계획을 가져왔다. 시험 일정과 계획 화면에서 보인다.' : `자료 ${pendingImport.packs.length}개${(pendingImport.textPatches || []).length ? `, 원문 ${pendingImport.textPatches.length}묶음` : ''} 가져왔다.`);
         pendingImport = null;
         render();
       });

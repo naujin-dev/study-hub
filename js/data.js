@@ -1,5 +1,5 @@
 // 공부자료(자료 묶음)를 불러오고 검사한다.
-import { kvAll, kvSet, kvDel } from './store.js';
+import { kvAll, kvSet, kvDel, kvGet } from './store.js';
 
 export const FORMAT = 'study-hub/1';
 
@@ -82,8 +82,10 @@ export function parseImport(text) {
   } catch (e) {
     throw new Error('JSON 형식이 아니다. 중괄호 { 부터 끝 } 까지 빠짐없이 복사했는지 확인해 줘. (' + e.message + ')');
   }
-  let packs = [], exam = null;
-  if (Array.isArray(obj)) packs = obj;
+  let packs = [], exam = null, plan = null;
+  if (obj && obj.plan && Array.isArray(obj.plan.weeks)) plan = obj.plan;
+  if (plan && !obj.packs && !obj.subject && !obj.texts_for) { /* 공부 계획만 */ }
+  else if (Array.isArray(obj)) packs = obj;
   else if (obj && Array.isArray(obj.packs)) { packs = obj.packs; exam = obj.exam || null; }
   else if (obj && (obj.subject || obj.texts_for)) packs = obj.texts_for ? [] : [obj];
   else if (obj && obj.subjects) exam = obj;
@@ -99,7 +101,12 @@ export function parseImport(text) {
     if (typeof t.texts_for !== 'string') errors.push(`${w}: texts_for 에 자료 id 를 쓴다.`);
     if (!Array.isArray(t.texts) || !t.texts.length || t.texts.some(x => !x || typeof x.body !== 'string' || !x.body.trim())) errors.push(`${w}: texts 는 body 가 있는 배열이어야 한다.`);
   });
-  return { packs, exam, errors, textPatches };
+  if (plan) {
+    plan.weeks.forEach((w, i) => {
+      if (!w || typeof w.title !== 'string' || !Array.isArray(w.groups)) errors.push(`공부 계획 weeks[${i}]: title, groups 가 있어야 한다.`);
+    });
+  }
+  return { packs, exam, errors, textPatches, plan };
 }
 
 // ---------- 불러오기 ----------
@@ -125,8 +132,8 @@ export async function loadAll() {
     loadErrors.push('data/index.json 을 읽지 못했다: ' + err.message);
   }
   try { exam = await getJSON('data/exam.json'); } catch (err) { loadErrors.push('data/exam.json 을 읽지 못했다.'); }
-  let plan = null;
-  try { plan = await getJSON('data/plan.json'); } catch (err) { /* 공부 계획 파일은 없어도 된다 */ }
+  // 공부 계획은 저장소(공개)에 두지 않는다. 자료 가져오기로 넣으면 이 기기와 비공개 Gist 에만 저장된다.
+  const plan = kvGet('notionplan', 'plan')?.plan || null;
 
   const local = {};
   for (const p of localPacks()) local[p.id] = p;
@@ -198,6 +205,12 @@ export function saveExamLocal(subjects) {
     const { u, ...rest } = mine[id] || {};
     kvSet('exam', id, { ...rest, ...subjects[id] });
   }
+}
+export function savePlan(plan) {
+  kvSet('notionplan', 'plan', { plan });
+}
+export function clearPlan() {
+  kvDel('notionplan', 'plan');
 }
 export function clearExamLocal() {
   for (const id in kvAll('exam')) kvDel('exam', id);

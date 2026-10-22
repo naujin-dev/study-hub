@@ -65,15 +65,20 @@ python3 -m http.server 8000      # http://localhost:8000
 | `js/charts.js` | 그래프 (SVG) |
 | `js/vendor/` | 마크다운, HTML 정리, Anthropic SDK 라이브러리 |
 | `data/exam.json` | 시험 날짜와 과목별 범위 |
-| `data/notion-plan.md`, `data/plan.json` | Notion 주간 계획과 그걸 바꾼 사이트용 계획 |
 | `data/packs/` | 공부자료 |
 | `data/index.json` | 자료 목록. `scripts/check_packs.py` 가 만든다. 직접 고치지 않는다 |
 
-## Notion 주간 계획
+## Notion 주간 계획 (비공개)
 
-Notion "School / Exam / 주간 계획" 을 `data/notion-plan.md` 에 옮겨 적고 `python3 scripts/build_plan.py` 로 `data/plan.json` 을 만든다. 사이트의 홈 "오늘 계획" 과 "시험 일정과 계획" 화면에 나온다. 사이트에서 체크한 것은 그 기기(와 동기화 Gist)에 저장되고 Notion 으로 돌아가지는 않는다.
+공부 계획은 공개 저장소에 올리지 않는다. Notion "School / Exam / 주간 계획" 을 마크다운으로 옮겨 `data/private/` (git 이 무시함) 에 두고
 
-Notion 계획을 고쳤으면 Claude Code 에게 "Notion 주간 계획 다시 가져와서 사이트에 반영해 줘" 라고 하면 된다 (notion-plan.md 고치기 → build_plan.py → bump_version.py → 커밋).
+```bash
+python3 scripts/build_plan.py data/private/notion-plan.md data/private/study-hub-plan.json
+```
+
+로 만든 `study-hub-plan.json` 을 사이트 설정 → 자료 가져오기 → 파일 고르기 로 넣는다. 이 기기와 비공개 Gist 에만 저장되고, 동기화로 다른 기기에도 들어간다. 사이트에서 체크한 것은 Notion 으로 돌아가지 않는다.
+
+Notion 계획을 고쳤으면 Claude Code 에게 "Notion 주간 계획 다시 가져와서 가져오기 파일 만들어 줘" 라고 하면 된다.
 
 ## 사이트 코드를 고쳤을 때
 

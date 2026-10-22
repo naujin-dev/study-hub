@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Notion '주간 계획' 을 옮겨 적은 data/notion-plan.md 를 읽어 data/plan.json 을 만든다.
+"""Notion '주간 계획' 을 옮겨 적은 마크다운을 읽어, 사이트 "자료 가져오기" 에 넣을 계획 파일을 만든다.
 
-    python3 scripts/build_plan.py
+    python3 scripts/build_plan.py <notion-plan.md> <study-hub-plan.json>
+
+공부 계획은 공개 저장소에 올리지 않는다. 두 파일 다 저장소 밖에 두거나 .gitignore 에 있는 data/private/ 에 둔다.
+만든 json 을 사이트 설정 → 자료 가져오기 → 파일 고르기 로 넣으면 이 기기와 비공개 Gist 에만 저장된다.
 
 notion-plan.md 모양:
     === 주차 제목|시작일|끝일|단계|겹치는 일정|Notion 주소
@@ -16,11 +19,12 @@ notion-plan.md 모양:
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "data" / "notion-plan.md"
-OUT = ROOT / "data" / "plan.json"
+SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "private" / "notion-plan.md"
+OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "data" / "private" / "study-hub-plan.json"
 YEAR = 2026
 
 SUBJ = [("통합사회", "soc"), ("통합과학", "sci"), ("과탐실", "lab"), ("한국사", "his"), ("일본어", "jpn"),
@@ -95,11 +99,11 @@ def main():
         for g in w["groups"]:
             if not g["items"]:
                 g["items"].append({"id": g["id"] + "-s", "text": g["title"], "date": first_date(g["title"]), "done": g["done"], "self": True})
-    out = {"source": "Notion · School / Exam / 주간 계획", "weeks": weeks}
+    out = {"format": "study-hub/1", "plan": {"source": "Notion · School / Exam / 주간 계획", "weeks": weeks}}
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     n = sum(len(g["items"]) for w in weeks for g in w["groups"])
     nd = sum(1 for w in weeks for g in w["groups"] for i in g["items"] if i["date"])
-    print(f"주 {len(weeks)}개, 할 일 {n}개 (날짜 있는 것 {nd}개) → data/plan.json")
+    print(f"주 {len(weeks)}개, 할 일 {n}개 (날짜 있는 것 {nd}개) → {OUT}")
 
 
 if __name__ == "__main__":
