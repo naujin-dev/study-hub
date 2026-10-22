@@ -15,14 +15,22 @@ export function heatmap(days, { marks = [], max } = {}) {
   const peak = max || Math.max(30, ...days.map(d => d.value));
   const level = v => (v <= 0 ? 0 : v < peak * 0.25 ? 1 : v < peak * 0.5 ? 2 : v < peak * 0.75 ? 3 : 4);
   const op = [0, 0.25, 0.45, 0.7, 1];
-  let s = `<svg class="chart heat" viewBox="0 0 ${W} ${H}" role="img" aria-label="날짜별 공부 시간 달력" style="max-width:${W * 1.6}px">`;
+  let s = `<svg class="chart heat" viewBox="0 0 ${W} ${H}" role="img" aria-label="날짜별 공부 시간 달력" style="max-width:${W * 2.2}px">`;
   ['일', '', '화', '', '목', '', '토'].forEach((w, i) => { if (w) s += `<text x="0" y="${top + i * (cell + gap) + cell - 3}" class="ax">${w}</text>`; });
-  let lastMonth = -1;
+  // 월 이름: 그 달의 첫 날이 들어 있는 열 위에 쓴다. 다음 달 이름과 두 칸 이상 떨어져야 쓴다 (겹치지 않게).
+  const labels = [];
+  days.forEach((d, i) => {
+    const m = Number(d.date.slice(5, 7));
+    if (!labels.length || labels[labels.length - 1].m !== m) labels.push({ m, c: Math.floor((i + offset) / 7) });
+  });
+  labels.forEach((l, k) => {
+    const next = labels[k + 1];
+    if (next && next.c - l.c < 2) return;
+    s += `<text x="${left + l.c * (cell + gap)}" y="11" class="ax">${l.m}월</text>`;
+  });
   days.forEach((d, i) => {
     const k = i + offset, c = Math.floor(k / 7), r = k % 7;
     const x = left + c * (cell + gap), y = top + r * (cell + gap);
-    const dt = new Date(d.date + 'T00:00:00');
-    if (dt.getMonth() !== lastMonth && r <= 3) { s += `<text x="${x}" y="11" class="ax">${dt.getMonth() + 1}월</text>`; lastMonth = dt.getMonth(); }
     const lv = level(d.value);
     const isMark = marks.includes(d.date);
     const fut = d.future;
