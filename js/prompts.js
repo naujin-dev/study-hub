@@ -25,6 +25,12 @@ export const SUBJECT_GUIDE = {
 - 서술형: 조건 영작, 단어 배열, 어법상 틀린 부분 고치기, 본문 내용 요약. rubric 에 문법·철자 기준을 따로 둔다.
 - 단답형 answers 에는 대소문자·축약형 차이까지 인정할 표기를 넣는다.`,
     cards: '단어 → 뜻 (본문 단어와 숙어 전부), 중요 문장 → 해석',
+    book: `부교재(책)에 있는 문제는 questions 와 따로 book 배열에 책 그대로 옮긴다. 사이트는 영어 자료를 열면 book 문제를 먼저 풀게 하고, 다 풀어야 notes 를 보여 준다.
+- 모양은 객관식 문제와 같다. id 는 "ex1", "p1" 처럼, source 에 "94쪽 PRACTICE 01".
+- question 은 책 발문, context 는 지문을 책 그대로 (①~⑤, (A)(B)(C), 빈칸 "__________" 도 그대로. 밑줄 친 부분은 <u>…</u>).
+- choices 에 번호만 쓰지 않는다. 지문 속 ①~⑤ 로 고르는 문제는 그 문장 첫 몇 단어, 삽입 위치 앞뒤 몇 단어, 밑줄 친 말을 보기로 쓴다.
+- answer 는 책 정답, explanation 은 책 해설을 줄여서.
+- 책 문제가 없는 자료는 book 을 뺀다.`,
   },
   soc: {
     name: '통합사회', id: 'soc',
@@ -155,7 +161,11 @@ ${g.questions}
 - 서술형 rubric 은 학교 채점 기준처럼 항목별로 쪼개고 배점을 매긴다. model_answer 는 기준을 다 채운 답안.
 - explanation 에는 왜 그게 답인지, 오답은 왜 틀렸는지 짧게.
 
-## 암기카드
+${g.book ? `## 책 문제(book)
+
+${g.book}
+
+` : ''}## 암기카드
 
 ${g.cards}. 많을수록 좋다.
 
@@ -194,7 +204,11 @@ function lightPrompt(id) {
 ${g.questions}
 - 서술형 rubric 은 항목 2~3개로 쪼개고 배점을 매긴다. model_answer 는 기준을 다 채운 답안.
 
-## 지킬 것
+${g.book ? `## 책 문제(book)
+
+${g.book}
+
+` : ''}## 지킬 것
 
 - 너에게 준 자료(교과서, 학습지, 수업 필기, 시험 범위)에 있는 내용으로 만든다. 없는 걸 지어내지 않는다.
 - JSON 은 \`\`\`json 코드 블록 하나에만 넣는다. 쉼표, 따옴표, 이스케이프를 꼭 확인해. 형식이 틀리면 사이트가 그 자료를 못 읽는다.
@@ -226,6 +240,19 @@ export const TEXTS_PROMPT = `앞에서 만든 자료들에 원문(본문)을 추
 { "format": "study-hub/1", "texts_for": "자료 id", "texts": [ { "id": "t1", "title": "작품 이름이나 지문 제목", "body": "원문 그대로" } ] }
 
 먼저 원문을 넣을 수 있는 자료 id 목록부터 보여줘.`;
+
+export const BOOK_PROMPT = `앞에서 만든 영어 자료에 부교재(책) 문제를 붙이려고 해. 사이트는 영어 자료를 열면 책 문제를 먼저 풀게 하고, 다 풀어야 정리를 보여 줘.
+
+자료마다 아래 모양의 JSON 을 \`\`\`json 코드 블록 하나로 줘. 한 답에 자료 하나, 내가 "다음" 이라고 하면 이어서.
+- book_for 에는 그 자료의 id 를 앞에서 정한 그대로 쓴다.
+- 책에 있는 문제를 빠짐없이, 책 순서대로. 너에게 준 자료에 책 문제가 없는 자료는 건너뛰고 "책 문제 없음" 이라고만 적는다.
+- question 은 책 발문, context 는 지문을 책 그대로 (①~⑤, (A)(B)(C), 빈칸 "__________" 도 그대로. 밑줄 친 부분은 <u>…</u>). 줄바꿈은 \\n.
+- choices 앞에 ①② 번호를 붙이지 않는다. 지문 속 ①~⑤ 로 고르는 문제는 번호만 쓰지 말고 그 문장 첫 몇 단어, 삽입 위치 앞뒤 몇 단어, 밑줄 친 말을 보기로 쓴다.
+- answer 는 책 정답 번호(1부터), explanation 은 책 해설을 2~4문장으로.
+
+{ "format": "study-hub/1", "book_for": "자료 id", "book": [ { "id": "ex1", "type": "mcq", "source": "94쪽 EXAMPLE 01", "question": "다음 글에서 전체 흐름과 관계 없는 문장은?", "context": "지문", "choices": ["These European imperialists needed…", "They also needed new markets…", "Their crowded populations…", "On the other hand, some Europeans…", "Africa, with its untouched…"], "answer": 4, "explanation": "..." } ] }
+
+먼저 책 문제를 붙일 수 있는 자료 id 와 문제 수를 표로 보여줘.`;
 
 export const FIX_PROMPT = `네가 준 JSON 을 사이트에 넣었더니 아래 오류가 나왔어. 고친 JSON 을 다시 줘. id 는 바꾸지 마.
 

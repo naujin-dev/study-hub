@@ -13,6 +13,8 @@ const REPO_URL = 'https://github.com/naujin-dev/study-hub';
 
 // ---------- 작은 도구 ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 지문은 글자 그대로 보여 주되 <u>밑줄</u> 만 살린다 (영어 어법·어휘 문제)
+const ctxHtml = s => esc(s).replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, "<u>$1</u>");
 const $ = (sel, root = main) => root.querySelector(sel);
 const $$ = (sel, root = main) => [...root.querySelectorAll(sel)];
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -477,9 +479,27 @@ function viewPack() {
     <div id="srcImgs" class="src-imgs"></div>
   </section>`;
 
+  // 영어: 책 문제가 있으면 먼저 풀어야 공부자료가 열린다
+  const book = p.book || [];
+  const bookDone = S.kvGet('bookdone', p.id);
+  if (p.subject === 'eng' && book.length && !bookDone && !q.get('peek')) {
+    const pages = [...new Set(book.map(b => (String(b.source || b.page || '').match(/\d+\s*쪽/) || [])[0]).filter(Boolean))];
+    main.innerHTML = `
+    <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
+    <h1>${esc(p.title)}</h1>
+    <section class="card book-gate">
+      <h2>먼저 책 문제를 푼다</h2>
+      <p>공부자료를 보기 전에 책 문제 <b>${book.length}개</b>를 먼저 풀어 본다. 다 풀고 채점하면 공부자료가 열린다. 모르는 문제는 "모르겠다" 로 넘긴다.</p>
+      ${pages.length ? `<p class="small muted">책 ${esc(pages.length > 2 ? pages[0] + ' ~ ' + pages[pages.length - 1] : pages.join(', '))}</p>` : ''}
+      <div class="row"><a class="btn pri" href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 풀기</a><a class="btn ghost" href="#/pack?id=${encodeURIComponent(p.id)}&peek=1">그냥 공부자료 보기</a></div>
+    </section>`;
+    return;
+  }
+
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
   <h1>${esc(p.title)}</h1>
+  ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.ymd(new Date(bookDone.t)))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
   <div class="row noprint" style="margin:12px 0">
@@ -664,8 +684,13 @@ function bindSelection(roots, pack) {
   if (!selBar) {
     selBar = document.createElement('div');
     selBar.className = 'selbar noprint';
-    selBar.innerHTML = `${HL.COLORS.map(c => `<button type="button" data-c="${c.id}" class="hl-btn hl-${c.id}" aria-label="${c.name} 형광펜">${c.name}</button>`).join('')}<button type="button" data-memo class="btn sm">메모</button><button type="button" data-x class="btn sm ghost" aria-label="닫기">✕</button>`;
+    selBar.innerHTML = `${HL.COLORS.map(c => `<button type="button" data-c="${c.id}" class="hl-btn hl-${c.id}" aria-label="${c.name} 형광펜">${c.name}</button>`).join('')}<button type="button" data-memo class="btn sm">메모</button><button type="button" data-quick class="btn sm ghost" title="켜면 글자를 고르기만 해도 칠해진다">바로 칠하기</button><button type="button" data-x class="btn sm ghost" aria-label="닫기">✕</button>`;
     document.body.appendChild(selBar);
+    quickPill = document.createElement('button');
+    quickPill.type = 'button';
+    quickPill.className = 'quickpill noprint';
+    quickPill.onclick = () => { S.save('hlQuick', null); syncQuick(); toast('바로 칠하기를 껐다.'); };
+    document.body.appendChild(quickPill);
     // 버튼을 눌러도 선택이 풀리지 않게
     selBar.addEventListener('pointerdown', e => e.preventDefault());
     selBar.addEventListener('mousedown', e => e.preventDefault());
@@ -679,28 +704,81 @@ function bindSelection(roots, pack) {
     }
     return null;
   };
+  const paint = (f, color, memo) => {
+    const a = f.a;
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    S.kvSet('hl', id, { id, pack: pack.id, subject: pack.subject, text: a.text, prefix: a.prefix, suffix: a.suffix, color, note: '', c: Date.now(), ...(f.where ? { where: f.where } : {}) });
+    window.getSelection().removeAllRanges();
+    hideSelBar();
+    render.keepScroll = true; render();
+    if (memo) setTimeout(() => openMarkDialog(id), 50);
+  };
+  let quickT = 0;
   const onSel = () => {
     const f = find();
-    if (f) { anchor = f.a; where = f.where; selBar.style.display = 'flex'; }
+    clearTimeout(quickT);
+    const qc = S.load('hlQuick', null);
+    if (f && qc) {
+      // 바로 칠하기: 고르기를 멈추고 잠깐 기다렸다가 칠하고 선택을 푼다. 선택이 풀리면 브라우저의 복사 메뉴와 검색 창도 닫힌다.
+      hideSelBar();
+      quickT = setTimeout(() => { const g = find(); if (g && g.a.text.trim().length > 1) paint(g, qc, false); }, 900);
+      return;
+    }
+    if (f) { anchor = f.a; where = f.where; selBar.style.display = 'flex'; placeSelBar(); }
     else if (!selBar.contains(document.activeElement)) { selBar.style.display = 'none'; }
   };
   document.onselectionchange = onSel;
+  syncQuick();
   selBar.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.hasAttribute('data-x')) { window.getSelection().removeAllRanges(); hideSelBar(); return; }
     const f = anchor ? { a: anchor, where } : find();
     if (!f) return hideSelBar();
-    const a = f.a;
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-    const color = b.dataset.c || 'y';
-    S.kvSet('hl', id, { id, pack: pack.id, subject: pack.subject, text: a.text, prefix: a.prefix, suffix: a.suffix, color, note: '', c: Date.now(), ...(f.where ? { where: f.where } : {}) });
-    window.getSelection().removeAllRanges();
-    hideSelBar();
-    render.keepScroll = true; render();
-    if (b.hasAttribute('data-memo')) setTimeout(() => openMarkDialog(id), 50);
+    if (b.hasAttribute('data-quick')) {
+      const c = S.load('hlLast', 'y');
+      S.save('hlQuick', c);
+      paint(f, c, false);
+      toast('바로 칠하기를 켰다. 이제 글자를 고르기만 하면 칠해진다. 끌 때는 아래 띠를 누른다.');
+      syncQuick();
+      return;
+    }
+    const color = b.dataset.c || S.load('hlLast', 'y');
+    if (b.dataset.c) S.save('hlLast', b.dataset.c);
+    paint(f, color, b.hasAttribute('data-memo'));
   };
 }
+let quickPill = null;
+// 바로 칠하기가 켜져 있으면 자료 화면 아래에 색과 끄기 버튼을 보여 준다
+function syncQuick() {
+  if (!quickPill) return;
+  const qc = S.load('hlQuick', null);
+  const on = qc && /^#\/pack/.test(location.hash);
+  quickPill.style.display = on ? 'flex' : 'none';
+  if (on) {
+    const c = HL.COLORS.find(x => x.id === qc) || HL.COLORS[0];
+    quickPill.innerHTML = `<span class="hl-btn hl-${c.id}" style="pointer-events:none">${c.name}</span> 바로 칠하기 켜짐 · 끄기`;
+  }
+}
+window.addEventListener('hashchange', () => syncQuick());
+
+// 형광펜 띠 위치: 휴대폰·태블릿 브라우저는 고른 글자 바로 위에 복사 메뉴를, 화면 아래에 "Google 검색" 창을 띄운다.
+// 둘 다 피하려고 고른 글자가 화면 아래쪽이면 화면 맨 위(머리띠 아래)에, 위쪽이면 고른 글자 조금 아래에 띄운다.
+function placeSelBar() {
+  try {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    const vh = window.innerHeight;
+    const headH = (document.querySelector('.top')?.getBoundingClientRect().bottom || 56) + 8;
+    let top;
+    if (r.top > headH + 130) top = headH;
+    else top = Math.min(r.bottom + 64, vh * 0.55);
+    selBar.style.top = Math.round(top) + 'px';
+    selBar.style.bottom = 'auto';
+  } catch (e) {}
+}
+window.addEventListener('scroll', () => { if (selBar && selBar.style.display === 'flex') placeSelBar(); }, { passive: true });
 
 // 형광펜 하나를 눌렀을 때: 색 바꾸기, 메모, 지우기
 function openMarkDialog(id) {
@@ -836,8 +914,9 @@ function pickItems(c) {
 // ================= 문제 풀기 =================
 let session = null;
 
-function startSession(items, mode = 'practice', minutes = 30) {
+function startSession(items, mode = 'practice', minutes = 30, opts = {}) {
   session = {
+    ...opts,
     items, mode, i: 0,
     answers: {}, results: {},
     endAt: mode === 'exam' ? Date.now() + minutes * 60000 : null,
@@ -854,11 +933,16 @@ function startSession(items, mode = 'practice', minutes = 30) {
 function viewRun() {
   const { q } = params();
   // 홈이나 자료 화면에서 바로 들어온 경우
-  if (q.get('src') || q.get('pack')) {
+  if (q.get('src') || q.get('pack') || q.get('book')) {
     let items;
     if (q.get('src') === 'due') items = shuffle(dueItems());
     else if (q.get('src') === 'wrong') items = shuffle(wrongItems());
-    else items = D.allQuestions({ packs: [q.get('pack')] });
+    else if (q.get('book')) {
+      const bp = D.db().byId[q.get('book')];
+      items = bp ? (bp.book || []).map(qq => ({ pack: bp, q: qq, key: D.qkey(bp, qq), book: true })) : [];
+      if (items.length) { session = null; startSession(items, 'practice', 30, { bookPack: bp.id }); return; }
+    }
+    else items = D.allQuestions({ packs: [q.get('pack')], book: false });
     if (!items.length) { main.innerHTML = '<p class="muted">풀 문제가 없다. <a href="#/">홈으로</a></p>'; return; }
     session = null;
     startSession(items, 'practice');
@@ -923,7 +1007,7 @@ function drawQuestion() {
   <section class="card qcard${q.context ? ' has-ctx' : ''}">
     <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag">${'★'.repeat(q.difficulty)}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">전에 ${pr.ok}/${pr.n}</span>` : ''}</div>
     <div class="q-split">
-    ${q.context ? `<div class="q-ctx">${esc(q.context)}</div>` : ''}
+    ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : ''}
     <div class="q-main">
     <div class="q-text">${esc(q.question)}</div>
     ${body}
@@ -1274,8 +1358,16 @@ function viewSummary() {
   const self = items.filter((_, i) => res[i]?.selfGrade && !res[i].result).length;
   const objIdx = items.map((it, i) => i).filter(i => items[i].q.type !== 'essay');
   const objOk = objIdx.filter(i => res[i]?.result === 'ok').length;
+  let bookMsg = '';
+  if (session.bookPack) {
+    const bp = D.db().byId[session.bookPack];
+    const n = items.length, ok = count('ok');
+    if (items.every((_, i) => res[i]?.result) && !session.bookSaved) { S.kvSet('bookdone', session.bookPack, { ok, n, t: Date.now() }); session.bookSaved = true; }
+    bookMsg = `<section class="card book-gate"><h2>책 문제 끝</h2><p>${n}개 중 ${ok}개 맞혔다. 틀린 문제는 오답노트에 들어갔다. 이제 공부자료를 보면서 틀린 이유를 찾는다.</p><a class="btn pri" href="#/pack?id=${encodeURIComponent(session.bookPack)}">${esc(bp?.title || '')} 공부자료 보기</a></section>`;
+  }
   main.innerHTML = `
   <h1>결과</h1>
+  ${bookMsg}
   <section class="grid" style="margin-bottom:14px">
     <div class="stat"><b style="color:var(--ok)">${count('ok')}</b><span>맞음</span></div>
     <div class="stat"><b style="color:var(--warn)">${count('part')}</b><span>부분 점수</span></div>
@@ -1333,7 +1425,7 @@ function viewWrong() {
     let mine = r.ans;
     if (qq.type === 'mcq' && Array.isArray(mine)) mine = mine.map(n => '①②③④⑤⑥'[n - 1]).join(', ');
     return `<details class="card flat"><summary style="color:var(--ink)"><span class="q-head" style="display:inline-flex;margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n}</span>${r.star ? '<span class="tag warn">★</span>' : ''}</span><br>${esc(qq.question)}</summary>
-      ${qq.context ? `<div class="q-ctx">${esc(qq.context)}</div>` : ''}
+      ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
       ${qq.type === 'mcq' ? `<ol class="small">${qq.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
       <p><b>내 답</b> <span style="white-space:pre-wrap">${esc(mine || '(안 씀)')}</span></p>
       <p><b>정답</b> <span style="white-space:pre-wrap">${right}</span></p>
@@ -1462,7 +1554,7 @@ function viewGen() {
     if (!genResult) return;
     out.innerHTML = `<h2>만든 문제 ${genResult.qs.length}개</h2>
     <div class="stack">${genResult.qs.map((x, i) => `<details class="card flat"><summary style="color:var(--ink)"><span class="tag">${TYPE_NAME[x.type]}</span> ${esc(x.question)}</summary>
-      ${x.context ? `<div class="q-ctx">${esc(x.context)}</div>` : ''}
+      ${x.context ? `<div class="q-ctx">${ctxHtml(x.context)}</div>` : ''}
       ${x.type === 'mcq' ? `<ol>${x.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol><p>정답 ${x.answer}</p>` : ''}
       ${x.type === 'short' ? `<p>정답 ${x.answers.map(esc).join(' / ')}</p>` : ''}
       ${x.type === 'essay' ? `<p style="white-space:pre-wrap">모범 답안: ${esc(x.model_answer)}</p><ul>${x.rubric.map(r => `<li>${esc(r.criterion)} (${r.points})</li>`).join('')}</ul>` : ''}
@@ -1933,7 +2025,7 @@ function viewQuestion() {
   <p class="small"><a href="#/pack?id=${encodeURIComponent(pid)}">← ${esc(pack.title)}</a></p>
   <section class="card">
     <div class="q-head">${subjDot(pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span>${pr ? `<span class="tag">${pr.ok}/${pr.n} 맞음</span>${pr.wrong ? '<span class="tag bad">오답노트</span>' : ''}${pr.star ? '<span class="tag warn">★</span>' : ''}${pr.due ? `<span class="tag">다음 복습 ${pr.due.slice(5).replace('-', '/')}</span>` : ''}` : ''}</div>
-    ${qq.context ? `<div class="q-ctx">${esc(qq.context)}</div>` : ''}
+    ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
     <div class="q-text">${esc(qq.question)}</div>
     ${qq.type === 'mcq' ? `<ol class="small">${qq.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
     <details><summary>정답과 해설</summary><p>${right}</p>${qq.explanation ? `<p class="small">${esc(qq.explanation)}</p>` : ''}</details>
@@ -2013,15 +2105,35 @@ function viewSettings() {
       const tp = (r.textPatches || []).filter(t => typeof t.texts_for === 'string' && Array.isArray(t.texts) && t.texts.every(x => x && typeof x.body === 'string' && x.body.trim()));
       const pl = r.plan && !r.errors.some(m => m.startsWith('공부 계획')) ? r.plan : null;
       const plCount = pl ? pl.weeks.reduce((a, w) => a + w.groups.reduce((b, g) => b + (g.items || []).length, 0), 0) : 0;
-      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp, plan: pl };
+      const bkp = (r.bookPatches || []).filter(b => typeof b.book_for === 'string' && !bad.has('책 문제 ' + b.book_for));
+      const engPacks = Object.values(D.db().byId).filter(p => p.subject === 'eng');
+      const guess = b => {
+        if (D.db().byId[b.book_for]) return b.book_for;
+        const m = String(b.title || '').match(/unit\s*0?(\d+)/i);
+        if (m) { const hit = engPacks.find(p => new RegExp(`(unit|유닛|단원)\\s*0?${m[1]}(?!\\d)|^0?${m[1]}(?!\\d)`, 'i').test(`${p.title} ${p.unit || ''}`)); if (hit) return hit.id; }
+        return '__new';
+      };
+      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp, plan: pl, bookPatches: bkp };
       out.innerHTML = `<div class="${r.errors.length ? 'note' : 'note info'}" style="margin-top:10px">
         <p>${r.packs.length ? `자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.` : ''}${tp.length ? ` 원문 ${tp.reduce((a, t) => a + t.texts.length, 0)}개 (${tp.map(t => esc(D.db().byId[t.texts_for]?.title || t.texts_for + ' (없는 자료)')).join(', ')}).` : ''}${r.exam ? ' 시험 정보도 들어 있다.' : ''}${pl ? ` 공부 계획 ${pl.weeks.length}주, 할 일 ${plCount}개 (지금 있는 계획을 바꾼다. 체크한 것은 그대로).` : ''}</p>
+        ${bkp.length ? `<p class="small" style="margin-top:6px">책 문제 ${bkp.reduce((a, b) => a + b.book.length, 0)}개. 묶음마다 어느 영어 자료에 붙일지 고른다. 붙인 자료는 책 문제를 먼저 풀어야 공부자료가 열린다.</p>
+          ${bkp.map((b, i) => `<label class="field" style="margin:6px 0"><span>${esc(b.title || b.book_for)} · ${b.book.length}문제</span><select data-bk="${i}">${engPacks.map(p => `<option value="${esc(p.id)}"${guess(b) === p.id ? ' selected' : ''}>${esc(p.title)}</option>`).join('')}<option value="__new"${guess(b) === '__new' ? ' selected' : ''}>새 자료로 만들기</option><option value="__skip">가져오지 않음</option></select></label>`).join('')}` : ''}
         ${okPacks.map(p => `<div class="small">${subjDot(p.subject)} ${esc(p.title)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}${D.db().byId[p.id] ? ' <span class="tag warn">같은 id 덮어씀</span>' : ''}</div>`).join('')}
         ${r.errors.length ? `<details open><summary>고칠 것 ${r.errors.length}개</summary><ul class="small">${r.errors.slice(0, 30).map(m => `<li>${esc(m)}</li>`).join('')}</ul><p class="small">이 목록을 공부자료 Claude 에게 보내고 고쳐 달라고 하면 된다.</p></details>` : ''}
-        ${okPacks.length || r.exam || tp.length || pl ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
+        ${okPacks.length || r.exam || tp.length || pl || bkp.length ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
       </div>`;
       $('#impGo')?.addEventListener('click', async () => {
         if (pendingImport.packs.length) D.saveLocalPacks(pendingImport.packs);
+        let bookN = 0;
+        (pendingImport.bookPatches || []).forEach((b, i) => {
+          const to = out.querySelector(`[data-bk="${i}"]`)?.value || '__new';
+          if (to === '__skip') return;
+          bookN += b.book.length;
+          if (to === '__new') {
+            const id = D.db().byId[b.book_for] ? b.book_for + '-book' : b.book_for;
+            D.saveLocalPacks([{ format: 'study-hub/1', id, subject: 'eng', title: b.title || b.book_for, unit: b.unit, order: b.order, summary: b.summary || '책 문제', notes: '', book: b.book }]);
+          } else D.saveBook(to, b.book);
+        });
         if (pendingImport.plan) D.savePlan(pendingImport.plan);
         for (const tp2 of pendingImport.textPatches || []) tp2.texts.forEach((t, i) => SRC.saveText({ id: tp2.texts_for }, t.id ? String(t.id) : 'add-' + i, t.title || `본문 ${i + 1}`, t.body));
         if (pendingImport.exam && pendingImport.exam.subjects) {
@@ -2030,7 +2142,7 @@ function viewSettings() {
           D.saveExamLocal(sub);
         }
         await D.loadAll();
-        toast(pendingImport.plan && !pendingImport.packs.length ? '공부 계획을 가져왔다. 시험 일정과 계획 화면에서 보인다.' : `자료 ${pendingImport.packs.length}개${(pendingImport.textPatches || []).length ? `, 원문 ${pendingImport.textPatches.length}묶음` : ''} 가져왔다.`);
+        toast(pendingImport.plan && !pendingImport.packs.length ? '공부 계획을 가져왔다. 시험 일정과 계획 화면에서 보인다.' : [pendingImport.packs.length ? `자료 ${pendingImport.packs.length}개` : '', (pendingImport.textPatches || []).length ? `원문 ${pendingImport.textPatches.length}묶음` : '', bookN ? `책 문제 ${bookN}개` : '', pendingImport.exam ? '시험 정보' : ''].filter(Boolean).join(', ') + ' 가져왔다.');
         pendingImport = null;
         render();
       });
@@ -2162,11 +2274,12 @@ function viewPrompts() {
     <pre class="prompt" id="ptext">${esc(text)}</pre>
   </section>
   <section class="card"><div class="row between"><h2 style="margin:0">이미 만든 자료에 원문만 더 받을 때</h2><button class="btn sm" data-copy-text="texts">복사</button></div><p class="small muted">그 과목 Claude 채팅에 보낸다. 받은 JSON 을 자료 가져오기에 붙여넣으면 문제와 기록은 그대로 두고 원문만 붙는다.</p><pre class="prompt">${esc(PR.TEXTS_PROMPT)}</pre></section>
+  <section class="card"><div class="row between"><h2 style="margin:0">영어 자료에 책 문제만 더 받을 때</h2><button class="btn sm" data-copy-text="book">복사</button></div><p class="small muted">영어 Claude 채팅에 보낸다. 받은 JSON 을 자료 가져오기에 붙여넣으면 그 자료에 책 문제가 붙고, 자료를 열 때 책 문제를 먼저 풀게 된다.</p><pre class="prompt">${esc(PR.BOOK_PROMPT)}</pre></section>
   <section class="card"><div class="row between"><h2 style="margin:0">오류가 났을 때</h2><button class="btn sm" data-copy-text="fix">복사</button></div><pre class="prompt">${esc(PR.FIX_PROMPT)}</pre></section>
   <section class="card"><div class="row between"><h2 style="margin:0">시험 범위·날짜가 나왔을 때</h2><button class="btn sm" data-copy-text="range">복사</button></div><pre class="prompt">${esc(PR.RANGE_PROMPT)}</pre></section>`;
   $$('input[name="ps"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + r.value + (light ? '&v=light' : ''); }));
   $$('input[name="pv"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + sel + (r.value ? '&v=light' : ''); }));
-  const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT, texts: PR.TEXTS_PROMPT };
+  const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT, texts: PR.TEXTS_PROMPT, book: PR.BOOK_PROMPT };
   $$('[data-copy-text]').forEach(b => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(texts[b.dataset.copyText]); toast('복사했다. Claude 채팅에 붙여넣는다.'); }
     catch (e) {
@@ -2350,8 +2463,7 @@ function checkPack(p) {
   scanMd('본문', p.notes);
   (p.texts || []).forEach((t, i) => scanText(`원문 ${t.title || i + 1}`, t.body));
   if (['kor', 'eng', 'jpn'].includes(p.subject) && !(p.texts || []).length && !SRC.textsOf(p).length) add('info', '원문', '원문(본문)이 없다. "본문 같이 보기" 를 쓰려면 원문을 넣는다.');
-  (p.questions || []).forEach((q, i) => {
-    const w = `문제 ${i + 1}`;
+  [...(p.questions || []).map((q, i) => [q, `문제 ${i + 1}`]), ...(p.book || []).map((q, i) => [q, `책 문제 ${q.source || i + 1}`])].forEach(([q, w]) => {
     scanText(w, q.question); scanText(w + ' 지문', q.context); scanText(w + ' 해설', q.explanation);
     if (/윗글|다음 글|아래 글|<보기>|\[보기\]|다음 시|다음 자료/.test(q.question) && !q.context) add('err', w, `"${q.question.slice(0, 30)}…" — 지문이나 <보기> 를 가리키는데 context 가 비어 있다.`);
     if (q.type === 'mcq') {
@@ -2457,7 +2569,7 @@ function viewHelp() {
 
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
-- **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 아래에 색 버튼이 뜬다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
+- **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 화면 위쪽에 색 버튼이 뜬다. (태블릿 Chrome 에서 아래에 "Google 검색" 창이 같이 뜨면 Chrome 설정 → Google 서비스 → "터치하여 검색" 을 끄면 안 뜬다.) 색 버튼 옆 "바로 칠하기" 를 켜면 그다음부터는 글자를 고르기만 해도 그 색으로 칠해지고 선택이 바로 풀려서, 브라우저 메뉴에 가리지 않는다. 끌 때는 화면 아래 "바로 칠하기 켜짐" 띠를 누른다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
 - **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.
 - **그래프**: [기록](#/stats) 에 공부한 날 달력, 누적 문제 수, 누적 공부 시간, 정답률 변화, 과목별 공부 시간, 달성한 기록이 나온다.
 

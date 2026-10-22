@@ -339,3 +339,11 @@ details.week.cur{border-color:color-mix(in srgb,var(--ok) 50%,var(--rule))}
 .conf{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-bottom:4px}
 .conf .chip{padding:4px 11px}
 mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var(--bad);text-underline-offset:3px}
+
+/* 영어: 책 문제 먼저 */
+.book-gate{border-left:4px solid var(--acc);background:var(--accw)}
+.book-gate h2{margin-top:0}
+.q-ctx u{text-decoration-thickness:1.5px;text-underline-offset:3px}
+.quickpill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));z-index:39;display:none;gap:8px;align-items:center;background:var(--card);color:var(--ink);border:1px solid var(--rule);border-radius:999px;padding:6px 12px 6px 6px;font:inherit;font-size:.85rem;box-shadow:0 6px 18px -8px rgba(0,0,0,.35);cursor:pointer}
+@media (min-width:900px){.quickpill{bottom:20px;left:calc(50% + 42px)}}
+@media print{.quickpill{display:none!important}}

@@ -68,8 +68,12 @@ def check_pack(p, where):
     if not isinstance(qs, list):
         e(f"{where}: questions 는 배열이어야 한다.")
         qs = []
-    for i, q in enumerate(qs):
-        w = f"{where} questions[{i}]"
+    book = p.get("book") or []
+    if not isinstance(book, list):
+        e(f"{where}: book 은 배열이어야 한다.")
+        book = []
+    # 문제와 책 문제(book)는 같은 형식으로 검사한다
+    for w, q in [(f"{where} questions[{i}]", q) for i, q in enumerate(qs)] + [(f"{where} book[{i}]", q) for i, q in enumerate(book)]:
         if not isinstance(q, dict):
             e(f"{w}: 객체가 아니다.")
             continue

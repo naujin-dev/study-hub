@@ -44,8 +44,10 @@ export function validatePack(p, where = '자료') {
       seen.add('c:' + c.id);
     }
   });
-  (Array.isArray(p.questions) ? p.questions : []).forEach((q, i) => {
-    const w = `questions[${i}]`;
+  if (p.book != null && !Array.isArray(p.book)) e('book 은 배열이어야 한다.');
+  // 문제와 책 문제(book)는 같은 형식으로 검사한다. id 는 둘 사이에서도 겹치면 안 된다.
+  [...(Array.isArray(p.questions) ? p.questions.map((q, i) => [q, `questions[${i}]`]) : []),
+   ...(Array.isArray(p.book) ? p.book.map((q, i) => [q, `book[${i}]`]) : [])].forEach(([q, w]) => {
     if (!q || typeof q !== 'object') return e(`${w}: 객체가 아니다.`);
     if (typeof q.id !== 'string' && typeof q.id !== 'number') e(`${w}: id 가 없다.`);
     else {
@@ -87,13 +89,17 @@ export function parseImport(text) {
   if (plan && !obj.packs && !obj.subject && !obj.texts_for) { /* 공부 계획만 */ }
   else if (Array.isArray(obj)) packs = obj;
   else if (obj && Array.isArray(obj.packs)) { packs = obj.packs; exam = obj.exam || null; }
-  else if (obj && (obj.subject || obj.texts_for)) packs = obj.texts_for ? [] : [obj];
+  else if (obj && (obj.subject || obj.texts_for || obj.book_for)) packs = obj.texts_for || obj.book_for ? [] : [obj];
   else if (obj && obj.subjects) exam = obj;
   else throw new Error('자료(subject, title 이 있는 객체)나 { "packs": [...] } 모양이 아니다.');
   // 원문만 더하는 묶음: { "texts_for": "자료 id", "texts": [...] }
   const textPatches = packs.filter(p => p && p.texts_for);
   packs = packs.filter(p => !(p && p.texts_for));
   if (obj && obj.texts_for) textPatches.push(obj);
+  // 책 문제만 더하는 묶음: { "book_for": "자료 id", "book": [...] }
+  const bookPatches = packs.filter(p => p && p.book_for);
+  packs = packs.filter(p => !(p && p.book_for));
+  if (obj && obj.book_for) bookPatches.push(obj);
   const errors = [];
   packs.forEach((p, i) => errors.push(...validatePack(p, p && p.id ? p.id : `packs[${i}]`)));
   textPatches.forEach((t, i) => {
@@ -106,7 +112,12 @@ export function parseImport(text) {
       if (!w || typeof w.title !== 'string' || !Array.isArray(w.groups)) errors.push(`공부 계획 weeks[${i}]: title, groups 가 있어야 한다.`);
     });
   }
-  return { packs, exam, errors, textPatches, plan };
+  bookPatches.forEach((b, i) => {
+    const w = `책 문제 ${b.book_for || i + 1}`;
+    if (typeof b.book_for !== 'string') errors.push(`${w}: book_for 에 자료 id 를 쓴다.`);
+    else errors.push(...validatePack({ id: 'x', subject: 'eng', title: 'x', book: b.book }, w).filter(m => !m.includes(': id 는') && !m.includes('title')));
+  });
+  return { packs, exam, errors, textPatches, plan, bookPatches };
 }
 
 // ---------- 불러오기 ----------
@@ -151,6 +162,13 @@ export async function loadAll() {
       if (repo) p._shadow = true;
       byId[id] = p;
     }
+  }
+  // 나중에 따로 가져온 책 문제(kv 'bookq')를 자료에 붙인다
+  for (const b of Object.values(kvAll('bookq'))) {
+    const p = byId[b.pack];
+    if (!p || !Array.isArray(b.book)) continue;
+    const have = new Set((p.book || []).map(q => String(q.id)));
+    byId[b.pack] = { ...p, book: [...(p.book || []), ...b.book.filter(q => !have.has(String(q.id)))] };
   }
   const packs = Object.values(byId).sort(packOrder);
   state = { packs, byId, exam: mergeExam(exam), plan, loadErrors };
@@ -206,6 +224,12 @@ export function saveExamLocal(subjects) {
     kvSet('exam', id, { ...rest, ...subjects[id] });
   }
 }
+export function saveBook(packId, book) {
+  const cur = kvGet('bookq', packId);
+  const have = new Map((cur?.book || []).map(q => [String(q.id), q]));
+  for (const q of book) have.set(String(q.id), q);
+  kvSet('bookq', packId, { pack: packId, book: [...have.values()] });
+}
 export function savePlan(plan) {
   kvSet('notionplan', 'plan', { plan });
 }
@@ -228,6 +252,11 @@ export function allQuestions(filter = {}) {
     for (const q of p.questions || []) {
       if (filter.types && filter.types.length && !filter.types.includes(q.type)) continue;
       out.push({ pack: p, q, key: qkey(p, q) });
+    }
+    if (filter.book === false) continue;
+    for (const q of p.book || []) {
+      if (filter.types && filter.types.length && !filter.types.includes(q.type)) continue;
+      out.push({ pack: p, q, key: qkey(p, q), book: true });
     }
   }
   return out;
