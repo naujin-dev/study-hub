@@ -1,0 +1,39 @@
+# data/packs/ 에 자료가 올라오면 검사하고 data/index.json 을 다시 만들어 커밋한다.
+name: 자료 검사
+
+on:
+  push:
+    branches: [main]
+    paths: ["data/**", "scripts/check_packs.py"]
+  pull_request:
+    paths: ["data/**", "scripts/check_packs.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 자료 검사, index.json 만들기
+        id: check
+        run: python3 scripts/check_packs.py
+        continue-on-error: true
+      - name: index.json 이 바뀌었으면 커밋
+        if: github.event_name != 'pull_request'
+        run: |
+          if ! git diff --quiet data/index.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/index.json
+            git commit -m "data/index.json 다시 만듦"
+            git push
+          fi
+      - name: 검사에 실패했으면 실패로 표시
+        if: steps.check.outcome == 'failure'
+        run: exit 1

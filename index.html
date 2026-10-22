@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cut">
+<title>2회고사 공부방</title>
+<meta name="description" content="2회고사 공부자료, 연습문제, 오답노트, 암기카드">
+<meta name="theme-color" content="#F4F6F1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script>
+  try{var t=JSON.parse(localStorage.getItem('sh.theme'));if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}
+</script>
+<script src="js/vendor/marked-12.0.2.min.js" defer></script>
+<script src="js/vendor/purify-3.1.6.min.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로</a>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#/">2회고사 <span>공부방</span></a>
+    <span class="dday" id="topDday"></span>
+    <button class="tbtn" id="themeBtn" type="button" aria-label="화면 모드 바꾸기">자동</button>
+  </div>
+</header>
+<main id="main" class="wrap" tabindex="-1">
+  <p class="muted">불러오는 중…</p>
+</main>
+<nav class="bottom" aria-label="메뉴">
+  <a href="#/" data-nav="home"><span class="ic">⌂</span>홈</a>
+  <a href="#/study" data-nav="study"><span class="ic">▤</span>자료</a>
+  <a href="#/quiz" data-nav="quiz"><span class="ic">✎</span>문제</a>
+  <a href="#/wrong" data-nav="wrong"><span class="ic">✕</span>오답</a>
+  <a href="#/more" data-nav="more"><span class="ic">≡</span>더보기</a>
+</nav>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
