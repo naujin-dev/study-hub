@@ -349,3 +349,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 @media print{.quickpill{display:none!important}}
 .ptitle .btn{vertical-align:middle;margin-left:6px;font-weight:400}
 .ordlist .item{gap:6px}
+.clockpill{font:500 .8rem/1 'IBM Plex Mono',monospace;color:var(--ok,#047857);text-decoration:none;border:1px solid var(--rule);border-radius:999px;padding:5px 9px;white-space:nowrap}
+.clockpill[hidden]{display:none}
+@media (max-width:420px){.clockpill{padding:4px 7px;font-size:.72rem}}
+@media (max-width:480px){.top-in:has(.clockpill:not([hidden])) .dday{display:none}}
