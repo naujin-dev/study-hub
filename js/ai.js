@@ -115,10 +115,10 @@ const GRADE_SCHEMA = {
   additionalProperties: false,
 };
 
-export async function gradeEssay(pack, q, answer) {
+function essayUser(pack, q, answer) {
   const max = essayMax(q);
   const rubric = (q.rubric || []).map((r, i) => `${i + 1}. ${r.criterion} (${r.points}점)`).join('\n');
-  const user = `과목: ${SUBJ[pack.subject]?.name || pack.subject}
+  return `과목: ${SUBJ[pack.subject]?.name || pack.subject}
 단원: ${pack.unit || pack.title}
 
 [문제] (총 ${max}점)
@@ -131,16 +131,25 @@ ${rubric}
 ${q.model_answer}
 
 [학생 답안]
-${answer.trim() || '(빈 답안)'}`;
-  const out = await ask({ system: GRADER_SYSTEM, user, schema: GRADE_SCHEMA, maxTokens: 8000 });
-  // 점수를 기준표 배점에 맞춰 다시 계산한다.
+${String(answer || '').trim() || '(빈 답안)'}`;
+}
+
+// 점수를 기준표 배점에 맞춰 다시 계산한다.
+function essayResult(q, out) {
+  const max = essayMax(q);
   const crit = (q.rubric || []).map((r, i) => {
-    const got = out.criteria[i] || {};
+    const got = (out.criteria || [])[i] || {};
     const earned = Math.max(0, Math.min(r.points, Number(got.earned) || 0));
     return { criterion: r.criterion, max: r.points, earned, comment: got.comment || '' };
   });
   const score = crit.reduce((s, c) => s + c.earned, 0);
-  return { kind: 'essay', score, max, criteria: crit, good: out.good, missing: out.missing, improved: out.improved_answer };
+  return { kind: 'essay', score, max, criteria: crit, good: out.good || '', missing: out.missing || '', improved: out.improved_answer || out.improved || '' };
+}
+
+export async function gradeEssay(pack, q, answer) {
+  const user = essayUser(pack, q, answer);
+  const out = await ask({ system: GRADER_SYSTEM, user, schema: GRADE_SCHEMA, maxTokens: 8000 });
+  return essayResult(q, out);
 }
 
 const SHORT_SCHEMA = {
@@ -153,8 +162,8 @@ const SHORT_SCHEMA = {
   additionalProperties: false,
 };
 
-export async function judgeShort(pack, q, answer) {
-  const user = `과목: ${SUBJ[pack.subject]?.name || pack.subject}
+function shortUser(pack, q, answer) {
+  return `과목: ${SUBJ[pack.subject]?.name || pack.subject}
 [문제]
 ${q.context ? q.context + '\n\n' : ''}${q.question}
 
@@ -165,8 +174,56 @@ ${q.explanation ? '[해설] ' + q.explanation + '\n' : ''}
 학생 답이 정답과 같은 뜻인지 판단해. 띄어쓰기, 조사 차이, 같은 대상을 가리키는 다른 표기(한자/한글, 약어)는 정답으로 본다.
 개념이 다르거나 더 넓거나 좁은 말이면 틀린 답이다. 영어·일본어 철자가 틀리면 틀린 답이다.
 일부만 맞으면 partial. reason 은 학생에게 반말로 한두 문장.`;
-  const out = await ask({ system: '너는 고등학교 시험 단답형 채점 선생님이다.', user, schema: SHORT_SCHEMA, maxTokens: 4000, effort: 'low' });
-  return out;
+}
+
+export async function judgeShort(pack, q, answer) {
+  return ask({ system: '너는 고등학교 시험 단답형 채점 선생님이다.', user: shortUser(pack, q, answer), schema: SHORT_SCHEMA, maxTokens: 4000, effort: 'low' });
+}
+
+// ---------- API 키 없이: claude.ai 채팅에 붙여넣을 채점 요청 ----------
+export function essayChatPrompt(pack, q, answer) {
+  const n = (q.rubric || []).length;
+  return `${GRADER_SYSTEM}
+
+아래 답안을 채점해 줘.
+
+${essayUser(pack, q, answer)}
+
+답은 아래 모양의 JSON 코드 블록 하나로만 해. 다른 말은 쓰지 마.
+criteria 는 채점 기준 순서대로 ${n}개. earned 는 그 기준에서 받은 점수(배점 이하).
+\`\`\`json
+{"criteria":[${(q.rubric || []).map(r => `{"earned":0,"comment":"(${r.points}점 기준에 대한 한 줄 평)"}`).join(',')}],"good":"맞게 쓴 부분","missing":"빠졌거나 틀린 부분","improved_answer":"학생 답을 살려서 만점이 되게 고친 답안"}
+\`\`\``;
+}
+export function shortChatPrompt(pack, q, answer) {
+  return `너는 고등학교 시험 단답형 채점 선생님이다.
+
+${shortUser(pack, q, answer)}
+
+답은 아래 모양의 JSON 코드 블록 하나로만 해. verdict 는 correct, partial, wrong 중 하나.
+\`\`\`json
+{"verdict":"correct","reason":"한두 문장"}
+\`\`\``;
+}
+
+function pickJSON(text) {
+  const t = String(text || '');
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  let body = fence ? fence[1] : t;
+  const a = body.indexOf('{'), b = body.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('Claude 답에서 { } 부분을 찾지 못했다. 코드 블록을 통째로 복사해 줘.');
+  try { return JSON.parse(body.slice(a, b + 1)); }
+  catch (e) { throw new Error('Claude 답을 읽지 못했다. 코드 블록 안 내용을 빠짐없이 복사했는지 확인해 줘.'); }
+}
+export function parseEssayReply(q, text) {
+  const out = pickJSON(text);
+  if (!Array.isArray(out.criteria)) throw new Error('답에 criteria 가 없다. Claude 에게 "JSON 형식으로만 다시 답해 줘" 라고 보내 줘.');
+  return essayResult(q, out);
+}
+export function parseShortReply(text) {
+  const out = pickJSON(text);
+  if (!['correct', 'partial', 'wrong'].includes(out.verdict)) throw new Error('답에 verdict 가 없다. Claude 에게 "JSON 형식으로만 다시 답해 줘" 라고 보내 줘.');
+  return { verdict: out.verdict, reason: String(out.reason || '') };
 }
 
 export async function askAboutPack(pack, question, history) {
@@ -222,7 +279,7 @@ const GEN_SCHEMA = {
   additionalProperties: false,
 };
 
-export async function generateQuestions(pack, { types, count, difficulty, focus }) {
+function genUser(pack, { types, count, difficulty, focus }) {
   const existing = (pack.questions || []).map(q => '- ' + q.question.slice(0, 80)).join('\n');
   const user = `[공부자료: ${pack.title}]
 ${(pack.notes || '').slice(0, 60000)}
@@ -239,6 +296,11 @@ ${focus ? '- 특히 이 부분: ' + focus : ''}
 - 단답형 answers 에는 띄어쓰기·표기만 다른 정답도 모두 넣는다.
 - 서술형 rubric 배점 합은 4~10점, model_answer 는 만점 답안.
 - explanation 은 왜 그게 답인지 두세 문장.`;
+  return user;
+}
+
+export async function generateQuestions(pack, opts) {
+  const user = genUser(pack, opts);
   const out = await ask({ system: '너는 고등학교 1학년 정기고사 출제 선생님이다.', user, schema: GEN_SCHEMA, maxTokens: 32000 });
   return out.questions.map(q => {
     const base = { type: q.type, question: q.question, explanation: q.explanation, difficulty: q.difficulty };
@@ -247,4 +309,32 @@ ${focus ? '- 특히 이 부분: ' + focus : ''}
     if (q.type === 'short') return { ...base, answers: q.answers };
     return { ...base, rubric: q.rubric, model_answer: q.model_answer };
   });
+}
+
+// API 키 없이: 채팅 Claude 가 사이트 형식 JSON 으로 문제를 주게 하는 프롬프트
+export function genChatPrompt(pack, opts, newId) {
+  return `너는 고등학교 1학년 정기고사 출제 선생님이다.
+
+${genUser(pack, opts)}
+
+답은 아래 모양의 JSON 코드 블록 하나로만 해. 다른 말은 쓰지 마.
+- id, subject, title 은 그대로 둔다.
+- 객관식: "type":"mcq", "choices" 보기 5개(앞에 번호 붙이지 않기), "answer" 정답 번호(1부터).
+- 단답형: "type":"short", "answers" 인정할 답 목록.
+- 서술형: "type":"essay", "rubric" [{"criterion","points"}], "model_answer".
+- 문제 id 는 "q1", "q2" ... 순서대로. 지문이 필요하면 "context" 에.
+\`\`\`json
+{"format":"study-hub/1","id":"${newId}","subject":"${pack.subject}","unit":${JSON.stringify(pack.unit || pack.title)},"title":${JSON.stringify(pack.title + ' (AI 문제)')},"order":${(pack.order ?? 999) + 0.5},"questions":[{"id":"q1","type":"mcq","question":"","choices":["","","","",""],"answer":1,"explanation":"","difficulty":2}]}
+\`\`\``;
+}
+
+export function askChatPrompt(pack, question) {
+  return `너는 고등학교 1학년의 ${SUBJ[pack.subject]?.name || ''} 선생님이다. 내가 2회고사를 준비하며 아래 공부자료를 읽다가 질문해.
+공부자료 내용을 기준으로 답하고, 자료에 없는 내용이면 그렇다고 먼저 말한 뒤 교과 수준에서 설명해. 반말로, 짧게, 예시를 들어.
+
+[공부자료: ${pack.title}]
+${(pack.notes || '').slice(0, 60000)}
+
+[질문]
+${question}`;
 }

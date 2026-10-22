@@ -430,10 +430,11 @@ function viewPack() {
   </section>
   <section class="card noprint">
     <h2>이 자료에 대해 묻기</h2>
-    ${AI.hasKey() ? '' : '<p class="note">설정에서 API 키를 넣으면 쓸 수 있다.</p>'}
+    ${AI.hasKey() ? '' : '<p class="small muted">API 키가 없으면 "채팅으로 묻기" 를 누른다. 자료 본문과 질문이 같이 복사되니 claude.ai 나 공부 Claude 채팅에 붙여넣는다.</p>'}
     <div id="chat">${hist.map(h => `<p><b>나:</b> ${esc(h.q)}</p><div class="notes" style="margin-bottom:12px">${md(h.a)}</div>`).join('')}</div>
     <form id="askf"><textarea name="q" rows="3" placeholder="예: 이 시에서 화자의 태도가 바뀌는 부분이 어디야?" style="min-height:80px"></textarea>
-    <div class="row" style="margin-top:8px"><button class="btn pri"${AI.hasKey() ? '' : ' disabled'}>묻기</button>${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
+    <pre class="prompt" id="askPre" hidden></pre>
+    <div class="row" style="margin-top:8px">${AI.hasKey() ? '<button class="btn pri">묻기</button>' : '<button type="button" class="btn pri" id="askCopy">채팅으로 묻기 (복사)</button> <a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a>'}${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
   </section></aside></div>
   `;
   const notes = $('#notes');
@@ -483,8 +484,15 @@ function viewPack() {
   });
   $('#printBtn').addEventListener('click', () => window.print());
   $('#clearChat')?.addEventListener('click', () => { chatHistory[p.id] = []; render.keepScroll = true; render(); });
+  $('#askCopy')?.addEventListener('click', () => {
+    const text = $('#askf').q.value.trim();
+    if (!text) return toast('질문을 먼저 쓴다.');
+    S.recordAsk(p.id, text);
+    copyText(AI.askChatPrompt(p, text), $('#askPre'));
+  });
   $('#askf').addEventListener('submit', async e => {
     e.preventDefault();
+    if (!AI.hasKey()) return;
     const text = e.target.q.value.trim();
     if (!text) return;
     const btn = e.target.querySelector('button');
@@ -919,7 +927,10 @@ function resultHtml(it, r) {
     h += `<p>정답: <b>${q.answers.map(esc).join(' / ')}</b></p>`;
     if (r.ai) h += `<p class="small">AI: ${esc(r.ai)}</p>`;
     if (r.aiError) h += `<p class="small">AI 확인 실패: ${esc(r.aiError)}</p>`;
-    if (r.result !== 'ok' && !r.skipped) h += `<button class="btn sm" data-override>내 답도 맞다 (맞음으로 고치기)</button>`;
+    if (r.result !== 'ok' && !r.skipped) {
+      h += `<button class="btn sm" data-override>내 답도 맞다 (맞음으로 고치기)</button>`;
+      if (!r.ai && !r.chatDone) h += `<details style="margin-top:8px"><summary>Claude 채팅으로 확인 (무료)</summary>${chatBox('같은 뜻인지 확인 요청 복사')}</details>`;
+    }
   }
   if (q.type === 'essay') {
     if (r.fb && r.fb.criteria) {
@@ -929,10 +940,13 @@ function resultHtml(it, r) {
       if (r.fb.missing) h += `<p><b>빠지거나 틀린 것</b> ${esc(r.fb.missing)}</p>`;
       if (r.fb.improved) h += `<details><summary>내 답을 고친 만점 답안</summary><p style="white-space:pre-wrap">${esc(r.fb.improved)}</p></details>`;
     }
+    if (r.fb?.via === 'chat') h += `<p class="small muted">Claude 채팅으로 채점함</p>`;
     if (r.selfGrade) {
-      h += `${r.aiError ? `<p class="small">AI 채점 실패: ${esc(r.aiError)}</p>` : '<p class="small">API 키가 없어서 스스로 채점한다. 모범 답안을 보고 맞힌 기준을 고른다.</p>'}
+      h += `${r.aiError ? `<p class="small">AI 채점 실패: ${esc(r.aiError)}</p>` : ''}
+      <div class="chatgrade"><h3 style="margin:0 0 4px">Claude 채팅으로 채점 (무료)</h3>${chatBox('채점 요청 복사')}</div>
+      <details style="margin-top:10px"><summary>또는 스스로 채점</summary><p class="small">모범 답안을 보고 맞힌 기준을 고른다.</p>
       <form id="selfForm">${q.rubric.map((c, i) => `<label class="item" style="display:flex;gap:8px;padding:6px 0"><input type="checkbox" name="c" value="${i}"><span class="grow">${esc(c.criterion)}</span><span class="mono small">${c.points}점</span></label>`).join('')}
-      <div class="row" style="margin-top:6px"><button class="btn sm pri">이만큼 맞혔다</button>${AI.hasKey() ? '<button type="button" class="btn sm" id="retryAi">AI 채점 다시</button>' : ''}</div></form>`;
+      <div class="row" style="margin-top:6px"><button class="btn sm pri">이만큼 맞혔다</button>${AI.hasKey() ? '<button type="button" class="btn sm" id="retryAi">AI 채점 다시</button>' : ''}</div></form></details>`;
     }
     h += `<details${r.selfGrade ? ' open' : ''}><summary>모범 답안</summary><p style="white-space:pre-wrap">${esc(q.model_answer)}</p></details>`;
     if (!r.selfGrade) h += `<details><summary>채점 기준</summary><ul>${q.rubric.map(c => `<li>${esc(c.criterion)} (${c.points}점)</li>`).join('')}</ul></details>`;
@@ -943,6 +957,28 @@ function resultHtml(it, r) {
   if (past.length > 1) h += `<details><summary>지금까지 ${past.length}번 풀었다 · 풀이 이력</summary>${attemptList(it, past.slice(0, -1).reverse().slice(0, 8))}<a class="small" href="#/q?key=${encodeURIComponent(it.key)}">전체 이력</a></details>`;
   h += '</div>';
   return h;
+}
+
+// API 키 없이 claude.ai 채팅으로 채점: 요청 복사 → 채팅에 붙여넣기 → 답 붙여넣기
+function chatBox(copyLabel) {
+  return `<ol class="small" style="padding-left:1.2em;margin:6px 0">
+    <li><button type="button" class="btn sm pri" data-cg-copy>${copyLabel}</button> <a class="btn sm ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a><br><span class="muted">claude.ai 무료 계정이나 그 과목 공부 Claude 채팅 어디든 된다.</span></li>
+    <li>Claude 채팅에 붙여넣고 보낸다.</li>
+    <li>Claude 가 준 코드 블록을 복사해서 아래에 붙여넣는다.</li>
+  </ol>
+  <pre class="prompt" data-cg-text hidden></pre>
+  <textarea data-cg-in placeholder='Claude 의 답을 여기에 붙여넣기 ({"criteria": ... } 또는 {"verdict": ... })' style="min-height:80px;font-family:var(--mono);font-size:.82rem"></textarea>
+  <button type="button" class="btn sm pri" data-cg-apply style="margin-top:6px">채점 결과 넣기</button>`;
+}
+async function copyText(text, pre) {
+  try { await navigator.clipboard.writeText(text); toast('복사했다. Claude 채팅에 붙여넣는다.'); return; }
+  catch (e) {}
+  if (pre) {
+    pre.textContent = text; pre.hidden = false;
+    const r = document.createRange(); r.selectNodeContents(pre);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    toast('자동 복사가 막혔다. 선택된 글을 길게 눌러 복사한다.', 4000);
+  }
 }
 
 const RES = { ok: ['ok', '맞음'], part: ['warn', '부분'], wrong: ['bad', '틀림'] };
@@ -981,6 +1017,31 @@ function bindResult(i) {
     session.results[i] = { result, fb };
     S.recordAnswer(it.key, result, session.answers[i], fb, session.spent[i], { sess: session.id, exam: session.mode === 'exam' || undefined });
     render.keepScroll = true; drawQuestion();
+  });
+  // Claude 채팅으로 채점
+  $('[data-cg-copy]')?.addEventListener('click', () => {
+    const a = session.answers[i];
+    const text = it.q.type === 'essay' ? AI.essayChatPrompt(it.pack, it.q, a) : AI.shortChatPrompt(it.pack, it.q, a);
+    copyText(text, $('[data-cg-text]'));
+  });
+  $('[data-cg-apply]')?.addEventListener('click', () => {
+    const text = $('[data-cg-in]').value;
+    if (!text.trim()) return toast('Claude 의 답을 먼저 붙여넣는다.');
+    try {
+      if (it.q.type === 'essay') {
+        const fb = { ...AI.parseEssayReply(it.q, text), via: 'chat' };
+        const ratio = fb.max ? fb.score / fb.max : 0;
+        const result = ratio >= 0.8 ? 'ok' : ratio >= 0.4 ? 'part' : 'wrong';
+        session.results[i] = { result, fb };
+        S.recordAnswer(it.key, result, session.answers[i], fb, session.spent[i], { sess: session.id, exam: session.mode === 'exam' || undefined });
+      } else {
+        const j = AI.parseShortReply(text);
+        if (j.verdict === 'correct') S.overrideOk(it.key);
+        session.results[i] = { ...r, result: j.verdict === 'correct' ? 'ok' : r.result, ai: j.reason + (j.verdict === 'partial' ? ' (부분 정답)' : ''), chatDone: true, overridden: j.verdict === 'correct' };
+      }
+      toast('채점 결과를 넣었다.');
+      render.keepScroll = true; drawQuestion();
+    } catch (err) { toast(err.message, 5000); }
   });
   $('#retryAi')?.addEventListener('click', async e => {
     delete session.results[i];
@@ -1189,13 +1250,13 @@ function viewFlash() {
 let genResult = null;
 function viewGen() {
   const { q } = params();
-  const packs = D.db().packs.filter(p => p.notes && !p.id.endsWith('-ai'));
+  const packs = D.db().packs.filter(p => p.notes && !/-ai(-[a-z0-9]+)?$/.test(p.id));
   const id = q.get('pack') || '';
   const p = D.db().byId[id];
   main.innerHTML = `
   <h1>AI 문제 만들기</h1>
   <p class="small muted">공부자료 본문을 보고 Claude 가 새 문제를 만든다. 만든 문제는 이 기기에 "(AI 문제)" 자료로 저장된다.</p>
-  ${AI.hasKey() ? '' : '<p class="note">설정에서 API 키를 먼저 넣는다.</p>'}
+  ${AI.hasKey() ? '' : '<p class="note info">API 키가 없으면 무료로: "채팅용 프롬프트 복사" → claude.ai 나 공부 Claude 채팅에 붙여넣기 → 받은 JSON 을 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣기.</p>'}
   <form id="gf" class="card">
     <label class="field"><span>자료</span><select name="pack">${packs.map(x => `<option value="${esc(x.id)}"${x.id === id ? ' selected' : ''}>${subjName(x.subject)} · ${esc(x.title)}</option>`).join('')}</select></label>
     <h3>유형</h3>${chipGroup('types', Object.entries(TYPE_NAME).map(([v, l]) => ({ value: v, label: l })), ['mcq', 'short', 'essay'])}
@@ -1204,7 +1265,9 @@ function viewGen() {
       <label class="field"><span>난이도</span><select name="diff"><option value="0">고르게</option><option value="1">쉬움</option><option value="2">보통</option><option value="3">어려움</option></select></label>
     </div>
     <label class="field"><span>특히 이 부분 (선택)</span><input type="text" name="focus" placeholder="예: 3연의 표현법, 관계대명사 what"></label>
-    <button class="btn pri block"${AI.hasKey() && packs.length ? '' : ' disabled'}>만들기</button>
+    ${AI.hasKey() ? `<button class="btn pri block"${packs.length ? '' : ' disabled'}>만들기</button>` : ''}
+    <button type="button" class="btn block${AI.hasKey() ? ' ghost' : ' pri'}" id="genCopy" style="margin-top:8px"${packs.length ? '' : ' disabled'}>채팅용 프롬프트 복사 (무료)</button>
+    <pre class="prompt" id="genPre" hidden></pre>
   </form>
   <div id="genOut"></div>`;
   const out = $('#genOut');
@@ -1244,8 +1307,17 @@ function viewGen() {
     $('#saveOnly').addEventListener('click', async () => { const { pk, qs } = await saveIt(); S.recordGen(pk.id, qs.length); genResult = null; toast('저장했다.'); render(); });
   };
   showResult();
+  $('#genCopy').addEventListener('click', () => {
+    const f = $('#gf');
+    const types = picked('types');
+    if (!types.length) return toast('유형을 하나 이상 고른다.');
+    const src = D.db().byId[f.pack.value];
+    const newId = `${src.id}-ai-${Date.now().toString(36)}`;
+    copyText(AI.genChatPrompt(src, { types, count: Number(f.count.value), difficulty: Number(f.diff.value), focus: f.focus.value.trim() }, newId), $('#genPre'));
+  });
   $('#gf').addEventListener('submit', async e => {
     e.preventDefault();
+    if (!AI.hasKey()) return;
     const f = e.target;
     const types = picked('types');
     if (!types.length) return toast('유형을 하나 이상 고른다.');
@@ -1478,7 +1550,9 @@ function dayEntries(d) {
   const out = [];
   let run = null; // 이어서 푼 문제 묶음
   const flushRun = () => { if (run) { out.push(run); run = null; } };
-  for (const e of evs) {
+  for (const e0 of evs) {
+    // 나중에 "맞음으로 고침" 한 풀이는 고친 결과로 보여준다
+    const e = e0.k === 'a' ? (S.attemptsOf(e0.key).find(x => x.id === e0.id) || e0) : e0;
     if (e.k === 'a') {
       if (run && (run.sess === e.sess || e.t - run.end < 15 * 60000) && run.kind === 'solve') { run.items.push(e); run.end = e.t; continue; }
       flushRun();
@@ -1882,8 +1956,8 @@ function viewHelp() {
 ## 채점
 
 - **객관식**: 바로 채점한다.
-- **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "내 답도 맞다" 로 고칠 수 있다.
-- **서술형**: API 키가 있으면 AI 가 채점 기준마다 점수를 매기고 빠진 점과 고친 답안을 준다. 키가 없으면 모범 답안을 보고 스스로 채점한다.
+- **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
+- **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 
 ## 복습 순서
 
