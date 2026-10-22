@@ -1,6 +1,9 @@
 import * as S from './store.js';
 import * as D from './data.js';
 import * as AI from './ai.js';
+import * as SYNC from './sync.js';
+import * as HL from './hl.js';
+import * as CH from './charts.js';
 
 const { SUBJECTS, SUBJ, TYPE_NAME } = D;
 const main = document.getElementById('main');
@@ -44,6 +47,11 @@ function chipGroup(name, items, selected, multi = true) {
   }).join('')}</div>`;
 }
 const picked = name => $$(`input[name="${name}"]:checked`).map(i => i.value);
+
+// ---------- 기록 헬퍼 ----------
+const readMarks = () => S.kvAll('readmark');
+const planList = () => Object.values(S.kvAll('plan')).map(p => ({ ...p })).sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
+function setPlan(id, patch) { const cur = S.kvGet('plan', id); if (cur) { const { u, ...rest } = cur; S.kvSet('plan', id, { ...rest, ...patch }); } }
 
 // ---------- 시험 날짜 ----------
 function examInfo() {
@@ -93,11 +101,17 @@ const routes = {
   '/stats': viewStats,
   '/settings': viewSettings,
   '/more': viewMore,
+  '/journal': viewJournal,
+  '/marks': viewMarks,
+  '/q': viewQuestion,
   '/help': viewHelp,
 };
 const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
+let onLeave = null;
 function render() {
+  if (onLeave) { const f = onLeave; onLeave = null; try { f(); } catch (e) { console.warn(e); } }
+  hideSelBar();
   const { path } = params();
   const fn = routes[path] || viewHome;
   $$('.bottom a', document).forEach(a => a.classList.toggle('on', a.dataset.nav === (navOf[path] || 'more')));
@@ -119,7 +133,7 @@ function subjectStats() {
   const prog = S.getProgress();
   const out = {};
   for (const s of SUBJECTS) out[s.id] = { total: 0, tried: 0, n: 0, ok: 0, wrong: 0, due: 0, packs: 0, unread: 0 };
-  const read = S.load('read', {});
+  const read = readMarks();
   for (const p of D.db().packs) {
     const o = out[p.subject];
     if (!o) continue;
@@ -159,11 +173,12 @@ function unitStats() {
     return { pack: p, n, ok, tried, total: (p.questions || []).length, rate: n ? ok / n : null };
   });
 }
+const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60));
 function streakDays() {
-  const log = S.load('log', {});
+  const log = S.getLog();
   let d = S.today(), n = 0;
-  if (!log[d] || !(log[d].q || log[d].c || log[d].min)) d = S.addDays(d, -1);
-  while (log[d] && (log[d].q || log[d].c || log[d].min)) { n++; d = S.addDays(d, -1); }
+  if (!studied(log[d])) d = S.addDays(d, -1);
+  while (studied(log[d])) { n++; d = S.addDays(d, -1); }
   return n;
 }
 
@@ -175,8 +190,10 @@ function viewHome() {
   const wrong = wrongItems();
   const packs = D.db().packs;
   const t = S.today();
-  const plan = S.load('plan', []).filter(p => p.date === t);
-  const log = S.load('log', {})[t] || { q: 0, ok: 0, c: 0, min: 0 };
+  const plan = planList().filter(p => p.date === t && !p.hidden);
+  const log = S.getLog()[t] || { q: 0, ok: 0, c: 0, min: 0, read: 0, solve: 0, card: 0 };
+  const lastRead = [...S.getEvents()].reverse().find(e => e.k === 'r' && D.db().byId[e.pack]);
+  const pos = lastRead ? S.kvGet('pos', lastRead.pack) : null;
 
   const dayRows = ex.days.map(d => {
     const subs = SUBJECTS.filter(s => ex.subjects[s.id]?.date === d);
@@ -213,8 +230,9 @@ function viewHome() {
     <a class="stat" href="#/run?src=due" style="text-decoration:none;color:inherit"><b>${due.length}</b><span>오늘 복습할 문제</span></a>
     <a class="stat" href="#/wrong" style="text-decoration:none;color:inherit"><b style="color:var(--bad)">${wrong.length}</b><span>오답노트</span></a>
     <div class="stat"><b>${log.q}</b><span>오늘 푼 문제 (${pct(log.ok, log.q)}%)</span></div>
-    <div class="stat"><b>${streakDays()}</b><span>연속 공부한 날</span></div>
+    <a class="stat" href="#/journal" style="text-decoration:none;color:inherit"><b>${S.fmtDur(S.studySec(log))}</b><span>오늘 공부 시간 · 연속 ${streakDays()}일</span></a>
   </section>
+  ${lastRead ? `<a class="subj" href="#/pack?id=${encodeURIComponent(lastRead.pack)}&resume=1" style="margin-bottom:14px">${subjDot(D.db().byId[lastRead.pack].subject)}<div class="grow"><span class="small muted">이어 읽기 · ${S.fmtDate(S.ymd(new Date(lastRead.t)))} ${S.fmtTime(lastRead.t)}</span><br><b>${esc(D.db().byId[lastRead.pack].title)}</b>${pos ? ` <span class="small muted">${Math.round(pos.r * 100)}% 지점</span>` : ''}</div>›</a>` : ''}
 
   <div class="row" style="margin-bottom:6px">
     ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제 풀기</a>` : ''}
@@ -247,9 +265,8 @@ function viewHome() {
   <section class="card flat"><ul class="list">${weak.map(u => `<li><a class="item" href="#/pack?id=${encodeURIComponent(u.pack.id)}">${subjDot(u.pack.subject)}<span class="grow">${esc(u.pack.title)}</span><span class="tag bad">${Math.round(u.rate * 100)}%</span></a></li>`).join('')}</ul></section>` : ''}
   `;
   $$('[data-plan]').forEach(cb => cb.addEventListener('change', () => {
-    const all = S.load('plan', []);
-    const it = all.find(p => p.id === cb.dataset.plan);
-    if (it) { it.done = cb.checked; S.save('plan', all); render.keepScroll = true; render(); }
+    setPlan(cb.dataset.plan, { done: cb.checked, doneAt: cb.checked ? Date.now() : null });
+    render.keepScroll = true; render();
   }));
 }
 
@@ -258,7 +275,7 @@ function viewStudy() {
   const { q } = params();
   const sel = q.get('s') || '';
   const term = (q.get('q') || '').trim();
-  const read = S.load('read', {});
+  const read = readMarks();
   const prog = S.getProgress();
   let packs = D.db().packs.filter(p => !sel || p.subject === sel);
 
@@ -316,11 +333,57 @@ function viewStudy() {
 
 // ================= 자료 하나 =================
 let chatHistory = {};
+
+// 자료를 실제로 보고 있던 시간만 센다: 화면이 켜져 있고 90초 안에 손댄 적이 있을 때
+const reader = {
+  pack: null, sec: 0, last: 0, active: 0, timer: null,
+  start(packId) {
+    if (this.pack === packId && this.timer) return;
+    this.stop();
+    this.pack = packId; this.sec = 0; this.last = Date.now(); this.active = Date.now();
+    this.timer = setInterval(() => this.tick(), 5000);
+  },
+  touch() { this.active = Date.now(); },
+  tick() {
+    const now = Date.now();
+    if (this.pack && document.visibilityState === 'visible' && now - this.active < 90000) this.sec += (now - this.last) / 1000;
+    this.last = now;
+    const el = document.getElementById('readNow');
+    if (el) el.textContent = S.fmtDur(S.readTimeOf(this.pack) + this.sec);
+  },
+  flush() {
+    if (!this.pack) return;
+    this.tick();
+    if (this.sec >= 10) { S.recordRead(this.pack, this.sec); this.sec = 0; }
+  },
+  stop() {
+    if (!this.pack) return;
+    this.flush();
+    clearInterval(this.timer);
+    this.pack = null;
+  },
+};
+['scroll', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => window.addEventListener(ev, () => reader.touch(), { passive: true }));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { reader.flush(); savePos(); }
+  else reader.last = Date.now();
+});
+
+function savePos() {
+  if (!reader.pack) return;
+  const el = document.getElementById('notes');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, (-r.top + 80) / Math.max(1, r.height)));
+  const prev = S.kvGet('pos', reader.pack);
+  if (!prev || Math.abs(prev.r - ratio) > 0.02) S.kvSet('pos', reader.pack, { r: Math.round(ratio * 1000) / 1000 });
+}
+
 function viewPack() {
   const { q } = params();
   const p = D.db().byId[q.get('id')];
   if (!p) { main.innerHTML = '<p>자료를 찾지 못했다. <a href="#/study">목록으로</a></p>'; return; }
-  const read = S.load('read', {});
+  const read = readMarks();
   const prog = S.getProgress();
   const qs = p.questions || [];
   const cnt = t => qs.filter(x => x.type === t).length;
@@ -329,6 +392,10 @@ function viewPack() {
   const n = qs.reduce((s, x) => s + (prog[D.qkey(p, x)]?.n || 0), 0);
   const hist = chatHistory[p.id] || [];
   const hl = q.get('hl');
+  const marks = Object.values(S.kvAll('hl')).filter(h => h.pack === p.id).sort((a, b) => a.c - b.c);
+  const memo = S.kvGet('pnote', p.id);
+  const readEvents = S.getEvents().filter(e => e.k === 'r' && e.pack === p.id);
+  const pos = S.kvGet('pos', p.id);
 
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
@@ -339,15 +406,27 @@ function viewPack() {
     ${qs.length ? `<a class="btn pri" href="#/run?pack=${encodeURIComponent(p.id)}">문제 ${qs.length}개 풀기</a>` : ''}
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
     <a class="btn" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a>
-    <button class="btn ghost" id="readBtn">${read[p.id] ? '읽음 ✓' : '다 읽음'}</button>
+    <button class="btn ghost" id="readBtn">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
     <button class="btn ghost" id="printBtn">인쇄</button>
   </div>
-  ${qs.length ? `<p class="small muted">객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}</p>` : ''}
+  <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.ymd(new Date(readEvents[readEvents.length - 1].t)))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
+  ${pos && pos.r > 0.05 && !hl ? `<p class="noprint"><button class="btn sm" id="resumeBtn">지난번 읽던 곳으로 (${Math.round(pos.r * 100)}%)</button></p>` : ''}
   <div class="pack-layout"><div class="pack-main">
+  <p class="small muted noprint" style="margin:0 0 6px">본문 글자를 길게 눌러 고르면 형광펜·메모를 남길 수 있다.</p>
   <article class="card notes" id="notes">${p.notes ? md(p.notes) : '<p class="muted">본문이 없는 자료다.</p>'}</article>
   ${(p.cards || []).length ? `<details class="card flat"><summary>암기 항목 ${p.cards.length}개 한눈에 보기</summary><table class="crit">${p.cards.map(c => `<tr><td><b>${esc(c.front)}</b></td><td>${esc(c.back)}</td></tr>`).join('')}</table></details>` : ''}
   </div>
-  <aside class="pack-side"><section class="card noprint">
+  <aside class="pack-side">
+  <section class="card noprint">
+    <h2>내 단원 메모</h2>
+    <textarea id="pnote" placeholder="이 단원에서 기억할 것, 선생님이 강조한 것, 헷갈리는 것" style="min-height:90px">${esc(memo?.text || '')}</textarea>
+    <p class="small muted" id="pnoteInfo">${memo ? '저장됨 · ' + S.fmtDate(S.ymd(new Date(memo.u))) + ' ' + S.fmtTime(memo.u) : '쓰면 바로 저장된다.'}</p>
+  </section>
+  <section class="card noprint">
+    <div class="row between"><h2 style="margin:0">형광펜·메모 ${marks.length}</h2><a class="small" href="#/marks?pack=${encodeURIComponent(p.id)}">모아보기</a></div>
+    <ul class="list" id="markList">${marks.map(h => `<li><a class="item" href="#" data-goto="${h.id}"><span class="hl-sw hl-${h.color}"></span><span class="grow small">${esc(h.text.slice(0, 60))}${h.text.length > 60 ? '…' : ''}${h.note ? `<br><span class="muted">✎ ${esc(h.note)}</span>` : ''}</span></a></li>`).join('') || '<li class="item small muted">아직 없다.</li>'}</ul>
+  </section>
+  <section class="card noprint">
     <h2>이 자료에 대해 묻기</h2>
     ${AI.hasKey() ? '' : '<p class="note">설정에서 API 키를 넣으면 쓸 수 있다.</p>'}
     <div id="chat">${hist.map(h => `<p><b>나:</b> ${esc(h.q)}</p><div class="notes" style="margin-bottom:12px">${md(h.a)}</div>`).join('')}</div>
@@ -355,11 +434,49 @@ function viewPack() {
     <div class="row" style="margin-top:8px"><button class="btn pri"${AI.hasKey() ? '' : ' disabled'}>묻기</button>${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
   </section></aside></div>
   `;
-  if (hl) highlight($('#notes'), hl);
+  const notes = $('#notes');
+  const missing = HL.paint(notes, marks);
+  missing.forEach(id => { const li = $(`[data-goto="${id}"]`); if (li) li.insertAdjacentHTML('beforeend', '<span class="tag warn">본문 바뀜</span>'); });
+  if (hl) highlight(notes, hl);
+  else if (q.get('mark')) setTimeout(() => notes.querySelector(`[data-hl="${q.get('mark')}"]`)?.scrollIntoView({ block: 'center' }), 60);
+  else if (q.get('resume') && pos) setTimeout(() => scrollToRatio(notes, pos.r), 60);
+
+  reader.start(p.id);
+  onLeave = () => {
+    savePos();
+    const nq = params();
+    if (nq.path !== '/pack' || nq.q.get('id') !== p.id) reader.stop();
+  };
+
+  // 형광펜 고르기
+  bindSelection(notes, p);
+  notes.addEventListener('click', e => {
+    const m = e.target.closest('mark.hl');
+    if (m && !window.getSelection().toString()) openMarkDialog(m.dataset.hl);
+  });
+  $$('[data-goto]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    const m = notes.querySelector(`[data-hl="${a.dataset.goto}"]`);
+    if (m) { m.scrollIntoView({ block: 'center' }); m.classList.add('flash-hl'); setTimeout(() => m.classList.remove('flash-hl'), 1200); }
+    else openMarkDialog(a.dataset.goto);
+  }));
+  $('#resumeBtn')?.addEventListener('click', () => scrollToRatio(notes, pos.r));
+
+  // 단원 메모
+  let memoT = null;
+  $('#pnote').addEventListener('input', e => {
+    clearTimeout(memoT);
+    $('#pnoteInfo').textContent = '쓰는 중…';
+    memoT = setTimeout(() => {
+      const v = e.target.value;
+      if (v.trim()) S.kvSet('pnote', p.id, { text: v, pack: p.id });
+      else S.kvDel('pnote', p.id);
+      $('#pnoteInfo').textContent = '저장됨 · ' + S.fmtTime(Date.now());
+    }, 800);
+  });
+
   $('#readBtn').addEventListener('click', () => {
-    const r = S.load('read', {});
-    if (r[p.id]) delete r[p.id]; else r[p.id] = S.today();
-    S.save('read', r);
+    if (readMarks()[p.id]) S.kvDel('readmark', p.id); else S.kvSet('readmark', p.id, { date: S.today() });
     render.keepScroll = true; render();
   });
   $('#printBtn').addEventListener('click', () => window.print());
@@ -374,12 +491,79 @@ function viewPack() {
     try {
       const a = await AI.askAboutPack(p, text, chatHistory[p.id] || []);
       chatHistory[p.id] = [...(chatHistory[p.id] || []), { q: text, a }];
+      S.recordAsk(p.id, text);
       render.keepScroll = true; render();
     } catch (err) {
       toast(err.message, 4000);
       btn.disabled = false; btn.textContent = '묻기';
     }
   });
+}
+
+function scrollToRatio(el, r) {
+  const top = el.getBoundingClientRect().top + window.scrollY + el.offsetHeight * r - 100;
+  window.scrollTo({ top: Math.max(0, top) });
+}
+
+// ---------- 형광펜: 고르면 아래에 도구 띠가 뜬다 ----------
+let selBar = null;
+function hideSelBar() { if (selBar) selBar.style.display = 'none'; }
+function bindSelection(root, pack) {
+  if (!selBar) {
+    selBar = document.createElement('div');
+    selBar.className = 'selbar noprint';
+    selBar.innerHTML = `${HL.COLORS.map(c => `<button type="button" data-c="${c.id}" class="hl-btn hl-${c.id}" aria-label="${c.name} 형광펜">${c.name}</button>`).join('')}<button type="button" data-memo class="btn sm">메모</button><button type="button" data-x class="btn sm ghost" aria-label="닫기">✕</button>`;
+    document.body.appendChild(selBar);
+    // 버튼을 눌러도 선택이 풀리지 않게
+    selBar.addEventListener('pointerdown', e => e.preventDefault());
+    selBar.addEventListener('mousedown', e => e.preventDefault());
+  }
+  let anchor = null;
+  const onSel = () => {
+    if (!document.body.contains(root)) return;
+    const a = HL.selectionAnchor(root);
+    if (a) { anchor = a; selBar.style.display = 'flex'; }
+    else if (!selBar.contains(document.activeElement)) { selBar.style.display = 'none'; }
+  };
+  document.onselectionchange = onSel;
+  selBar.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.hasAttribute('data-x')) { window.getSelection().removeAllRanges(); hideSelBar(); return; }
+    const a = anchor || HL.selectionAnchor(root);
+    if (!a) return hideSelBar();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const color = b.dataset.c || 'y';
+    S.kvSet('hl', id, { id, pack: pack.id, subject: pack.subject, text: a.text, prefix: a.prefix, suffix: a.suffix, color, note: '', c: Date.now() });
+    window.getSelection().removeAllRanges();
+    hideSelBar();
+    render.keepScroll = true; render();
+    if (b.hasAttribute('data-memo')) setTimeout(() => openMarkDialog(id), 50);
+  };
+}
+
+// 형광펜 하나를 눌렀을 때: 색 바꾸기, 메모, 지우기
+function openMarkDialog(id) {
+  const h = S.kvGet('hl', id);
+  if (!h) return;
+  let dlg = document.getElementById('markDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'markDlg'; dlg.className = 'dlg'; document.body.appendChild(dlg); }
+  dlg.innerHTML = `<form method="dialog">
+    <p class="small muted" style="margin:0">${subjName(h.subject)} · ${esc(D.db().byId[h.pack]?.title || '')} · ${S.fmtDate(S.ymd(new Date(h.c)))}</p>
+    <blockquote class="hl-quote hl-${h.color}">${esc(h.text)}</blockquote>
+    <div class="chips" style="margin:8px 0">${HL.COLORS.map(c => `<label class="chip"><input type="radio" name="color" value="${c.id}"${c.id === h.color ? ' checked' : ''}><span class="hl-sw hl-${c.id}"></span>${c.name}</label>`).join('')}</div>
+    <textarea name="note" placeholder="메모" style="min-height:90px">${esc(h.note || '')}</textarea>
+    <div class="row between" style="margin-top:10px"><button value="del" class="btn sm bad">지우기</button><span class="row"><button value="cancel" class="btn sm ghost">닫기</button><button value="save" class="btn sm pri">저장</button></span></div>
+  </form>`;
+  dlg.onclose = () => {
+    const v = dlg.returnValue;
+    const f = dlg.querySelector('form');
+    if (v === 'save') { const { u, ...rest } = h; S.kvSet('hl', id, { ...rest, color: f.color.value, note: f.note.value.trim() }); }
+    else if (v === 'del') { if (!confirm('이 형광펜과 메모를 지울까?')) return; S.kvDel('hl', id); }
+    else return;
+    render.keepScroll = true; render();
+  };
+  dlg.showModal();
 }
 
 function highlight(root, term) {
@@ -486,6 +670,8 @@ function startSession(items, mode = 'practice', minutes = 30) {
     endAt: mode === 'exam' ? Date.now() + minutes * 60000 : null,
     startedAt: Date.now(),
     submitted: false,
+    id: 's' + Date.now().toString(36),
+    spent: {}, cur: null,
   };
   const here = location.hash === '#/run';
   location.hash = '#/run';
@@ -520,7 +706,16 @@ function navButtons() {
   }).join('')}</div>`;
 }
 
+// 지금 보고 있는 문제에 머문 시간을 더한다
+function tickSpent() {
+  if (!session) return;
+  const now = Date.now();
+  if (session.cur && document.visibilityState === 'visible') session.spent[session.cur.i] = (session.spent[session.cur.i] || 0) + Math.min(now - session.cur.since, 15 * 60000);
+  session.cur = session.submitted || session.results[session.i] ? null : { i: session.i, since: now };
+}
+
 function drawQuestion() {
+  tickSpent();
   const it = session.items[session.i];
   const { pack, q, key } = it;
   const pr = S.qp(key);
@@ -619,9 +814,10 @@ function drawQuestion() {
     render.keepScroll = true; drawQuestion();
   });
   $('#skipBtn')?.addEventListener('click', () => {
+    tickSpent();
     const r = { result: 'wrong', skipped: true };
     session.results[session.i] = r;
-    S.recordAnswer(key, 'wrong', '', null);
+    S.recordAnswer(key, 'wrong', '', null, session.spent[session.i], { skip: true, sess: session.id });
     render.keepScroll = true; drawQuestion();
   });
   bindResult(session.i);
@@ -666,6 +862,7 @@ const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s.,
 
 // i 번째 문제 채점. 결과를 session.results 에 넣고 기록한다.
 async function gradeOne(i, btn) {
+  if (i === session.i) tickSpent();
   const it = session.items[i];
   const { pack, q, key } = it;
   const a = session.answers[i];
@@ -703,7 +900,7 @@ async function gradeOne(i, btn) {
     } else r = { result: null, selfGrade: true };
   }
   session.results[i] = r;
-  if (r.result) S.recordAnswer(key, r.result, a, r.fb || (r.ai ? { kind: 'short', reason: r.ai } : null));
+  if (r.result) S.recordAnswer(key, r.result, a, r.fb || (r.ai ? { kind: 'short', reason: r.ai } : null), session.spent[i], { sess: session.id, exam: session.mode === 'exam' || undefined });
   return r;
 }
 
@@ -740,8 +937,25 @@ function resultHtml(it, r) {
   }
   if (q.explanation) h += `<p style="margin-top:8px"><b>해설</b> ${esc(q.explanation)}</p>`;
   if (q.type !== 'mcq' && a && session.mode === 'exam') h += `<details><summary>내가 쓴 답</summary><p style="white-space:pre-wrap">${esc(a)}</p></details>`;
+  const past = S.attemptsOf(it.key);
+  if (past.length > 1) h += `<details><summary>지금까지 ${past.length}번 풀었다 · 풀이 이력</summary>${attemptList(it, past.slice(0, -1).reverse().slice(0, 8))}<a class="small" href="#/q?key=${encodeURIComponent(it.key)}">전체 이력</a></details>`;
   h += '</div>';
   return h;
+}
+
+const RES = { ok: ['ok', '맞음'], part: ['warn', '부분'], wrong: ['bad', '틀림'] };
+function ansText(q, ans) {
+  if (q.type === 'mcq') return (Array.isArray(ans) ? ans : []).map(n => '①②③④⑤⑥'[n - 1] || n).join(', ') || '(안 고름)';
+  return ans ? String(ans) : '(안 씀)';
+}
+// 문제 하나의 풀이 이력 목록
+function attemptList(it, list) {
+  return `<ul class="list attempts">${list.map(e => {
+    const [cls, word] = RES[e.r] || ['', e.r];
+    return `<li class="item" style="align-items:flex-start"><span class="small mono muted" style="min-width:7.5em">${S.ymd(new Date(e.t)).slice(5).replace('-', '/')} ${S.fmtTime(e.t)}</span>
+      <span class="grow small"><span style="white-space:pre-wrap">${esc(e.skip ? '(모르겠다)' : ansText(it.q, e.ans).slice(0, 400))}</span>${e.fb?.missing ? `<br><span class="muted">AI: ${esc(e.fb.missing)}</span>` : ''}${e.fb?.reason ? `<br><span class="muted">AI: ${esc(e.fb.reason)}</span>` : ''}</span>
+      <span class="tag ${cls}">${word}${e.fb?.max ? ` ${e.fb.score}/${e.fb.max}` : ''}${e.overridden ? ' (고침)' : ''}</span></li>`;
+  }).join('')}</ul>`;
 }
 
 function bindResult(i) {
@@ -763,7 +977,7 @@ function bindResult(i) {
     const result = ratio >= 0.8 ? 'ok' : ratio >= 0.4 ? 'part' : 'wrong';
     const fb = { kind: 'essay', self: true, score, max, criteria: it.q.rubric.map((c, k) => ({ criterion: c.criterion, max: c.points, earned: got.includes(k) ? c.points : 0, comment: '' })), good: '', missing: '', improved: '' };
     session.results[i] = { result, fb };
-    S.recordAnswer(it.key, result, session.answers[i], fb);
+    S.recordAnswer(it.key, result, session.answers[i], fb, session.spent[i], { sess: session.id, exam: session.mode === 'exam' || undefined });
     render.keepScroll = true; drawQuestion();
   });
   $('#retryAi')?.addEventListener('click', async e => {
@@ -777,6 +991,7 @@ async function submitExam() {
   if (!session || session.submitted) return;
   const unanswered = session.items.filter((_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
   if (session.endAt > Date.now() && unanswered && !confirm(`안 쓴 문제가 ${unanswered}개 있다. 제출할까?`)) return;
+  tickSpent();
   session.submitted = true;
   clearInterval(tickTimer._t);
   session.usedMs = Date.now() - session.startedAt;
@@ -796,6 +1011,16 @@ async function submitExam() {
     }
   };
   await Promise.all([worker(), worker()]);
+  const res = session.results;
+  const eIdx = session.items.map((_, i) => i).filter(i => res[i]?.fb?.max);
+  S.recordExam({
+    sess: session.id, n: session.items.length,
+    ok: session.items.filter((_, i) => res[i]?.result === 'ok').length,
+    part: session.items.filter((_, i) => res[i]?.result === 'part').length,
+    sc: eIdx.reduce((a, i) => a + res[i].fb.score, 0), mx: eIdx.reduce((a, i) => a + res[i].fb.max, 0),
+    min: Math.round(session.usedMs / 60000),
+    subj: [...new Set(session.items.map(x => x.pack.subject))],
+  });
   session.viewing = false;
   if (params().path === '/run') render();
 }
@@ -873,7 +1098,7 @@ function viewWrong() {
       ${r.fb?.reason ? `<p><b>AI 피드백</b> ${esc(r.fb.reason)}</p>` : ''}
       ${qq.explanation ? `<p><b>해설</b> ${esc(qq.explanation)}</p>` : ''}
       <p class="small muted">${esc(x.pack.title)} · 마지막 ${esc(r.at || '')}</p>
-      <div class="row"><button class="btn sm" data-one="${esc(x.key)}">이 문제 풀기</button><button class="btn sm ghost" data-done="${esc(x.key)}">이제 안다 (빼기)</button></div>
+      <div class="row"><button class="btn sm" data-one="${esc(x.key)}">이 문제 풀기</button><a class="btn sm ghost" href="#/q?key=${encodeURIComponent(x.key)}">풀이 이력 ${r.n}번</a><button class="btn sm ghost" data-done="${esc(x.key)}">이제 안다 (빼기)</button></div>
     </details>`;
   }).join('') || '<p class="muted">오답이 없다.</p>'}</div>`;
   $$('input[name="ws"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/wrong' + (r.value ? '?s=' + r.value : ''); }));
@@ -949,10 +1174,11 @@ function viewFlash() {
     ${showBack && x.c.note ? `<p class="small muted" style="margin-top:10px">${esc(x.c.note)}</p>` : ''}
   </section>
   ${flash.back ? `<div class="row" style="justify-content:center"><button class="btn bad" id="no" style="flex:1">몰랐다</button><button class="btn ok" id="yes" style="flex:1">알았다</button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
+  if (!flash.shownAt || flash.shownFor !== flash.i) { flash.shownAt = Date.now(); flash.shownFor = flash.i; }
   const flip = () => { flash.back = !flash.back; viewFlash(); };
   $('#fc').addEventListener('click', flip);
   $('#fc').addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
-  const next = knew => { S.recordCard(x.key, knew); if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash(); };
+  const next = knew => { S.recordCard(x.key, knew, Date.now() - flash.shownAt); flash.shownAt = 0; if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash(); };
   $('#yes')?.addEventListener('click', () => next(true));
   $('#no')?.addEventListener('click', () => next(false));
 }
@@ -1008,11 +1234,12 @@ function viewGen() {
     };
     $('#saveGen').addEventListener('click', async () => {
       const { pk, qs } = await saveIt();
+      S.recordGen(pk.id, qs.length);
       const ids = new Set(qs.map(x => x.id));
       genResult = null;
       startSession(D.allQuestions({ packs: [pk.id] }).filter(x => ids.has(x.q.id)), 'practice');
     });
-    $('#saveOnly').addEventListener('click', async () => { await saveIt(); genResult = null; toast('저장했다.'); render(); });
+    $('#saveOnly').addEventListener('click', async () => { const { pk, qs } = await saveIt(); S.recordGen(pk.id, qs.length); genResult = null; toast('저장했다.'); render(); });
   };
   showResult();
   $('#gf').addEventListener('submit', async e => {
@@ -1040,7 +1267,7 @@ function viewGen() {
 // ================= 일정·계획 =================
 function viewPlan() {
   const ex = examInfo();
-  const plan = S.load('plan', []).sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
+  const plan = planList().filter(p => !p.hidden);
   const t = S.today();
   const byDate = {};
   for (const p of plan) (byDate[p.date] = byDate[p.date] || []).push(p);
@@ -1081,64 +1308,141 @@ function viewPlan() {
     D.saveExamLocal(out);
     D.loadAll().then(() => { toast('저장했다.'); render(); });
   });
-  $('#resetExam').addEventListener('click', () => { if (!confirm('이 기기에서 고친 날짜와 범위를 지울까?')) return; S.remove('examLocal'); D.loadAll().then(render); });
+  $('#resetExam').addEventListener('click', () => { if (!confirm('내가 고친 날짜와 범위를 지울까?')) return; D.clearExamLocal(); D.loadAll().then(render); });
   $('#pf').addEventListener('submit', e => {
     e.preventDefault();
     const f = e.target;
-    const all = S.load('plan', []);
-    all.push({ id: Date.now().toString(36), date: f.date.value, subject: f.subject.value, text: f.text.value.trim(), done: false });
-    S.save('plan', all);
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    S.kvSet('plan', id, { id, date: f.date.value, subject: f.subject.value, text: f.text.value.trim(), done: false, c: Date.now() });
     render.keepScroll = true; render();
   });
-  $$('[data-pc]').forEach(cb => cb.addEventListener('change', () => { const all = S.load('plan', []); const it = all.find(p => p.id === cb.dataset.pc); if (it) it.done = cb.checked; S.save('plan', all); render.keepScroll = true; render(); }));
-  $$('[data-pd]').forEach(b => b.addEventListener('click', () => { S.save('plan', S.load('plan', []).filter(p => p.id !== b.dataset.pd)); render.keepScroll = true; render(); }));
-  $('#clearDone')?.addEventListener('click', () => { S.save('plan', S.load('plan', []).filter(p => !p.done)); render.keepScroll = true; render(); });
+  $$('[data-pc]').forEach(cb => cb.addEventListener('change', () => { setPlan(cb.dataset.pc, { done: cb.checked, doneAt: cb.checked ? Date.now() : null }); render.keepScroll = true; render(); }));
+  $$('[data-pd]').forEach(b => b.addEventListener('click', () => { S.kvDel('plan', b.dataset.pd); render.keepScroll = true; render(); }));
+  $('#clearDone')?.addEventListener('click', () => { if (!confirm('끝낸 계획을 목록에서 지울까? 공부 일지에는 남는다.')) return; for (const p of planList()) if (p.done) setPlan(p.id, { hidden: true }); render.keepScroll = true; render(); });
 }
 
 // ================= 기록·타이머 =================
+// 날짜별로 쌓인 값과 누적값
+function dailySeries() {
+  const log = S.getLog();
+  const evs = S.getEvents();
+  const first = evs.length ? S.ymd(new Date(evs[0].t)) : S.today();
+  const days = CH.dayRange(first < S.today() ? first : S.today(), S.today());
+  let cq = 0, cs = 0, cc = 0;
+  return days.map(d => {
+    const l = log[d] || {};
+    const sec = Math.max(S.studySec(l), (l.min || 0) * 60);
+    cq += l.q || 0; cs += sec; cc += l.c || 0;
+    return { d, l, sec, cq, cs, cc };
+  });
+}
+function subjectTime() {
+  const out = {};
+  const subjOfPack = id => D.db().byId[id]?.subject;
+  for (const e of S.getEvents()) {
+    let sub = null, sec = 0;
+    if (e.k === 'r') { sub = subjOfPack(e.pack); sec = e.s; }
+    else if (e.k === 'a') { sub = subjOfPack(e.key.split('::')[0]); sec = Math.min(900, (e.ms || 0) / 1000); }
+    else if (e.k === 'c') { sub = subjOfPack(e.key.split('::')[0]); sec = Math.min(120, (e.ms || 0) / 1000); }
+    if (sub) out[sub] = (out[sub] || 0) + sec;
+  }
+  return out;
+}
+function milestones(series) {
+  const hlCount = Object.keys(S.kvAll('hl')).length;
+  const out = [];
+  const reach = (label, test) => { const hit = series.find(test); out.push({ label, date: hit ? hit.d : null }); };
+  [50, 100, 300, 500, 1000].forEach(n => reach(`문제 ${n}개 풀기`, x => x.cq >= n));
+  [1, 5, 10, 20, 40].forEach(h => reach(`공부 ${h}시간`, x => x.cs >= h * 3600));
+  [100, 500, 1000].forEach(n => reach(`카드 ${n}장 넘기기`, x => x.cc >= n));
+  let run = 0;
+  const streakHit = {};
+  for (const x of series) { run = studied(x.l) ? run + 1 : 0; for (const n of [3, 7, 14, 30]) if (run >= n && !streakHit[n]) streakHit[n] = x.d; }
+  [3, 7, 14, 30].forEach(n => out.push({ label: `${n}일 연속 공부`, date: streakHit[n] || null }));
+  out.push({ label: '형광펜·메모 30개', date: hlCount >= 30 ? '달성' : null });
+  return out;
+}
+
 function viewStats() {
-  const log = S.load('log', {});
-  const days = [];
-  for (let i = 13; i >= 0; i--) days.push(S.addDays(S.today(), -i));
-  const maxQ = Math.max(1, ...days.map(d => log[d]?.q || 0));
+  const series = dailySeries();
+  const last = series[series.length - 1];
+  const total = series.reduce((a, x) => ({ q: a.q + (x.l.q || 0), ok: a.ok + (x.l.ok || 0), min: a.min + (x.l.min || 0) }), { q: 0, ok: 0, min: 0 });
   const st = subjectStats();
+  const stime = subjectTime();
   const units = unitStats().filter(u => u.n).sort((a, b) => a.rate - b.rate);
-  const total = Object.values(log).reduce((a, d) => ({ q: a.q + (d.q || 0), ok: a.ok + (d.ok || 0), min: a.min + (d.min || 0), c: a.c + (d.c || 0) }), { q: 0, ok: 0, min: 0, c: 0 });
   const tm = S.load('timer', null);
+  const ex = examInfo();
+  const studiedDays = series.filter(x => studied(x.l)).length;
+
+  // 잔디: 처음 기록한 날(없으면 오늘)부터 마지막 시험일까지
+  const lastExam = ex.days[ex.days.length - 1] || S.today();
+  const heatDays = CH.dayRange(series[0].d, lastExam > S.today() ? lastExam : S.today()).map(d => {
+    const x = series.find(y => y.d === d);
+    const l = x?.l || {};
+    const m = Math.round((x?.sec || 0) / 60);
+    return { date: d, value: m, future: d > S.today(), label: `${S.fmtDate(d)}\n${d > S.today() ? '아직' : `공부 ${S.fmtDur(x?.sec || 0)} · 문제 ${l.q || 0} · 카드 ${l.c || 0}`}${ex.days.includes(d) ? '\n시험일' : ''}` };
+  });
+  // 7일 정답률
+  const acc = series.map((x, i) => {
+    const w = series.slice(Math.max(0, i - 6), i + 1);
+    const q = w.reduce((a, y) => a + (y.l.q || 0), 0), ok = w.reduce((a, y) => a + (y.l.ok || 0), 0);
+    return { x: x.d, y: q >= 5 ? Math.round((ok / q) * 100) : null, tip: `${S.fmtDate(x.d)}\n최근 7일 ${q}문제 · ${q ? Math.round((ok / q) * 100) : 0}%` };
+  });
+  const ms = milestones(series);
+
   main.innerHTML = `
-  <h1>공부 기록</h1>
-  <section class="grid" style="margin-bottom:14px">
-    <div class="stat"><b>${total.q}</b><span>푼 문제</span></div>
-    <div class="stat"><b>${pct(total.ok, total.q)}%</b><span>전체 정답률</span></div>
-    <div class="stat"><b>${total.c}</b><span>넘긴 카드</span></div>
-    <div class="stat"><b>${Math.floor(total.min / 60)}시간 ${total.min % 60}분</b><span>집중 타이머</span></div>
+  <div class="row between"><h1 style="margin:0">공부 기록</h1><a class="btn sm" href="#/journal">공부 일지 보기</a></div>
+  <section class="grid" style="margin:12px 0 14px">
+    <div class="stat"><b>${S.fmtDur(last.cs)}</b><span>쌓인 공부 시간</span></div>
+    <div class="stat"><b>${total.q}</b><span>푼 문제 · 정답률 ${pct(total.ok, total.q)}%</span></div>
+    <div class="stat"><b>${studiedDays}일</b><span>공부한 날 · 연속 ${streakDays()}일</span></div>
+    <div class="stat"><b>${Object.keys(S.kvAll('hl')).length}</b><span>형광펜·메모</span></div>
   </section>
+
+  <section class="card">
+    <h2>공부한 날</h2>
+    <p class="small muted">하루 공부 시간(자료 읽기 + 문제 풀이 + 카드, 또는 집중 타이머 중 긴 쪽). 칸을 누르면 그날 기록이 보인다.</p>
+    <div class="heat-wrap">${CH.heatmap(heatDays, { marks: ex.days })}</div>
+  </section>
+
+  <div class="grid2">
+    <section class="card"><h2>누적 푼 문제</h2><div data-chart="cq"></div></section>
+    <section class="card"><h2>누적 공부 시간</h2><div data-chart="cs"></div></section>
+  </div>
+  <section class="card"><h2>정답률 변화</h2><p class="small muted">그날까지 최근 7일 동안 푼 문제의 정답률. 5문제 미만인 날은 비운다.</p><div data-chart="acc"></div></section>
 
   <section class="card">
     <h2>집중 타이머</h2>
     <p class="timer" id="ft" style="font-size:2.2rem;margin:6px 0">${tm ? '' : '25:00'}</p>
     <div class="row">${tm ? '<button class="btn bad" id="tStop">멈추기</button>' : [25, 50].map(m => `<button class="btn${m === 25 ? ' pri' : ''}" data-tm="${m}">${m}분</button>`).join('')}</div>
-    <p class="small muted">끝까지 채운 시간만 기록된다. 다른 화면으로 가도 계속 돈다.</p>
-  </section>
-
-  <section class="card">
-    <h2>최근 2주</h2>
-    <div class="bars">${days.map(d => {
-      const v = log[d] || {};
-      return `<div class="b" title="${d}: ${v.q || 0}문제, 맞음 ${v.ok || 0}"><span class="small mono">${v.q || ''}</span><i style="height:${((v.q || 0) / maxQ) * 100}%"></i><small>${Number(d.slice(8))}</small></div>`;
-    }).join('')}</div>
+    <p class="small muted">끝까지 채우면 공부 일지에 남는다. 다른 화면으로 가도 계속 돈다. 지금까지 ${S.fmtDur(total.min * 60)}.</p>
   </section>
 
   <section class="card">
     <h2>과목별</h2>
-    <table class="crit">${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${o.tried}/${o.total}문제</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}</table>
+    <table class="crit"><tr><td class="small muted">과목</td><td class="pt small muted">공부 시간</td><td class="pt small muted">푼 문제</td><td class="pt small muted">정답률</td></tr>
+    ${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}</table>
   </section>
 
-  ${units.length ? `<section class="card"><h2>단원별 정답률</h2><table class="crit">${units.map(u => `<tr><td><a href="#/pack?id=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a><br><span class="small muted">${subjName(u.pack.subject)} · ${u.tried}/${u.total}문제</span></td><td class="pt"><span class="tag ${u.rate >= 0.8 ? 'ok' : u.rate >= 0.5 ? 'warn' : 'bad'}">${Math.round(u.rate * 100)}%</span></td></tr>`).join('')}</table></section>` : ''}`;
+  ${units.length ? `<section class="card"><h2>단원별 정답률</h2><table class="crit">${units.map(u => `<tr><td><a href="#/pack?id=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a><br><span class="small muted">${subjName(u.pack.subject)} · ${u.tried}/${u.total}문제 · 읽은 시간 ${S.fmtDur(S.readTimeOf(u.pack.id))}</span></td><td class="pt"><span class="tag ${u.rate >= 0.8 ? 'ok' : u.rate >= 0.5 ? 'warn' : 'bad'}">${Math.round(u.rate * 100)}%</span></td></tr>`).join('')}</table></section>` : ''}
+
+  <section class="card">
+    <h2>쌓은 기록</h2>
+    <ul class="list ms">${ms.map(m => `<li class="item"><span class="ms-ic ${m.date ? 'on' : ''}">${m.date ? '✓' : ''}</span><span class="grow">${m.label}</span><span class="small muted">${m.date ? (m.date === '달성' ? '달성' : S.fmtDate(m.date)) : '아직'}</span></li>`).join('')}</ul>
+  </section>`;
+  // 그래프는 들어갈 칸의 실제 너비에 맞춰 그린다 (글자 크기가 일정하게)
+  const charts = {
+    cq: w => CH.line(series.map(x => ({ x: x.d, y: x.cq, tip: `${S.fmtDate(x.d)}\n누적 ${x.cq}문제 (그날 ${x.l.q || 0})` })), { width: w, fmt: v => Math.round(v) + '', label: '누적 푼 문제' }),
+    cs: w => CH.line(series.map(x => ({ x: x.d, y: x.cs / 3600, tip: `${S.fmtDate(x.d)}\n누적 ${S.fmtDur(x.cs)} (그날 ${S.fmtDur(x.sec)})` })), { width: w, fmt: v => (Math.round(v * 10) / 10) + 'h', label: '누적 공부 시간' }),
+    acc: w => CH.line(acc, { width: w, height: 190, fmt: v => Math.round(v) + '%', yMax: 100, area: false, label: '최근 7일 정답률' }),
+  };
+  $$('[data-chart]').forEach(el => { el.innerHTML = charts[el.dataset.chart](el.clientWidth); });
+  CH.bindTips(main);
+  $$('.heat rect[data-tip]').forEach((r, i) => r.addEventListener('click', () => { const d = heatDays[i]; if (d && !d.future) location.hash = '#/journal?d=' + d.date; }));
   $$('[data-tm]').forEach(b => b.addEventListener('click', () => { S.save('timer', { start: Date.now(), len: Number(b.dataset.tm) }); startTimerLoop(); render.keepScroll = true; render(); }));
   $('#tStop')?.addEventListener('click', () => {
     const t = S.load('timer', null);
-    if (t) { const m = Math.floor((Date.now() - t.start) / 60000); if (m > 0) S.logDay({ min: m }); }
+    if (t) S.recordFocus(Math.floor((Date.now() - t.start) / 60000));
     S.remove('timer'); toast('멈췄다. 지난 시간은 기록했다.'); render.keepScroll = true; render();
   });
   startTimerLoop();
@@ -1152,7 +1456,7 @@ function startTimerLoop() {
     const el = document.getElementById('ft');
     if (left <= 0) {
       S.remove('timer');
-      S.logDay({ min: t.len });
+      S.recordFocus(t.len);
       clearInterval(startTimerLoop._t);
       toast(`${t.len}분 집중 끝. 5분 쉬자.`, 5000);
       try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
@@ -1165,12 +1469,184 @@ function startTimerLoop() {
   startTimerLoop._t = setInterval(tick, 1000);
 }
 
+// ================= 공부 일지 =================
+// 하루의 일들을 묶어서 문장으로 보여준다
+function dayEntries(d) {
+  const evs = S.getEvents().filter(e => S.ymd(new Date(e.t)) === d);
+  const out = [];
+  let run = null; // 이어서 푼 문제 묶음
+  const flushRun = () => { if (run) { out.push(run); run = null; } };
+  for (const e of evs) {
+    if (e.k === 'a') {
+      if (run && (run.sess === e.sess || e.t - run.end < 15 * 60000) && run.kind === 'solve') { run.items.push(e); run.end = e.t; continue; }
+      flushRun();
+      run = { kind: 'solve', t: e.t, end: e.t, sess: e.sess, items: [e] };
+      continue;
+    }
+    if (e.k === 'c') {
+      if (run && run.kind === 'cards' && e.t - run.end < 15 * 60000) { run.items.push(e); run.end = e.t; continue; }
+      flushRun();
+      run = { kind: 'cards', t: e.t, end: e.t, items: [e] };
+      continue;
+    }
+    if (e.k === 'o' || e.k === 'f') continue;
+    flushRun();
+    out.push({ kind: e.k, t: e.t, e });
+  }
+  flushRun();
+  // 형광펜·메모, 끝낸 계획
+  const marks = Object.values(S.kvAll('hl')).filter(h => S.ymd(new Date(h.c)) === d);
+  const byPack = {};
+  for (const h of marks) (byPack[h.pack] = byPack[h.pack] || []).push(h);
+  for (const pk in byPack) out.push({ kind: 'hl', t: Math.min(...byPack[pk].map(h => h.c)), pack: pk, list: byPack[pk] });
+  for (const p of planList()) if (p.done && p.doneAt && S.ymd(new Date(p.doneAt)) === d) out.push({ kind: 'plan', t: p.doneAt, p });
+  const notes = Object.values(S.kvAll('pnote')).filter(n => S.ymd(new Date(n.u)) === d);
+  for (const n of notes) out.push({ kind: 'pnote', t: n.u, n });
+  return out.sort((a, b) => a.t - b.t);
+}
+function entryHtml(x) {
+  const time = `<span class="j-time mono">${S.fmtTime(x.t)}</span>`;
+  const packName = id => { const p = D.db().byId[id]; return p ? `${subjDot(p.subject)} <a href="#/pack?id=${encodeURIComponent(id)}">${esc(p.title)}</a>` : esc(id); };
+  if (x.kind === 'solve') {
+    const ok = x.items.filter(e => e.r === 'ok').length, part = x.items.filter(e => e.r === 'part').length;
+    const subs = [...new Set(x.items.map(e => D.db().byId[e.key.split('::')[0]]?.subject).filter(Boolean))];
+    const sec = x.items.reduce((a, e) => a + Math.min(900, (e.ms || 0) / 1000), 0);
+    const rows = x.items.map(e => {
+      const pk = D.db().byId[e.key.split('::')[0]];
+      const q = pk?.questions?.find(z => String(z.id) === e.key.split('::')[1]);
+      const [cls, word] = RES[e.r] || ['', e.r];
+      return `<li class="item"><a class="grow small" href="#/q?key=${encodeURIComponent(e.key)}">${esc((q?.question || e.key).slice(0, 60))}</a><span class="tag ${cls}">${word}${e.fb?.max ? ` ${e.fb.score}/${e.fb.max}` : ''}</span></li>`;
+    }).join('');
+    return `<li class="j-row">${time}<div class="grow"><details><summary>문제 ${x.items.length}개 풀이 · <b>${ok}</b> 맞음${part ? ` · ${part} 부분` : ''} · ${subs.map(subjName).join(', ')}${sec ? ` · ${S.fmtDur(sec)}` : ''}${x.items.some(e => e.exam) ? ' <span class="tag vio">실전</span>' : ''}</summary><ul class="list">${rows}</ul></details></div></li>`;
+  }
+  if (x.kind === 'cards') {
+    const knew = x.items.filter(e => e.knew).length;
+    const packs = [...new Set(x.items.map(e => e.key.split('::')[0]))];
+    return `<li class="j-row">${time}<div class="grow">암기카드 ${x.items.length}장 · ${knew}장 알았음 · ${packs.map(packName).join(', ')}</div></li>`;
+  }
+  const e = x.e;
+  if (x.kind === 'r') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} ${S.fmtDur(e.s)} 읽음</div></li>`;
+  if (x.kind === 'm') return `<li class="j-row">${time}<div class="grow">집중 타이머 ${e.min}분</div></li>`;
+  if (x.kind === 'x') return `<li class="j-row">${time}<div class="grow"><span class="tag vio">실전</span> ${e.n}문제 · ${e.ok} 맞음${e.mx ? ` · 서술형 ${e.sc}/${e.mx}점` : ''} · ${e.min}분 · ${(e.subj || []).map(subjName).join(', ')}</div></li>`;
+  if (x.kind === 'q') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} 에 질문: <span class="muted">${esc(e.text)}</span></div></li>`;
+  if (x.kind === 'g') return `<li class="j-row">${time}<div class="grow">AI 문제 ${e.n}개 만듦 · ${packName(e.pack)}</div></li>`;
+  if (x.kind === 'hl') return `<li class="j-row">${time}<div class="grow">${packName(x.pack)} 형광펜·메모 ${x.list.length}개<ul class="small" style="margin:4px 0 0;padding-left:1.1em">${x.list.slice(0, 5).map(h => `<li><span class="hl-sw hl-${h.color}"></span> <a href="#/pack?id=${encodeURIComponent(h.pack)}&mark=${h.id}">${esc(h.text.slice(0, 50))}</a>${h.note ? ` <span class="muted">✎ ${esc(h.note.slice(0, 60))}</span>` : ''}</li>`).join('')}</ul></div></li>`;
+  if (x.kind === 'plan') return `<li class="j-row">${time}<div class="grow">계획 끝냄: ${x.p.subject ? subjDot(x.p.subject) + ' ' : ''}${esc(x.p.text)}</div></li>`;
+  if (x.kind === 'pnote') return `<li class="j-row">${time}<div class="grow">${packName(x.n.pack)} 단원 메모 고침</div></li>`;
+  return '';
+}
+
+function viewJournal() {
+  const { q } = params();
+  const log = S.getLog();
+  const one = q.get('d');
+  const evDays = new Set(S.getEvents().map(e => S.ymd(new Date(e.t))));
+  for (const h of Object.values(S.kvAll('hl'))) evDays.add(S.ymd(new Date(h.c)));
+  for (const id in S.kvAll('diary')) evDays.add(id);
+  evDays.add(S.today());
+  let days = [...evDays].sort().reverse();
+  const limit = Number(q.get('n') || 7);
+  if (one) days = [one];
+  const shown = days.slice(0, limit);
+  main.innerHTML = `
+  <div class="row between"><h1 style="margin:0">공부 일지</h1>${one ? '<a class="btn sm" href="#/journal">전체 날짜</a>' : '<a class="btn sm ghost" href="#/stats">그래프</a>'}</div>
+  <p class="small muted">공부한 흔적이 날짜별로 쌓인다. 하루 끝에 한 줄 회고를 남겨 두면 시험 전에 다시 볼 수 있다.</p>
+  ${shown.map(d => {
+    const l = log[d] || {};
+    const list = dayEntries(d);
+    const diary = S.kvGet('diary', d);
+    const exD = examInfo().days.includes(d);
+    return `<section class="card j-day">
+      <div class="row between"><h2 style="margin:0">${S.fmtDate(d)} ${d === S.today() ? '<span class="tag ok">오늘</span>' : ''}${exD ? '<span class="tag bad">시험일</span>' : ''}</h2><span class="small muted">${dLabel(examInfo().first) && d <= examInfo().first ? `시험 ${S.daysBetween(d, examInfo().first)}일 전` : ''}</span></div>
+      <div class="j-sum small">
+        <span><b>${S.fmtDur(S.studySec(l))}</b> 공부</span>
+        <span><b>${l.q || 0}</b> 문제 ${l.q ? `(${pct(l.ok, l.q)}%)` : ''}</span>
+        <span><b>${l.c || 0}</b> 카드</span>
+        <span><b>${S.fmtDur(l.read || 0)}</b> 읽기</span>
+        ${l.min ? `<span><b>${l.min}분</b> 타이머</span>` : ''}
+      </div>
+      ${list.length ? `<ul class="j-list">${list.map(entryHtml).join('')}</ul>` : '<p class="small muted">기록이 없다.</p>'}
+      <label class="field"><span>한 줄 회고</span><textarea class="diary" data-day="${d}" rows="2" style="min-height:56px" placeholder="오늘 잘된 것, 헷갈린 것, 내일 할 것">${esc(diary?.text || '')}</textarea></label>
+    </section>`;
+  }).join('')}
+  ${!one && days.length > limit ? `<a class="btn block" href="#/journal?n=${limit + 14}">이전 날짜 더 보기</a>` : ''}`;
+  $$('textarea.diary').forEach(t => {
+    let tm = null;
+    t.addEventListener('input', () => {
+      clearTimeout(tm);
+      tm = setTimeout(() => { if (t.value.trim()) S.kvSet('diary', t.dataset.day, { text: t.value }); else S.kvDel('diary', t.dataset.day); }, 700);
+    });
+  });
+}
+
+// ================= 형광펜·메모 모아보기 =================
+function viewMarks() {
+  const { q } = params();
+  const fs = q.get('s') || '', fc = q.get('c') || '', fp = q.get('pack') || '', term = (q.get('q') || '').trim().toLowerCase();
+  let list = Object.values(S.kvAll('hl'));
+  if (fs) list = list.filter(h => h.subject === fs);
+  if (fc) list = list.filter(h => h.color === fc);
+  if (fp) list = list.filter(h => h.pack === fp);
+  if (q.get('memo')) list = list.filter(h => h.note);
+  if (term) list = list.filter(h => (h.text + ' ' + (h.note || '')).toLowerCase().includes(term));
+  const notes = Object.values(S.kvAll('pnote')).filter(n => (!fs || D.db().byId[n.pack]?.subject === fs) && (!fp || n.pack === fp));
+  const order = D.db().packs.map(p => p.id);
+  const byPack = {};
+  for (const h of list) (byPack[h.pack] = byPack[h.pack] || []).push(h);
+  const packs = Object.keys(byPack).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const link = patch => { const p = new URLSearchParams(q); for (const k in patch) { if (patch[k]) p.set(k, patch[k]); else p.delete(k); } return '#/marks' + (p.toString() ? '?' + p : ''); };
+  main.innerHTML = `
+  <h1>형광펜·메모 모아보기</h1>
+  <p class="small muted">시험 직전에 내가 칠한 곳과 메모만 훑어본다.</p>
+  <form id="mf" class="row" style="margin:8px 0"><input type="search" name="q" placeholder="형광펜·메모에서 찾기" value="${esc(q.get('q') || '')}" style="flex:1"><button class="btn">찾기</button></form>
+  <div class="chips" style="margin-bottom:6px"><a class="chip${!fs ? ' on' : ''}" href="${link({ s: '' })}">전체</a>${SUBJECTS.map(s => `<a class="chip${fs === s.id ? ' on' : ''}" href="${link({ s: s.id })}">${subjDot(s.id)}${s.name}</a>`).join('')}</div>
+  <div class="chips" style="margin-bottom:12px"><a class="chip${!fc ? ' on' : ''}" href="${link({ c: '' })}">모든 색</a>${HL.COLORS.map(c => `<a class="chip${fc === c.id ? ' on' : ''}" href="${link({ c: c.id })}"><span class="hl-sw hl-${c.id}"></span>${c.name}</a>`).join('')}<a class="chip${q.get('memo') ? ' on' : ''}" href="${link({ memo: q.get('memo') ? '' : '1' })}">메모 있는 것만</a>${fp ? `<a class="chip on" href="${link({ pack: '' })}">${esc(D.db().byId[fp]?.title || fp)} ✕</a>` : ''}</div>
+  ${notes.length && !fc && !term ? `<section class="card flat"><h2>단원 메모</h2>${notes.map(n => `<p><a href="#/pack?id=${encodeURIComponent(n.pack)}"><b>${esc(D.db().byId[n.pack]?.title || n.pack)}</b></a><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
+  ${packs.map(pk => {
+    const p = D.db().byId[pk];
+    return `<section class="card flat"><h2>${p ? subjDot(p.subject) + ' ' + esc(p.title) : esc(pk)}</h2><ul class="list">${byPack[pk].sort((a, b) => a.c - b.c).map(h => `<li class="item" style="align-items:flex-start"><span class="grow"><a class="hl-text hl-${h.color}" href="#/pack?id=${encodeURIComponent(h.pack)}&mark=${h.id}">${esc(h.text)}</a>${h.note ? `<br><span class="small">✎ ${esc(h.note)}</span>` : ''}</span><span class="small muted">${S.fmtDate(S.ymd(new Date(h.c)))}</span></li>`).join('')}</ul></section>`;
+  }).join('') || '<p class="muted">아직 없다. 자료 본문에서 글자를 길게 눌러 골라 본다.</p>'}`;
+  $('#mf').addEventListener('submit', e => { e.preventDefault(); location.hash = link({ q: e.target.q.value.trim() }); });
+}
+
+// ================= 문제 하나의 기록 =================
+function viewQuestion() {
+  const { q } = params();
+  const key = q.get('key') || '';
+  const [pid, qid] = key.split('::');
+  const pack = D.db().byId[pid];
+  const qq = pack?.questions?.find(z => String(z.id) === qid);
+  if (!qq) { main.innerHTML = '<p class="muted">문제를 찾지 못했다. 자료가 바뀌었을 수 있다.</p>'; return; }
+  const it = { pack, q: qq, key };
+  const past = S.attemptsOf(key);
+  const pr = S.qp(key);
+  let right = '';
+  if (qq.type === 'mcq') right = (Array.isArray(qq.answer) ? qq.answer : [qq.answer]).map(n => `${'①②③④⑤⑥'[n - 1]} ${esc(qq.choices[n - 1])}`).join('<br>');
+  if (qq.type === 'short') right = qq.answers.map(esc).join(' / ');
+  if (qq.type === 'essay') right = `<span style="white-space:pre-wrap">${esc(qq.model_answer)}</span>`;
+  const last = [...past].reverse().find(e => e.fb?.improved);
+  main.innerHTML = `
+  <p class="small"><a href="#/pack?id=${encodeURIComponent(pid)}">← ${esc(pack.title)}</a></p>
+  <section class="card">
+    <div class="q-head">${subjDot(pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span>${pr ? `<span class="tag">${pr.ok}/${pr.n} 맞음</span>${pr.wrong ? '<span class="tag bad">오답노트</span>' : ''}${pr.star ? '<span class="tag warn">★</span>' : ''}${pr.due ? `<span class="tag">다음 복습 ${pr.due.slice(5).replace('-', '/')}</span>` : ''}` : ''}</div>
+    ${qq.context ? `<div class="q-ctx">${esc(qq.context)}</div>` : ''}
+    <div class="q-text">${esc(qq.question)}</div>
+    ${qq.type === 'mcq' ? `<ol class="small">${qq.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
+    <details><summary>정답과 해설</summary><p>${right}</p>${qq.explanation ? `<p class="small">${esc(qq.explanation)}</p>` : ''}</details>
+    <div class="row" style="margin-top:10px"><button class="btn pri" id="again">다시 풀기</button></div>
+  </section>
+  <section class="card"><h2>풀이 이력 ${past.length}번</h2>${past.length ? attemptList(it, [...past].reverse()) : '<p class="muted small">아직 안 풀었다.</p>'}</section>
+  ${last ? `<section class="card"><h2>AI 가 고쳐 준 답 (마지막)</h2><p style="white-space:pre-wrap">${esc(last.fb.improved)}</p></section>` : ''}`;
+  $('#again').addEventListener('click', () => startSession([it], 'practice'));
+}
+
 // ================= 설정·가져오기 =================
 let pendingImport = null;
 function viewSettings() {
   const s = AI.settings();
-  const local = S.load('packs', {});
-  const localList = Object.values(local);
+  const localList = D.localPacks();
+  const sc = SYNC.conf();
+  const st = SYNC.getStatus();
   main.innerHTML = `
   <h1>설정</h1>
   <section class="card" id="import">
@@ -1184,6 +1660,28 @@ function viewSettings() {
   ${localList.length ? `<section class="card"><h2>이 기기에 가져온 자료 ${localList.length}개</h2><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
   <p class="small muted">"JSON 복사" 한 내용을 저장소 data/packs/과목/ 에 파일로 올리면 모든 기기에서 보인다.</p></section>` : ''}
 
+  <section class="card" id="sync">
+    <h2>기록 동기화 (GitHub 비공개 Gist)</h2>
+    <p class="small">푼 기록, 풀이 이력, 공부 일지, 형광펜·메모, 계획, 가져온 자료를 내 GitHub 의 <b>비공개 Gist</b> 에 쌓는다. 태블릿·휴대폰·컴퓨터에서 같은 토큰을 넣으면 기록이 합쳐진다. 지우는 일이 없어서 두 기기에서 동시에 공부해도 기록이 사라지지 않는다. API 키와 토큰은 올라가지 않는다.</p>
+    ${SYNC.isOn() ? `
+      <p>연결됨: <b>${esc(sc.login || '')}</b> · <a href="${SYNC.gistUrl()}" target="_blank" rel="noopener">Gist 보기</a></p>
+      <p class="small" id="syncState">${syncText(st)}</p>
+      <label class="row small"><input type="checkbox" id="syncAuto"${sc.auto ? ' checked' : ''}> 자동 동기화 (기록이 생기면 15초 뒤, 앱을 다시 열 때, 10분마다)</label>
+      <div class="row" style="margin-top:8px"><button class="btn pri" id="syncNow">지금 동기화</button><button class="btn ghost bad" id="syncOff">연결 끊기</button></div>
+    ` : `
+      <details${sc.gistId ? ' open' : ''}><summary>토큰 만드는 법</summary><ol class="small">
+        <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> 를 연다 (Fine-grained token).</li>
+        <li>Token name: <code>study-hub</code>, Expiration: 시험 뒤 날짜 (예: 2027-01-31).</li>
+        <li>Repository access 는 "Public repositories" 그대로 둔다.</li>
+        <li><b>Account permissions → Gists → Read and write</b> 로 바꾼다. 다른 권한은 주지 않는다.</li>
+        <li>Generate token 을 눌러 나온 <code>github_pat_...</code> 를 아래에 붙여넣는다.</li>
+      </ol><p class="small muted">이 토큰은 Gist 만 다룰 수 있다. 공용 기기에는 넣지 않는다. 기기마다 같은 토큰을 넣으면 된다.</p></details>
+      <label class="field"><span>GitHub 토큰</span><input type="password" id="ghToken" placeholder="github_pat_..." autocomplete="off"></label>
+      <button class="btn pri" id="syncConnect">연결하고 동기화</button>
+      ${sc.gistId ? '<p class="small muted">전에 연결했던 Gist 가 있다. 토큰을 다시 넣으면 그 Gist 를 이어서 쓴다.</p>' : ''}
+    `}
+  </section>
+
   <section class="card">
     <h2>AI 채점 (Claude API)</h2>
     <p class="small">서술형 채점, 단답형 유사 답 확인, 자료 질문, 문제 만들기에 쓴다. 키는 <b>이 기기의 브라우저에만</b> 저장되고, 요청은 이 브라우저에서 Anthropic 으로 바로 간다. 키는 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> 에서 만든다. 쓴 만큼 요금이 나온다.</p>
@@ -1195,7 +1693,8 @@ function viewSettings() {
 
   <section class="card">
     <h2>백업</h2>
-    <p class="small muted">푼 기록, 오답노트, 계획, 가져온 자료는 이 기기에만 있다. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업 파일을 받아 둔다. (API 키는 빼고 저장된다)</p>
+    <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
+    <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label><button class="btn bad ghost" id="reset">기록 초기화</button></div>
   </section>`;
 
@@ -1248,7 +1747,7 @@ function viewSettings() {
     D.deleteLocalPack(b.dataset.del); await D.loadAll(); render.keepScroll = true; render();
   }));
   $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-    const p = S.load('packs', {})[b.dataset.copy];
+    const p = D.localPacks().find(x => x.id === b.dataset.copy);
     try { await navigator.clipboard.writeText(JSON.stringify(p, null, 2)); toast('복사했다.'); } catch (e) { toast('복사하지 못했다.'); }
   }));
 
@@ -1267,7 +1766,7 @@ function viewSettings() {
 
   // 백업
   $('#exp').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(S.exportAll(false), null, 1)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(S.exportAll())], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `study-hub-백업-${S.today()}.json`;
@@ -1279,24 +1778,57 @@ function viewSettings() {
     if (!f) return;
     try {
       S.importAll(JSON.parse(await f.text()));
-      toast('불러왔다. 새로고침한다.');
-      setTimeout(() => location.reload(), 800);
+      await D.loadAll();
+      toast('불러와서 합쳤다.');
+      render();
     } catch (err) { toast(err.message, 4000); }
   });
   $('#reset').addEventListener('click', () => {
-    if (!confirm('푼 기록, 오답노트, 카드 기록, 하루 기록을 모두 지울까? 자료와 계획, API 키는 남는다.')) return;
+    if (SYNC.isOn()) return toast('동기화 중에는 지워도 Gist 에서 다시 돌아온다. 먼저 연결을 끊는다.', 4500);
+    if (!confirm('이 기기의 푼 기록, 풀이 이력, 카드·읽기·타이머 기록을 모두 지울까? 자료, 계획, 형광펜·메모, API 키는 남는다.')) return;
     S.resetProgress(); toast('지웠다.'); render();
   });
+
+  // 동기화
+  $('#syncConnect')?.addEventListener('click', async e => {
+    const tok = $('#ghToken').value.trim();
+    if (!tok) return toast('토큰을 붙여넣는다.');
+    const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 연결 중';
+    try { const r = await SYNC.connect(tok); toast(`${r.login} 의 Gist 에 연결했다.`); await D.loadAll(); render(); }
+    catch (err) { toast(err.message, 5000); b.disabled = false; b.textContent = '연결하고 동기화'; }
+  });
+  $('#syncNow')?.addEventListener('click', async e => {
+    const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 동기화 중';
+    await SYNC.syncNow();
+    const st2 = SYNC.getStatus();
+    toast(st2.state === 'ok' ? '동기화했다.' : st2.msg, 4000);
+    b.disabled = false; b.textContent = '지금 동기화';
+  });
+  $('#syncAuto')?.addEventListener('change', e => SYNC.setAuto(e.target.checked));
+  $('#syncOff')?.addEventListener('click', () => {
+    if (!confirm('이 기기에서 동기화를 끊을까? 이 기기와 Gist 의 기록은 그대로 남는다.')) return;
+    SYNC.disconnect(); render();
+  });
+}
+
+function syncText(st) {
+  if (st.state === 'busy') return '<span class="spin"></span> 동기화 중';
+  if (st.state === 'error') return `<span style="color:var(--bad)">동기화 실패: ${esc(st.msg)}</span>`;
+  if (st.state === 'dirty') return '올릴 기록이 있다. 곧 동기화한다.';
+  if (st.at) return `마지막 동기화 ${S.fmtDate(S.ymd(new Date(st.at)))} ${S.fmtTime(st.at)}`;
+  return '';
 }
 
 // ================= 더보기, 도움말 =================
 function viewMore() {
   const links = [
+    ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고'],
+    ['#/marks', '형광펜·메모 모아보기', '자료에 칠한 곳과 메모만 훑어보기'],
     ['#/cards', '암기카드', '용어, 단어, 연도를 카드로 외운다'],
     ['#/gen', 'AI 문제 만들기', '자료를 보고 새 문제를 만든다'],
     ['#/plan', '시험 일정과 계획', '과목별 날짜·범위, 할 일 목록'],
-    ['#/stats', '공부 기록과 타이머', '정답률, 약한 단원, 집중 타이머'],
-    ['#/settings', '설정과 자료 가져오기', 'API 키, JSON 붙여넣기, 백업'],
+    ['#/stats', '공부 기록과 그래프', '잔디 달력, 누적 그래프, 정답률 변화, 쌓은 기록, 집중 타이머'],
+    ['#/settings', '설정', '기록 동기화, API 키, 자료 가져오기, 백업'],
     ['#/help', '사용법', '자료를 넣는 방법과 기능 설명'],
   ];
   main.innerHTML = `<h1>더보기</h1><section class="card flat"><ul class="list">${links.map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span>›</a></li>`).join('')}</ul></section>`;
@@ -1325,15 +1857,41 @@ function viewHelp() {
 
 문제 풀기에서 방식을 "실전" 으로 고르면 제한 시간 안에 다 풀고 한꺼번에 채점한다. 시험 전 주에 과목별로 한 번씩 해 본다.
 
-## 기록은 이 기기에만
+## 공부 흔적
 
-푼 기록, 오답, 계획, 가져온 자료는 지금 쓰는 브라우저에만 저장된다. 휴대폰과 컴퓨터를 같이 쓰면 [설정 → 백업](#/settings) 으로 파일을 옮긴다.
+- **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
+- **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
+- **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 아래에 색 버튼이 뜬다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
+- **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.
+- **그래프**: [기록](#/stats) 에 공부한 날 달력, 누적 문제 수, 누적 공부 시간, 정답률 변화, 과목별 공부 시간, 달성한 기록이 나온다.
+
+## 기록 동기화
+
+[설정 → 기록 동기화](#/settings) 에 GitHub 토큰(Gists 읽기·쓰기 권한만)을 넣으면 기록이 내 비공개 Gist 에 쌓이고, 같은 토큰을 넣은 다른 기기와 합쳐진다. 동기화를 안 쓰면 기록은 그 기기의 브라우저에만 있다. 어느 쪽이든 가끔 [백업 파일](#/settings) 을 받아 둔다.
 `)}</article>`;
 }
 
 // ---------- 시작 ----------
 applyTheme();
+window.addEventListener('sh-save-failed', () => toast('저장 공간이 부족하다. 설정에서 백업을 받고 동기화를 켜 줘.', 6000));
+const syncDot = document.getElementById('syncDot');
+SYNC.onStatus(st => {
+  if (!syncDot) return;
+  syncDot.hidden = !SYNC.isOn() && st.state === 'off';
+  syncDot.className = 'syncdot ' + st.state;
+  syncDot.title = st.state === 'error' ? '동기화 실패: ' + st.msg : st.state === 'busy' ? '동기화 중' : st.state === 'dirty' ? '올릴 기록 있음' : st.at ? '동기화됨 ' + S.fmtTime(st.at) : '동기화 꺼짐';
+  syncDot.textContent = st.state === 'error' ? '동기화 실패' : st.state === 'busy' ? '동기화 중' : st.state === 'dirty' ? '저장 대기' : '동기화됨';
+  const el = document.getElementById('syncState');
+  if (el) el.innerHTML = syncText(st);
+});
+// 다른 기기 기록을 받아 합쳤으면 화면을 다시 그린다 (글을 쓰는 중이면 미룬다)
+window.addEventListener('sh-synced', async () => {
+  await D.loadAll();
+  const busy = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+  if (!busy && !['/run', '/flash'].includes(params().path)) { render.keepScroll = true; render(); }
+});
 D.loadAll().then(() => {
   render();
   startTimerLoop();
+  SYNC.startAuto();
 });

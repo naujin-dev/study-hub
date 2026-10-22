@@ -1,5 +1,5 @@
 // 공부자료(자료 묶음)를 불러오고 검사한다.
-import { load, save } from './store.js';
+import { kvAll, kvSet, kvDel } from './store.js';
 
 export const FORMAT = 'study-hub/1';
 
@@ -112,7 +112,8 @@ export async function loadAll() {
   }
   try { exam = await getJSON('data/exam.json'); } catch (err) { loadErrors.push('data/exam.json 을 읽지 못했다.'); }
 
-  const local = load('packs', {});
+  const local = {};
+  for (const p of localPacks()) local[p.id] = p;
   const byId = {};
   for (const p of repoPacks) {
     const errs = validatePack(p, p._path || p.id);
@@ -144,7 +145,7 @@ function packOrder(a, b) {
 // 저장소의 시험 정보 위에 내가 이 기기에서 고친 날짜/범위를 덮어쓴다.
 function mergeExam(repo) {
   const base = repo || { title: '2회고사', days: [], subjects: {} };
-  const mine = load('examLocal', {});
+  const mine = kvAll('exam');
   const subjects = {};
   for (const s of SUBJECTS) {
     const r = (base.subjects && base.subjects[s.id]) || {};
@@ -160,25 +161,30 @@ function mergeExam(repo) {
 }
 
 export function saveLocalPacks(packs) {
-  const local = load('packs', {});
   const now = new Date().toISOString();
   for (const p of packs) {
     const copy = { ...p };
     delete copy._src; delete copy._path; delete copy._shadow;
     if (!copy.updated) copy.updated = now;
-    local[copy.id] = copy;
+    kvSet('packs', copy.id, { pack: copy });
   }
-  return save('packs', local);
+  return true;
+}
+export function localPacks() {
+  return Object.values(kvAll('packs')).map(v => v.pack).filter(Boolean);
 }
 export function deleteLocalPack(id) {
-  const local = load('packs', {});
-  delete local[id];
-  save('packs', local);
+  kvDel('packs', id);
 }
 export function saveExamLocal(subjects) {
-  const mine = load('examLocal', {});
-  for (const id in subjects) mine[id] = { ...(mine[id] || {}), ...subjects[id] };
-  save('examLocal', mine);
+  const mine = kvAll('exam');
+  for (const id in subjects) {
+    const { u, ...rest } = mine[id] || {};
+    kvSet('exam', id, { ...rest, ...subjects[id] });
+  }
+}
+export function clearExamLocal() {
+  for (const id in kvAll('exam')) kvDel('exam', id);
 }
 
 // ---------- 편의 함수 ----------
