@@ -1197,6 +1197,9 @@ function tickTimer() {
 }
 
 const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s.,·・、。'"‘’“”()\[\]{}~!?\-_/]/g, '');
+// 빈칸이 여럿인 답 ("이승만, 이시영") 은 순서를 바꿔 써도 맞다
+const partsKey = s => String(s || '').split(/\s*[,，、]\s*/).map(norm).filter(Boolean).sort().join('|');
+const shortOk = (answers, a) => answers.some(x => norm(x) === norm(a) || (/[,，、]/.test(x) && partsKey(x) === partsKey(a)));
 
 // i 번째 문제 채점. 결과를 session.results 에 넣고 기록한다.
 async function gradeOne(i, btn) {
@@ -1212,7 +1215,7 @@ async function gradeOne(i, btn) {
     r = { result: sel === right ? 'ok' : 'wrong' };
   } else if (q.type === 'short') {
     if (empty) r = { result: 'wrong' };
-    else if (q.answers.some(x => norm(x) === norm(a))) r = { result: 'ok' };
+    else if (shortOk(q.answers, a)) r = { result: 'ok' };
     else if (AI.hasKey()) {
       if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> AI 가 확인 중'; }
       try {
@@ -2569,7 +2572,8 @@ function checkPack(p) {
       if (ans.length > 1 && !/모두|두 개|2개|고른 것|있는 대로/.test(q.question)) add('warn', w, '답이 여러 개인데 발문에 "모두 고르면" 같은 말이 없다.');
     }
     if (q.type === 'short') {
-      if (q.answers.some(a => /[,/]|또는/.test(a) && a.length > 3)) add('warn', w, `정답 "${q.answers.find(a => /[,/]|또는/.test(a))}" 에 쉼표나 / 가 있다. 다른 표기는 answers 에 따로 나눠야 채점이 된다.`);
+      // 쉼표는 빈칸 여러 개로 보고 순서 상관없이 채점한다. "/" 나 "또는" 은 다른 표기를 한 칸에 몰아 쓴 것일 수 있다
+      if (q.answers.some(a => /\/|또는/.test(a) && a.length > 3)) add('warn', w, `정답 "${q.answers.find(a => /\/|또는/.test(a))}" 에 / 나 "또는" 이 있다. 다른 표기라면 answers 에 따로 나눠야 채점이 된다.`);
     }
     if (q.type === 'essay') {
       const sum = D.essayMax(q);
