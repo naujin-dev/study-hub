@@ -1,8 +1,8 @@
 // 오프라인 모드: 사이트 파일을 이 기기에 저장해 두고, 인터넷이 없으면 저장본을 보여준다.
 // 인터넷이 있으면 항상 새 파일을 먼저 받고 (받은 것으로 저장본도 새로 고친다), 없을 때만 저장본을 쓴다.
 // VERSION 과 FILES 는 scripts/bump_version.py 가 쓴다.
-const VERSION = '20261022053835';
-const FILES = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "data/index.json", "data/exam.json", "js/ai.js", "js/app.js", "js/charts.js", "js/data.js", "js/hl.js", "js/prompts.js", "js/src.js", "js/store.js", "js/sync.js", "js/vendor/anthropic-sdk-0.131.0.js", "js/vendor/marked-12.0.2.min.js", "js/vendor/purify-3.1.6.min.js"];
+const VERSION = '20261022055001';
+const FILES = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "data/index.json", "data/exam.json", "data/plan.json", "js/ai.js", "js/app.js", "js/charts.js", "js/data.js", "js/hl.js", "js/prompts.js", "js/src.js", "js/store.js", "js/sync.js", "js/vendor/anthropic-sdk-0.131.0.js", "js/vendor/marked-12.0.2.min.js", "js/vendor/purify-3.1.6.min.js"];
 const CACHE = 'study-hub';
 
 self.addEventListener('install', e => {

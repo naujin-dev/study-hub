@@ -70,8 +70,32 @@ const picked = name => $$(`input[name="${name}"]:checked`).map(i => i.value);
 
 // ---------- 기록 헬퍼 ----------
 const readMarks = () => S.kvAll('readmark');
-const planList = () => Object.values(S.kvAll('plan')).map(p => ({ ...p })).sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
-function setPlan(id, patch) { const cur = S.kvGet('plan', id); if (cur) { const { u, ...rest } = cur; S.kvSet('plan', id, { ...rest, ...patch }); } }
+// Notion 주간 계획(data/plan.json)의 할 일. 체크 상태는 kv 'plan' 에 같은 id 로 덮어쓴다.
+const stripDate = t => t.replace(/^(\S+\s)?\d{1,2}\/\d{1,2}(\([월화수목금토일]\))?(~\d{1,2})?\s*/, (m, pre) => pre && !/\d/.test(pre) ? pre : '');
+function notionItems() {
+  const p = D.db().plan;
+  if (!p || !Array.isArray(p.weeks)) return [];
+  const out = [];
+  for (const w of p.weeks) for (const g of w.groups || []) for (const it of g.items || []) {
+    out.push({ id: it.id, date: it.date || null, subject: g.subject || '', label: g.label || '', text: it.self ? it.text : stripDate(it.text), raw: it.text, group: it.self ? '' : g.title, week: w.id, done: !!it.done, notion: true });
+  }
+  return out;
+}
+function planList() {
+  const kv = S.kvAll('plan');
+  const nis = notionItems();
+  const ids = new Set(nis.map(n => n.id));
+  const merged = nis.map(n => (kv[n.id] ? { ...n, ...kv[n.id], notion: true, text: n.text, group: n.group, date: n.date } : n));
+  const mine = Object.values(kv).filter(x => !ids.has(x.id) && !x.notion).map(p => ({ ...p }));
+  return [...merged, ...mine].sort((a, b) => ((a.date || '9') + a.id).localeCompare((b.date || '9') + b.id));
+}
+function setPlan(id, patch) {
+  const cur = S.kvGet('plan', id) || notionItems().find(n => n.id === id);
+  if (!cur) return;
+  const { u, ...rest } = cur;
+  S.kvSet('plan', id, rest.notion ? { id, notion: true, done: rest.done, ...patch } : { ...rest, ...patch });
+}
+const planLine = p => `${p.subject ? subjDot(p.subject) + ' ' : p.label ? `<span class="tag">${esc(p.label)}</span> ` : ''}${esc(p.text)}${p.group ? `<br><span class="small muted">${esc(p.group.length > 60 ? p.group.slice(0, 60) + '…' : p.group)}</span>` : ''}`;
 
 // ---------- 시험 날짜 ----------
 function examInfo() {
@@ -212,6 +236,8 @@ function viewHome() {
   const packs = D.db().packs;
   const t = S.today();
   const plan = planList().filter(p => p.date === t && !p.hidden);
+  const curWeek = (D.db().plan?.weeks || []).find(w => w.start <= t && t <= w.end);
+  const weekLeft = curWeek ? planList().filter(p => p.notion && p.week === curWeek.id && !p.date && !p.done && !p.hidden).length : 0;
   const log = S.getLog()[t] || { q: 0, ok: 0, c: 0, min: 0, read: 0, solve: 0, card: 0 };
   const lastRead = [...S.getEvents()].reverse().find(e => e.k === 'r' && D.db().byId[e.pack]);
   const pos = lastRead ? S.kvGet('pos', lastRead.pack) : null;
@@ -263,7 +289,8 @@ function viewHome() {
   </div>
 
   ${plan.length ? `<div class="sec-title"><h2>오늘 계획</h2><a class="small" href="#/plan">전체 보기</a></div>
-  <section class="card flat"><ul class="list">${plan.map(p => `<li><label class="item"><input type="checkbox" data-plan="${p.id}"${p.done ? ' checked' : ''}><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label></li>`).join('')}</ul></section>` : ''}
+  <section class="card flat"><ul class="list">${plan.map(p => `<li><label class="item" style="align-items:flex-start"><input type="checkbox" data-plan="${p.id}"${p.done ? ' checked' : ''} style="margin-top:5px"><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${planLine(p)}</span></label></li>`).join('')}</ul>
+  <p class="small muted" style="margin:8px 0 0">끝낸 것 ${plan.filter(p => p.done).length}/${plan.length}${weekLeft ? ` · 이번 주 날짜 없는 할 일 ${weekLeft}개 남음` : ''}</p></section>` : ''}
 
   ${goals.length ? `<div class="sec-title"><h2>하루 목표</h2><span class="small muted">안 푼 문제 + 오답 ÷ 남은 날</span></div>
   <section class="card flat"><ul class="list">${goals.map(g => `<li class="item">${subjDot(g.s.id)}<span class="grow">${g.s.name}</span><span class="small muted">${g.todo}문제 · ${g.left}일</span><b class="mono">하루 ${g.per}</b></li>`).join('')}</ul></section>` : ''}
@@ -1449,12 +1476,34 @@ function viewGen() {
 // ================= 일정·계획 =================
 function viewPlan() {
   const ex = examInfo();
-  const plan = planList().filter(p => !p.hidden);
+  const all = planList().filter(p => !p.hidden);
+  const plan = all.filter(p => !p.notion);
   const t = S.today();
   const byDate = {};
   for (const p of plan) (byDate[p.date] = byDate[p.date] || []).push(p);
+  const np = D.db().plan;
+  const byId = Object.fromEntries(all.map(p => [p.id, p]));
+  const weeksHtml = np && np.weeks ? np.weeks.map(w => {
+    const items = w.groups.flatMap(g => g.items.map(i => byId[i.id]).filter(Boolean));
+    const done = items.filter(i => i.done).length;
+    const isCur = w.start <= t && t <= w.end;
+    return `<details class="card flat week${isCur ? ' cur' : ''}"${isCur ? ' open' : ''}>
+      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ' <span class="tag ok">이번 주</span>' : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
+        <div class="bar" style="margin-top:6px"><i style="width:${pct(done, items.length)}%"></i></div></summary>
+      ${w.note ? `<p class="small muted" style="white-space:pre-wrap">${esc(w.note)}</p>` : ''}
+      ${w.groups.map(g => {
+        const gi = g.items.map(i => byId[i.id]).filter(Boolean);
+        if (!gi.length) return '';
+        const self = g.items.length === 1 && g.items[0].self;
+        return `<div class="wgroup"><div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(self ? '' : g.title)}</b></div>
+          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''} style="margin-top:5px"><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${esc(p.text)}</span></li>`).join('')}</ul></div>`;
+      }).join('')}
+      ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
+    </details>`;
+  }).join('') : '';
   main.innerHTML = `
   <h1>시험 일정과 계획</h1>
+  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획에서 가져옴</span></div>${weeksHtml}` : ''}
   <section class="card">
     <h2>과목별 시험 날짜·범위</h2>
     <p class="small muted">아직 정해지지 않았으면 "미정". 여기서 고친 값은 이 기기에만 저장된다. 저장소의 data/exam.json 이 바뀌면 그 값이 기본값이 된다.</p>
@@ -1470,7 +1519,7 @@ function viewPlan() {
   </section>
 
   <section class="card">
-    <h2>공부 계획</h2>
+    <h2>내가 더한 계획</h2>
     <form id="pf" class="grid2">
       <label class="field"><span>날짜</span><input type="date" name="date" value="${t}" required></label>
       <label class="field"><span>과목</span><select name="subject"><option value="">없음</option>${SUBJECTS.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select></label>

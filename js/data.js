@@ -103,7 +103,7 @@ export function parseImport(text) {
 }
 
 // ---------- 불러오기 ----------
-let state = { packs: [], byId: {}, exam: null, loadErrors: [] };
+let state = { packs: [], byId: {}, exam: null, plan: null, loadErrors: [] };
 export function db() { return state; }
 
 async function getJSON(url) {
@@ -125,6 +125,8 @@ export async function loadAll() {
     loadErrors.push('data/index.json 을 읽지 못했다: ' + err.message);
   }
   try { exam = await getJSON('data/exam.json'); } catch (err) { loadErrors.push('data/exam.json 을 읽지 못했다.'); }
+  let plan = null;
+  try { plan = await getJSON('data/plan.json'); } catch (err) { /* 공부 계획 파일은 없어도 된다 */ }
 
   const local = {};
   for (const p of localPacks()) local[p.id] = p;
@@ -144,7 +146,7 @@ export async function loadAll() {
     }
   }
   const packs = Object.values(byId).sort(packOrder);
-  state = { packs, byId, exam: mergeExam(exam), loadErrors };
+  state = { packs, byId, exam: mergeExam(exam), plan, loadErrors };
   return state;
 }
 

@@ -37,7 +37,7 @@ else:
 (ROOT / "version.json").write_text(json.dumps({"v": v}) + "\n", encoding="utf-8")
 
 # 오프라인 모드: sw.js 의 버전과 미리 저장할 파일 목록
-files = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "data/index.json", "data/exam.json"]
+files = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "data/index.json", "data/exam.json", "data/plan.json"]
 files += [f"js/{m}" for m in mods]
 files += sorted(f"js/vendor/{p.name}" for p in (ROOT / "js" / "vendor").glob("*.js"))
 idx = ROOT / "data" / "index.json"

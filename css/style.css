@@ -324,3 +324,13 @@ dialog.dlg.wide{width:min(900px,calc(100% - 32px))}
 }
 @media print{.src-pane{position:static;max-height:none;overflow:visible}}
 .netdot{font-size:.72rem;color:var(--warn);border:1px solid var(--warn);border-radius:999px;padding:2px 8px;white-space:nowrap}
+
+/* ---------- 주간 공부 계획 ---------- */
+details.week{margin-bottom:10px}
+details.week>summary{list-style:none;color:var(--ink)}
+details.week>summary::-webkit-details-marker{display:none}
+details.week.cur{border-color:color-mix(in srgb,var(--ok) 50%,var(--rule))}
+.wgroup{margin-top:12px}
+.wg-h{display:flex;gap:6px;align-items:center;font-size:.92rem}
+.pdate{min-width:3.6em;color:var(--ink3);padding-top:2px}
+.pdate.today{color:var(--ok);font-weight:700}
