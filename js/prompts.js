@@ -115,7 +115,8 @@ const FORMAT = `## 형식
 
 - date 는 과목 시험일이 나왔으면 "2026-12-18" 꼴 (12월 18·21·22일 중 하나), 안 나왔으면 null.`;
 
-export function chatPrompt(id) {
+export function chatPrompt(id, { light = false } = {}) {
+  if (light) return lightPrompt(id);
   const g = SUBJECT_GUIDE[id];
   return `지금까지 너와 정리한 2회고사 ${g.name} 공부자료를 내 공부 사이트에 넣으려고 해. 사이트는 아래 JSON 형식만 읽을 수 있어.
 
@@ -152,6 +153,50 @@ ${g.cards}. 많을수록 좋다.
 ${FORMAT.replaceAll('@ID@', g.id)}
 
 먼저 1번 목차부터 보여줘.`;
+}
+
+// 가벼운 버전: 문제·카드 수를 줄이고, 이미 정리한 내용은 새로 쓰지 않고 형식만 바꾸게 해서 답을 짧게 한다.
+function lightPrompt(id) {
+  const g = SUBJECT_GUIDE[id];
+  return `지금까지 너와 정리한 2회고사 ${g.name} 공부자료를 내 공부 사이트에 넣으려고 해. 사용량을 아껴야 해서 답은 짧게 부탁해. 사이트는 아래 JSON 형식만 읽을 수 있어.
+
+## 할 일
+
+1. 먼저 목차만 짧은 표로 보여줘. ${g.units} 나눠서, 자료마다 id 와 제목만. 표 아래에 대략적인 시험 범위를 한 줄로 (확실하지 않으면 "추정").
+2. 내가 "시작" 이라고 하면 자료 하나씩 JSON 을 줘. 한 답에 자료 하나. 코드 블록 밖에는 다음 자료 이름 한 줄만 쓰고, 내가 "다음" 이라고 하면 이어서.
+3. 마지막 자료 다음에 시험 정보 JSON 을 줘.
+
+## 줄이는 기준
+
+- 앞에서 이미 정리한 내용이 있으면 새로 쓰지 말고 그 내용을 그대로 notes 에 옮긴다. 새로 쓸 때는 핵심만 표와 목록으로, 자료 하나에 30줄 안팎.
+- 문제는 자료마다 객관식 5개, 단답형 3개, 서술형 1개. 시험에 나올 가능성이 가장 높은 것부터.
+- 암기카드는 자료마다 꼭 외울 것 10~20장. (${g.cards})
+- explanation 은 한 문장. difficulty, source, summary 는 넣지 않는다.
+
+## 문제 유형
+
+${g.questions}
+- 서술형 rubric 은 항목 2~3개로 쪼개고 배점을 매긴다. model_answer 는 기준을 다 채운 답안.
+
+## 지킬 것
+
+- 너에게 준 자료(교과서, 학습지, 수업 필기, 시험 범위)에 있는 내용으로 만든다. 없는 걸 지어내지 않는다.
+- JSON 은 \`\`\`json 코드 블록 하나에만 넣는다. 쉼표, 따옴표, 이스케이프를 꼭 확인해. 형식이 틀리면 사이트가 그 자료를 못 읽는다.
+- id(자료, 문제, 카드)는 한 번 정하면 바꾸지 않는다. id 가 바뀌면 내 풀이 기록이 끊긴다.
+
+${lightFormat().replaceAll('@ID@', g.id)}
+
+먼저 1번 목차부터 보여줘.`;
+}
+
+// 가벼운 버전 형식: 선택 필드(summary, difficulty, source)를 뺀다
+function lightFormat() {
+  return FORMAT
+    .replace('  "summary": "한두 문장 요약",\n', '')
+    .replace(', "difficulty": 2, "source": "교과서 54쪽"', '')
+    .replace(', "difficulty": 1', '')
+    .replace(', "difficulty": 3', '')
+    .replace(/\n- difficulty: [^\n]*/, '');
 }
 
 export const FIX_PROMPT = `네가 준 JSON 을 사이트에 넣었더니 아래 오류가 나왔어. 고친 JSON 을 다시 줘. id 는 바꾸지 마.

@@ -1899,7 +1899,8 @@ function syncText(st) {
 function viewPrompts() {
   const { q } = params();
   const sel = q.get('s') || 'kor';
-  const text = PR.chatPrompt(sel);
+  const light = q.get('v') === 'light';
+  const text = PR.chatPrompt(sel, { light });
   main.innerHTML = `
   <h1>공부자료 Claude 에게 보낼 프롬프트</h1>
   <ol class="small" style="padding-left:1.2em">
@@ -1909,14 +1910,17 @@ function viewPrompts() {
     <li>JSON 이 오면 코드 블록 오른쪽 위 복사 버튼으로 복사해서 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣고 "검사" → "가져오기".</li>
     <li>Claude 에게 "다음" 이라고 보내고 4번을 되풀이한다.</li>
   </ol>
+  ${chipGroup('pv', [{ value: '', label: '기본' }, { value: 'light', label: '가벼운 버전 (사용량 적게)' }], [light ? 'light' : ''], false)}
+  <p class="small muted" style="margin:6px 0 10px">${light ? '자료마다 객관식 5 · 단답형 3 · 서술형 1, 카드 10~20장. 이미 정리한 내용은 새로 쓰지 않고 옮기기만 한다. Sonnet 이나 Haiku 로 써도 된다. 문제가 모자라면 나중에 "AI 문제 만들기" 로 더 받는다.' : '자료마다 객관식 8~15 · 단답형 4~8 · 서술형 2~4, 카드는 많이. 답이 길어서 사용량이 많다.'}</p>
   ${chipGroup('ps', SUBJECTS.map(s => ({ value: s.id, label: s.name, dot: true })), [sel], false)}
   <section class="card" style="margin-top:12px">
-    <div class="row between"><h2 style="margin:0">${subjName(sel)}</h2><button class="btn pri" data-copy-text="main">복사</button></div>
+    <div class="row between"><h2 style="margin:0">${subjName(sel)}${light ? ' · 가벼운 버전' : ''}</h2><button class="btn pri" data-copy-text="main">복사</button></div>
     <pre class="prompt" id="ptext">${esc(text)}</pre>
   </section>
   <section class="card"><div class="row between"><h2 style="margin:0">오류가 났을 때</h2><button class="btn sm" data-copy-text="fix">복사</button></div><pre class="prompt">${esc(PR.FIX_PROMPT)}</pre></section>
   <section class="card"><div class="row between"><h2 style="margin:0">시험 범위·날짜가 나왔을 때</h2><button class="btn sm" data-copy-text="range">복사</button></div><pre class="prompt">${esc(PR.RANGE_PROMPT)}</pre></section>`;
-  $$('input[name="ps"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + r.value; }));
+  $$('input[name="ps"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + r.value + (light ? '&v=light' : ''); }));
+  $$('input[name="pv"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + sel + (r.value ? '&v=light' : ''); }));
   const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT };
   $$('[data-copy-text]').forEach(b => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(texts[b.dataset.copyText]); toast('복사했다. Claude 채팅에 붙여넣는다.'); }
