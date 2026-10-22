@@ -42,6 +42,37 @@ export function heatmap(days, { marks = [], max } = {}) {
   return s;
 }
 
+// ---------- 월별 달력 ----------
+// days: [{date, value(분), label, future}] 를 달마다 보통 달력(일~토)으로 그린다.
+export function monthCalendar(days, { marks = [], today = '' } = {}) {
+  if (!days.length) return '';
+  const byDate = Object.fromEntries(days.map(d => [d.date, d]));
+  const peak = Math.max(30, ...days.map(d => d.value || 0));
+  const level = v => (v <= 0 ? 0 : v < peak * 0.25 ? 1 : v < peak * 0.5 ? 2 : v < peak * 0.75 ? 3 : 4);
+  const months = [];
+  for (const d of days) { const m = d.date.slice(0, 7); if (!months.includes(m)) months.push(m); }
+  let s = '<div class="mcal-wrap">';
+  for (const m of months) {
+    const [y, mo] = m.split('-').map(Number);
+    const first = new Date(y, mo - 1, 1).getDay();
+    const last = new Date(y, mo, 0).getDate();
+    s += `<div class="mcal"><div class="mcal-h">${mo}월</div><div class="mcal-g">`;
+    s += '일월화수목금토'.split('').map((w, i) => `<span class="wd${i === 0 ? ' sun' : ''}">${w}</span>`).join('');
+    for (let i = 0; i < first; i++) s += '<span></span>';
+    for (let dd = 1; dd <= last; dd++) {
+      const date = `${m}-${String(dd).padStart(2, '0')}`;
+      const d = byDate[date];
+      const lv = d ? level(d.value) : 0;
+      const cls = ['d', d ? `lv${lv}` : 'out', d && d.future ? 'fut' : '', marks.includes(date) ? 'exam' : '', date === today ? 'today' : ''].filter(Boolean).join(' ');
+      s += `<span class="${cls}"${d ? ` data-tip="${esc(d.label)}" data-date="${date}"` : ''}>${dd}</span>`;
+    }
+    s += '</div></div>';
+  }
+  s += '</div>';
+  s += `<div class="heat-legend small muted"><span>적음</span>${[0, 1, 2, 3, 4].map(i => `<i class="lv${i}"></i>`).join('')}<span>많음</span><span style="margin-left:10px"><i class="mk"></i> 시험일</span><span style="margin-left:10px"><i class="td"></i> 오늘</span></div>`;
+  return s;
+}
+
 // ---------- 꺾은선 (한 계열) ----------
 // pts: [{x: 'YYYY-MM-DD', y: 숫자, tip}] , fmt: y 값 글자로
 export function line(pts, { fmt = v => String(v), area = true, height = 170, yMax, label = '', width = 640 } = {}) {

@@ -285,3 +285,22 @@ dialog.dlg::backdrop{background:rgba(0,0,0,.35)}
 a.chip{text-decoration:none}
 @media (min-width:900px){.grid2{grid-template-columns:1fr 1fr}}
 pre.prompt{white-space:pre-wrap;word-break:break-word;font:.84rem/1.6 var(--mono);background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:12px;max-height:60vh;overflow:auto;margin:10px 0 0;user-select:text}
+
+/* ---------- 월별 달력 (공부한 날) ---------- */
+.mcal-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px;margin-top:6px}
+.mcal-h{font-weight:600;margin-bottom:6px}
+.mcal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.mcal-g span{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font:500 .78rem var(--mono);color:var(--ink2)}
+.mcal-g .wd{aspect-ratio:auto;font:500 .72rem var(--sans);color:var(--ink3);padding-bottom:2px}
+.mcal-g .wd.sun{color:var(--bad)}
+.mcal-g .d{cursor:pointer;background:var(--sunk);border:1px solid var(--rule)}
+.mcal-g .d.out{background:transparent;border-color:transparent;color:var(--ink3);opacity:.5;cursor:default}
+.mcal-g .d.fut{background:transparent;cursor:default}
+.mcal-g .lv1,.heat-legend i.lv1{background:color-mix(in srgb,var(--acc) 22%,var(--card));border-color:transparent}
+.mcal-g .lv2,.heat-legend i.lv2{background:color-mix(in srgb,var(--acc) 45%,var(--card));border-color:transparent}
+.mcal-g .lv3,.heat-legend i.lv3{background:color-mix(in srgb,var(--acc) 70%,var(--card));border-color:transparent;color:var(--paper)}
+.mcal-g .lv4,.heat-legend i.lv4{background:var(--acc);border-color:transparent;color:var(--paper)}
+.heat-legend i.lv0{background:var(--sunk);border:1px solid var(--rule)}
+.mcal-g .d.exam{outline:2px solid var(--bad);outline-offset:-2px;color:var(--bad);font-weight:700}
+.mcal-g .d.today{outline:2px solid var(--ink);outline-offset:-2px}
+.heat-legend i.td{border:2px solid var(--ink);background:transparent;vertical-align:-2px}

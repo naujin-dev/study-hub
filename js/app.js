@@ -1450,7 +1450,9 @@ function viewStats() {
 
   // 잔디: 처음 기록한 날(없으면 오늘)부터 마지막 시험일까지
   const lastExam = ex.days[ex.days.length - 1] || S.today();
-  const heatDays = CH.dayRange(series[0].d, lastExam > S.today() ? lastExam : S.today()).map(d => {
+  // 처음 기록한 달 1일부터 마지막 시험이 있는 달 말일까지
+  const calEnd = (() => { const e = lastExam > S.today() ? lastExam : S.today(); const [y, m] = e.split('-').map(Number); return S.ymd(new Date(y, m, 0)); })();
+  const heatDays = CH.dayRange(series[0].d.slice(0, 8) + '01', calEnd).map(d => {
     const x = series.find(y => y.d === d);
     const l = x?.l || {};
     const m = Math.round((x?.sec || 0) / 60);
@@ -1475,8 +1477,8 @@ function viewStats() {
 
   <section class="card">
     <h2>공부한 날</h2>
-    <p class="small muted">하루 공부 시간(자료 읽기 + 문제 풀이 + 카드, 또는 집중 타이머 중 긴 쪽). 칸을 누르면 그날 기록이 보인다.</p>
-    <div class="heat-wrap">${CH.heatmap(heatDays, { marks: ex.days })}</div>
+    <p class="small muted">색이 진할수록 그날 오래 공부했다 (자료 읽기 + 문제 풀이 + 카드, 또는 집중 타이머 중 긴 쪽). 날짜를 누르면 그날 공부 일지가 열린다.</p>
+    ${CH.monthCalendar(heatDays, { marks: ex.days, today: S.today() })}
   </section>
 
   <div class="grid2">
@@ -1512,7 +1514,7 @@ function viewStats() {
   };
   $$('[data-chart]').forEach(el => { el.innerHTML = charts[el.dataset.chart](el.clientWidth); });
   CH.bindTips(main);
-  $$('.heat rect[data-tip]').forEach((r, i) => r.addEventListener('click', () => { const d = heatDays[i]; if (d && !d.future) location.hash = '#/journal?d=' + d.date; }));
+  $$('.mcal .d[data-date]').forEach(el => el.addEventListener('click', () => { if (el.dataset.date <= S.today()) location.hash = '#/journal?d=' + el.dataset.date; }));
   $$('[data-tm]').forEach(b => b.addEventListener('click', () => { S.save('timer', { start: Date.now(), len: Number(b.dataset.tm) }); startTimerLoop(); render.keepScroll = true; render(); }));
   $('#tStop')?.addEventListener('click', () => {
     const t = S.load('timer', null);
