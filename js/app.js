@@ -28,8 +28,26 @@ function toast(msg, ms = 2200) {
   toast._t = setTimeout(() => t.classList.remove('show'), ms);
 }
 
+// 물결표 하나(~)는 "1~4구" 처럼 범위를 쓸 때 흔해서 취소선으로 바꾸지 않는다.
+// 취소선은 물결표 두 개(~~글~~)로 쓴 것만 그린다.
+let mdReady = false;
+function setupMarked() {
+  if (mdReady || !window.marked) return;
+  window.marked.use({
+    tokenizer: {
+      del(src) {
+        const m = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?!~)/.exec(src);
+        if (m) return { type: 'del', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+        return undefined;
+      },
+    },
+  });
+  mdReady = true;
+}
+
 function md(text) {
   if (!text) return '';
+  setupMarked();
   if (window.marked && window.DOMPurify) {
     return window.DOMPurify.sanitize(window.marked.parse(text, { gfm: true, breaks: false }));
   }
