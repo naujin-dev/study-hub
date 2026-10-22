@@ -347,3 +347,4 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .quickpill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));z-index:39;display:none;gap:8px;align-items:center;background:var(--card);color:var(--ink);border:1px solid var(--rule);border-radius:999px;padding:6px 12px 6px 6px;font:inherit;font-size:.85rem;box-shadow:0 6px 18px -8px rgba(0,0,0,.35);cursor:pointer}
 @media (min-width:900px){.quickpill{bottom:20px;left:calc(50% + 42px)}}
 @media print{.quickpill{display:none!important}}
+.ptitle .btn{vertical-align:middle;margin-left:6px;font-weight:400}

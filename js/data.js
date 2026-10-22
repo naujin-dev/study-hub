@@ -170,6 +170,11 @@ export async function loadAll() {
     const have = new Set((p.book || []).map(q => String(q.id)));
     byId[b.pack] = { ...p, book: [...(p.book || []), ...b.book.filter(q => !have.has(String(q.id)))] };
   }
+  // 사이트에서 바꾼 자료 이름(kv 'ptitle'). 원래 이름은 _title 에 남긴다
+  for (const [id, t] of Object.entries(kvAll('ptitle'))) {
+    const p = byId[id];
+    if (p && typeof t.title === 'string' && t.title.trim()) byId[id] = { ...p, title: t.title.trim(), _title: p.title };
+  }
   const packs = Object.values(byId).sort(packOrder);
   state = { packs, byId, exam: mergeExam(exam), plan, loadErrors };
   return state;
@@ -229,6 +234,10 @@ export function saveBook(packId, book) {
   const have = new Map((cur?.book || []).map(q => [String(q.id), q]));
   for (const q of book) have.set(String(q.id), q);
   kvSet('bookq', packId, { pack: packId, book: [...have.values()] });
+}
+export function renamePack(id, title) {
+  const t = String(title || '').trim();
+  if (t) kvSet('ptitle', id, { title: t }); else kvDel('ptitle', id);
 }
 export function savePlan(plan) {
   kvSet('notionplan', 'plan', { plan });

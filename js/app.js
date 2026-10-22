@@ -486,7 +486,7 @@ function viewPack() {
     const pages = [...new Set(book.map(b => (String(b.source || b.page || '').match(/\d+\s*쪽/) || [])[0]).filter(Boolean))];
     main.innerHTML = `
     <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-    <h1>${esc(p.title)}</h1>
+    <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
     <section class="card book-gate">
       <h2>먼저 책 문제를 푼다</h2>
       <p>공부자료를 보기 전에 책 문제 <b>${book.length}개</b>를 먼저 풀어 본다. 다 풀고 채점하면 공부자료가 열린다. 모르는 문제는 "모르겠다" 로 넘긴다.</p>
@@ -498,7 +498,7 @@ function viewPack() {
 
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-  <h1>${esc(p.title)}</h1>
+  <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.ymd(new Date(bookDone.t)))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
@@ -676,6 +676,20 @@ function openSrcDialog(p, t) {
   };
   dlg.showModal();
 }
+
+// 자료 이름 바꾸기. 이 기기와 동기화된 기기에서만 바뀌고 자료 파일은 그대로다
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-rename]');
+  if (!b) return;
+  const p = D.db().byId[b.dataset.rename];
+  if (!p) return;
+  const t = prompt(`새 이름을 쓴다. 비워 두면 원래 이름(${p._title || p.title})으로 돌아간다.`, p.title);
+  if (t === null) return;
+  D.renamePack(p.id, t);
+  await D.loadAll();
+  toast(t.trim() ? '이름을 바꿨다.' : '원래 이름으로 돌렸다.');
+  render.keepScroll = true; render();
+});
 
 // ---------- 형광펜: 고르면 아래에 도구 띠가 뜬다 ----------
 let selBar = null;
