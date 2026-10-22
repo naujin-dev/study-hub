@@ -361,10 +361,14 @@ function viewStudy() {
     results = `<section class="card flat"><h2>"${esc(term)}" 찾은 결과 ${hits.length}개</h2><ul class="list">${hits.map(h => `<li><a class="item" href="#/pack?id=${encodeURIComponent(h.p.id)}&hl=${encodeURIComponent(term)}">${subjDot(h.p.subject)}<span class="grow"><b>${esc(h.p.title)}</b><br><span class="small muted">${h.where.map(esc).join(' · ')}</span></span></a></li>`).join('') || '<li class="item muted">없다.</li>'}</ul></section>`;
   }
 
+  const editing = q.get('order') || '';
   const groups = SUBJECTS.filter(s => !sel || s.id === sel).map(s => {
     const list = packs.filter(p => p.subject === s.id);
     if (!list.length) return sel ? `<p class="muted">${s.name} 자료가 아직 없다.</p>` : '';
-    return `<div class="sec-title"><h2>${subjDot(s.id)} ${s.name}</h2><span class="small muted">${list.length}개</span></div>
+    if (editing === s.id) return `<div class="sec-title"><h2>${subjDot(s.id)} ${s.name} 순서 바꾸기</h2><span class="row"><button class="btn sm ghost" data-ord-reset="${s.id}">원래 순서로</button><button class="btn sm pri" data-ord-done>다 했다</button></span></div>
+    <section class="card flat"><ul class="list ordlist">${list.map((p, i) => `<li class="item"><span class="mono small muted" style="width:2em">${i + 1}</span><span class="grow"><b>${esc(p.title)}</b></span>
+      <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < list.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button></li>`).join('')}</ul></section>`;
+    return `<div class="sec-title"><h2>${subjDot(s.id)} ${s.name}</h2><span class="row small muted">${list.length}개${list.length > 1 ? ` <a class="btn sm ghost noprint" href="#/study?${sel ? 's=' + sel + '&' : ''}order=${s.id}">순서 바꾸기</a>` : ''}</span></div>
     <section class="card flat"><ul class="list">${list.map(p => {
       const qs = p.questions || [];
       const tried = qs.filter(x => prog[D.qkey(p, x)]?.n).length;
@@ -385,6 +389,23 @@ function viewStudy() {
   ${groups || '<p class="muted" style="margin-top:16px">자료가 없다. <a href="#/settings">설정 → 자료 가져오기</a></p>'}
   `;
   $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/study' + (r.value ? '?s=' + r.value : ''); }));
+  const back = '#/study' + (sel ? '?s=' + sel : '');
+  $$('[data-mv]').forEach(b => b.addEventListener('click', async () => {
+    const p = D.db().byId[b.dataset.mv];
+    const ids = D.db().packs.filter(x => x.subject === p.subject).map(x => x.id);
+    const i = ids.indexOf(p.id), j = i + Number(b.dataset.d);
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    D.savePackOrder(p.subject, ids);
+    await D.loadAll();
+    render.keepScroll = true; render();
+  }));
+  $('[data-ord-done]')?.addEventListener('click', () => { location.hash = back; });
+  $('[data-ord-reset]')?.addEventListener('click', async e => {
+    if (!confirm('이 과목 자료를 원래 순서로 돌릴까?')) return;
+    D.savePackOrder(e.currentTarget.dataset.ordReset, null);
+    await D.loadAll(); render.keepScroll = true; render();
+  });
   $('#sf').addEventListener('submit', e => {
     e.preventDefault();
     const v = e.target.q.value.trim();

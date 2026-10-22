@@ -175,7 +175,16 @@ export async function loadAll() {
     const p = byId[id];
     if (p && typeof t.title === 'string' && t.title.trim()) byId[id] = { ...p, title: t.title.trim(), _title: p.title };
   }
-  const packs = Object.values(byId).sort(packOrder);
+  // 사이트에서 정한 과목별 자료 순서(kv 'porder'). 목록에 없는 자료는 그 뒤에 원래 순서로
+  const rank = {};
+  for (const o of Object.values(kvAll('porder'))) (o.ids || []).forEach((id, i) => { rank[id] = i; });
+  const packs = Object.values(byId).sort((a, b) => {
+    if (a.subject === b.subject) {
+      const ra = rank[a.id] ?? 1e9, rb = rank[b.id] ?? 1e9;
+      if (ra !== rb) return ra - rb;
+    }
+    return packOrder(a, b);
+  });
   state = { packs, byId, exam: mergeExam(exam), plan, loadErrors };
   return state;
 }
@@ -238,6 +247,10 @@ export function saveBook(packId, book) {
 export function renamePack(id, title) {
   const t = String(title || '').trim();
   if (t) kvSet('ptitle', id, { title: t }); else kvDel('ptitle', id);
+}
+// 과목 하나의 자료 순서를 통째로 저장한다. ids 가 비면 원래 순서로
+export function savePackOrder(subject, ids) {
+  if (ids && ids.length) kvSet('porder', subject, { ids }); else kvDel('porder', subject);
 }
 export function savePlan(plan) {
   kvSet('notionplan', 'plan', { plan });
