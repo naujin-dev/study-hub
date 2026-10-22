@@ -334,3 +334,8 @@ details.week.cur{border-color:color-mix(in srgb,var(--ok) 50%,var(--rule))}
 .wg-h{display:flex;gap:6px;align-items:center;font-size:.92rem}
 .pdate{min-width:3.6em;color:var(--ink3);padding-top:2px}
 .pdate.today{color:var(--ok);font-weight:700}
+
+/* ---------- 확신도, 백지 복습 ---------- */
+.conf{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-bottom:4px}
+.conf .chip{padding:4px 11px}
+mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var(--bad);text-underline-offset:3px}
