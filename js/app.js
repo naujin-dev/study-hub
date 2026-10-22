@@ -19,8 +19,10 @@ const $ = (sel, root = main) => root.querySelector(sel);
 const $$ = (sel, root = main) => [...root.querySelectorAll(sel)];
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const shuffle = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const subjDot = id => `<span class="dot" style="--c:${SUBJ[id]?.color || 'var(--acc)'}"></span>`;
-const subjName = id => SUBJ[id]?.name || id;
+// 자료 없이 공부 시간만 재는 과목
+const TIME_SUBJ = { math: { id: 'math', name: '수학', color: '#4D7C0F' } };
+const subjDot = id => `<span class="dot" style="--c:${(SUBJ[id] || TIME_SUBJ[id])?.color || 'var(--acc)'}"></span>`;
+const subjName = id => (SUBJ[id] || TIME_SUBJ[id])?.name || id;
 
 function toast(msg, ms = 2200) {
   const t = document.getElementById('toast');
@@ -155,6 +157,7 @@ const routes = {
   '/final': viewFinal,
   '/check': viewCheck,
   '/help': viewHelp,
+  '/math': viewMath,
 };
 const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
@@ -223,7 +226,7 @@ function unitStats() {
     return { pack: p, n, ok, tried, total: (p.questions || []).length, rate: n ? ok / n : null };
   });
 }
-const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60));
+const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60 || l.free >= 60));
 function streakDays() {
   const log = S.getLog();
   let d = S.today(), n = 0;
@@ -318,6 +321,11 @@ function viewHome() {
           <div class="small muted">자료 ${o.packs}개${o.unread ? ` (안 읽음 ${o.unread})` : ''} · 문제 ${o.tried}/${o.total} · 정답률 ${o.n ? pct(o.ok, o.n) + '%' : '-'}${o.wrong ? ` · 오답 ${o.wrong}` : ''}</div>
         </div></a>`;
     }).join('')}
+    ${(() => { const mc = S.load('mclock', null); const td = S.getLog()[S.today()]?.fs?.math || 0; return `<a class="subj" href="#/math">${subjDot('math')}
+        <div class="grow">
+          <div class="row between"><b>수학</b><span class="small muted">시간만 잼</span></div>
+          <div class="small muted" style="margin-top:6px">${mc ? `<span class="tag ok">재는 중</span> ${S.fmtTime(mc.start)}부터 · ` : ''}오늘 ${S.fmtDur(td)} · 누적 ${S.fmtDur(mathTotal())}</div>
+        </div></a>`; })()}
   </section>
 
   ${weak.length ? `<div class="sec-title"><h2>약한 단원</h2><span class="small muted">정답률 낮은 순</span></div>
@@ -1750,6 +1758,7 @@ function dailySeries() {
 }
 function subjectTime() {
   const out = {};
+  for (const e of S.subjectTimeEvents()) out[e.sub] = (out[e.sub] || 0) + e.s;
   const subjOfPack = id => D.db().byId[id]?.subject;
   for (const e of S.getEvents()) {
     let sub = null, sec = 0;
@@ -1835,7 +1844,8 @@ function viewStats() {
   <section class="card">
     <h2>과목별</h2>
     <table class="crit"><tr><td class="small muted">과목</td><td class="pt small muted">공부 시간</td><td class="pt small muted">푼 문제</td><td class="pt small muted">정답률</td></tr>
-    ${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}</table>
+    ${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}
+    <tr><td>${subjDot('math')} <a href="#/math">수학</a></td><td class="pt">${S.fmtDur(stime.math || 0)}</td><td class="pt">-</td><td class="pt">-</td></tr></table>
   </section>
 
   ${(() => {
@@ -1918,7 +1928,8 @@ function dayEntries(d) {
       run = { kind: 'cards', t: e.t, end: e.t, items: [e] };
       continue;
     }
-    if (e.k === 'o' || e.k === 'f') continue;
+    if (e.k === 'o' || e.k === 'f' || e.k === 'sx') continue;
+    if (e.k === 's' && !S.subjectTimeEvents(e.sub).some(x => x.id === e.id)) continue;
     flushRun();
     out.push({ kind: e.k, t: e.t, e });
   }
@@ -1956,6 +1967,7 @@ function entryHtml(x) {
   }
   const e = x.e;
   if (x.kind === 'r') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} ${S.fmtDur(e.s)} 읽음</div></li>`;
+  if (x.kind === 's') return `<li class="j-row">${time}<div class="grow">${subjDot(e.sub)} ${subjName(e.sub)} ${S.fmtDur(e.s)} (${S.fmtTime(e.from)}~${S.fmtTime(e.t)})</div></li>`;
   if (x.kind === 'm') return `<li class="j-row">${time}<div class="grow">집중 타이머 ${e.min}분</div></li>`;
   if (x.kind === 'x') return `<li class="j-row">${time}<div class="grow"><span class="tag vio">실전</span> ${e.n}문제 · ${e.ok} 맞음${e.mx ? ` · 서술형 ${e.sc}/${e.mx}점` : ''} · ${e.min}분 · ${(e.subj || []).map(subjName).join(', ')}</div></li>`;
   if (x.kind === 'q') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} 에 질문: <span class="muted">${esc(e.text)}</span></div></li>`;
@@ -1995,6 +2007,7 @@ function viewJournal() {
         <span><b>${l.c || 0}</b> 카드</span>
         <span><b>${S.fmtDur(l.read || 0)}</b> 읽기</span>
         ${l.min ? `<span><b>${l.min}분</b> 타이머</span>` : ''}
+        ${l.fs?.math ? `<span><b>${S.fmtDur(l.fs.math)}</b> 수학</span>` : ''}
       </div>
       ${list.length ? `<ul class="j-list">${list.map(entryHtml).join('')}</ul>` : '<p class="small muted">기록이 없다.</p>'}
       <label class="field"><span>한 줄 회고</span><textarea class="diary" data-day="${d}" rows="2" style="min-height:56px" placeholder="오늘 잘된 것, 헷갈린 것, 내일 할 것">${esc(diary?.text || '')}</textarea></label>
@@ -2550,8 +2563,105 @@ function viewCheck() {
 }
 
 // ================= 더보기, 도움말 =================
+// ================= 수학: 자료 없이 공부 시간만 =================
+function mathTotal() { return S.subjectTimeEvents('math').reduce((a, e) => a + e.s, 0); }
+const hm = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function viewMath() {
+  const { q } = params();
+  const mc = S.load('mclock', null);
+  const log = S.getLog();
+  const today = S.today();
+  const recent = S.subjectTimeEvents('math').slice().sort((a, b) => b.t - a.t).slice(0, 15);
+  const days = Array.from({ length: 7 }, (_, i) => S.addDays(today, -i));
+  main.innerHTML = `
+  <h1>${subjDot('math')} 수학 공부 시간</h1>
+  <p class="small muted">수학은 공부자료 없이 공부한 시간만 잰다. 잰 시간은 공부 일지, 기록 그래프, 과목별 시간에 들어간다.</p>
+
+  <section class="card">
+    <h2>스톱워치</h2>
+    <p class="timer" id="mcT" style="font-size:2.4rem;margin:6px 0">0:00:00</p>
+    <div class="row">${mc ? '<button class="btn bad" id="mcStop">멈추고 기록</button><button class="btn ghost" id="mcDrop">기록 안 하고 멈추기</button>' : '<button class="btn pri" id="mcGo">시작</button>'}</div>
+    <p class="small muted">${mc ? `${S.fmtTime(mc.start)}에 시작. ` : ''}다른 화면으로 가거나 화면을 꺼도 계속 잰다. 오늘 ${S.fmtDur(log[today]?.fs?.math || 0)} · 누적 ${S.fmtDur(mathTotal())}</p>
+  </section>
+
+  <section class="card">
+    <h2>빈 시간 수학으로 채우기</h2>
+    <p class="small muted">고른 시간 안에서 다른 과목 공부(자료 읽기, 문제, 카드, 타이머)로 기록되지 않은 시간을 찾아 수학 시간으로 넣는다. 1분보다 짧은 틈은 뺀다.</p>
+    <form id="gapF" class="row" style="align-items:flex-end">
+      <label class="field" style="margin:0"><span>날짜</span><input type="date" name="d" value="${esc(q.get('d') || today)}" max="${today}"></label>
+      <label class="field" style="margin:0"><span>부터</span><input type="time" name="a" value="${esc(q.get('fill') || '')}" required></label>
+      <label class="field" style="margin:0"><span>까지 (비우면 지금)</span><input type="time" name="b" value="${esc(q.get('to') || '')}"></label>
+      <button class="btn">빈 시간 찾기</button>
+    </form>
+    <div id="gapOut"></div>
+  </section>
+
+  <section class="card">
+    <h2>최근 7일</h2>
+    <ul class="list">${days.map(d => `<li class="item"><span class="grow">${S.fmtDate(d)}</span><b class="mono">${log[d]?.fs?.math ? S.fmtDur(log[d].fs.math) : '-'}</b></li>`).join('')}</ul>
+  </section>
+
+  <section class="card">
+    <h2>기록</h2>
+    ${recent.length ? `<ul class="list">${recent.map(e => `<li class="item"><span class="grow">${S.fmtDate(S.ymd(new Date(e.t)))} ${hm(e.from)}~${hm(e.t)}</span><b class="mono">${S.fmtDur(e.s)}</b><button class="btn sm ghost" data-mx="${e.id}">취소</button></li>`).join('')}</ul>` : '<p class="small muted">아직 없다.</p>'}
+  </section>`;
+
+  const upd = () => {
+    const el = document.getElementById('mcT');
+    const m = S.load('mclock', null);
+    if (!el) return clearInterval(viewMath._t);
+    const sec = m ? Math.floor((Date.now() - m.start) / 1000) : 0;
+    el.textContent = `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  };
+  clearInterval(viewMath._t); upd(); if (mc) viewMath._t = setInterval(upd, 1000);
+  $('#mcGo')?.addEventListener('click', () => { reader.flush(); S.save('mclock', { start: Date.now() }); render(); });
+  $('#mcStop')?.addEventListener('click', () => {
+    const m = S.load('mclock', null); S.remove('mclock');
+    const sec = m ? S.recordSubjectTime('math', m.start, Date.now()) : 0;
+    toast(sec ? `수학 ${S.fmtDur(sec)} 기록했다.` : '30초보다 짧아서 기록하지 않았다.'); render();
+  });
+  $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); render(); });
+  $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 수학 시간 기록을 지울까?')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
+
+  const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da, h, mi).getTime(); };
+  const find = () => {
+    const f = $('#gapF');
+    const d = f.d.value || today;
+    if (!f.a.value) return null;
+    const from = at(d, f.a.value);
+    let to = f.b.value ? at(d, f.b.value) : Date.now();
+    to = Math.min(to, Date.now());
+    const m = S.load('mclock', null);
+    if (m) to = Math.min(to, m.start); // 지금 재는 중인 시간은 스톱워치가 넣는다
+    reader.flush();
+    return { from, to, gaps: to > from ? S.freeGaps(from, to) : [] };
+  };
+  const show = () => {
+    const r = find();
+    const out = $('#gapOut');
+    if (!r) { out.innerHTML = ''; return; }
+    if (r.to <= r.from) { out.innerHTML = '<p class="note" style="margin-top:10px">끝 시각이 시작보다 앞이다.</p>'; return; }
+    const tot = r.gaps.reduce((a, [x, y]) => a + (y - x) / 1000, 0);
+    out.innerHTML = `<div class="note info" style="margin-top:10px">
+      <p>${hm(r.from)}~${hm(r.to)} 중 빈 시간 <b>${S.fmtDur(tot)}</b> (${r.gaps.length}토막)</p>
+      ${r.gaps.length ? `<ul class="small">${r.gaps.map(([x, y]) => `<li>${hm(x)}~${hm(y)} · ${S.fmtDur((y - x) / 1000)}</li>`).join('')}</ul>
+      <button class="btn pri" id="gapGo">수학 시간으로 넣기</button>` : '<p class="small">이 시간은 이미 다 공부 기록이 있다.</p>'}
+    </div>`;
+    $('#gapGo')?.addEventListener('click', () => {
+      const r2 = find(); let n = 0;
+      for (const [x, y] of r2.gaps) n += S.recordSubjectTime('math', x, y);
+      toast(`수학 ${S.fmtDur(n)} 넣었다.`, 3000);
+      location.hash = '#/math';
+      render();
+    });
+  };
+  $('#gapF').addEventListener('submit', e => { e.preventDefault(); show(); });
+  if (q.get('fill')) show();
+}
+
 function viewMore() {
   const links = [
+    ['#/math', '수학 공부 시간', '자료 없이 시간만 잰다. 스톱워치, 빈 시간 채우기'],
     ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고'],
     ['#/blank', '백지 복습', '자료를 안 보고 기억나는 것을 다 써 본 뒤 비교 (서울대생 백지 공부법·파인만 기법)'],
     ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로'],
@@ -2604,6 +2714,7 @@ function viewHelp() {
 
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
+- **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.
 - **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 화면 위쪽에 색 버튼이 뜬다. (태블릿 Chrome 에서 아래에 "Google 검색" 창이 같이 뜨면 Chrome 설정 → Google 서비스 → "터치하여 검색" 을 끄면 안 뜬다.) 색 버튼 옆 "바로 칠하기" 를 켜면 그다음부터는 글자를 고르기만 해도 그 색으로 칠해지고 선택이 바로 풀려서, 브라우저 메뉴에 가리지 않는다. 끌 때는 화면 아래 "바로 칠하기 켜짐" 띠를 누른다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
 - **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.
 - **그래프**: [기록](#/stats) 에 공부한 날 달력, 누적 문제 수, 누적 공부 시간, 정답률 변화, 과목별 공부 시간, 달성한 기록이 나온다.

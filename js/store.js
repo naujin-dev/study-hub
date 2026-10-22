@@ -84,11 +84,12 @@ function changed() { listeners.forEach(fn => { try { fn(); } catch (e) {} }); }
 //  x 실전 끝   { n, ok, part, sc, mx, min, subj }
 //  q 자료 질문  { pack, text }
 //  g 문제 만들기 { pack, n }
+//  s 자료 없이 잰 과목 시간 { sub, s(초), from(시작 ms) }  sx 그 기록 취소 { ref }
 let events = load('events', []);
 const BOX_DAYS = [0, 1, 2, 4, 7, 14];
 
 let D = null; // 다시 계산한 결과
-function emptyDay() { return { q: 0, ok: 0, part: 0, c: 0, min: 0, read: 0, solve: 0, card: 0 }; }
+function emptyDay() { return { q: 0, ok: 0, part: 0, c: 0, min: 0, read: 0, solve: 0, card: 0, free: 0, fs: {} }; }
 
 function applyEvent(e) {
   const day = dayOf(e.t);
@@ -130,12 +131,18 @@ function applyEvent(e) {
     L.read += e.s;
   } else if (e.k === 'm') {
     L.min += e.min;
+  } else if (e.k === 's' && !cancelled.has(e.id)) {
+    // 자료 없이 시간만 재는 과목(수학)
+    L.free = (L.free || 0) + e.s;
+    L.fs = L.fs || {}; L.fs[e.sub] = (L.fs[e.sub] || 0) + e.s;
   }
 }
 
+let cancelled = new Set(); // 취소한 과목 시간 기록(id)
 function rebuild() {
   events.sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : 1));
   D = { progress: {}, cards: {}, log: {}, attempts: {}, readTime: {} };
+  cancelled = new Set(events.filter(e => e.k === 'sx').map(e => e.ref));
   for (const e of events) applyEvent(e);
 }
 
@@ -160,7 +167,7 @@ export function getReadTime() { return D.readTime; }
 // 하루 공부 시간(초): 자료 읽기 + 문제 풀이 + 카드
 export function studySec(dayLog) {
   if (!dayLog) return 0;
-  return (dayLog.read || 0) + (dayLog.solve || 0) + (dayLog.card || 0);
+  return (dayLog.read || 0) + (dayLog.solve || 0) + (dayLog.card || 0) + (dayLog.free || 0);
 }
 
 // 서술형 피드백은 저장 공간을 아끼려고 줄여서 둔다.
@@ -179,6 +186,44 @@ export function setFlag(key, field, value) { addEvent('f', { key, f: field, v: v
 export function overrideOk(key) { addEvent('o', { key }); }
 export function recordCard(key, knew, ms) { addEvent('c', { key, knew, ms: Math.round(ms || 0) }); }
 export function recordRead(pack, sec) { if (sec >= 10) addEvent('r', { pack, s: Math.round(sec) }); }
+// 과목 공부 시간을 from~to(ms) 로 남긴다. 기록 시각은 끝난 때로 해서 그날 기록에 들어간다
+export function recordSubjectTime(sub, from, to) {
+  const sec = Math.round((to - from) / 1000);
+  if (sec < 30) return 0;
+  const e = { id: newId(), t: to, k: 's', sub, s: sec, from };
+  events.push(e);
+  rebuild();
+  save('events', events);
+  changed();
+  return sec;
+}
+// 남아 있는(취소하지 않은) 과목 시간 기록
+export function subjectTimeEvents(sub) { return events.filter(e => e.k === 's' && !cancelled.has(e.id) && (!sub || e.sub === sub)); }
+export function cancelSubjectTime(id) { addEvent('sx', { ref: id }); rebuild(); }
+// 이미 공부한 것으로 기록된 시간대 (읽기, 문제, 카드, 타이머, 과목 시간). [시작, 끝] ms
+export function busyIntervals() {
+  const out = [];
+  for (const e of events) {
+    if (e.k === 'r') out.push([e.t - e.s * 1000, e.t]);
+    else if (e.k === 'a') out.push([e.t - Math.min(900000, e.ms || 0), e.t]);
+    else if (e.k === 'c') out.push([e.t - Math.min(120000, e.ms || 0), e.t]);
+    else if (e.k === 'm') out.push([e.t - e.min * 60000, e.t]);
+    else if (e.k === 's' && !cancelled.has(e.id)) out.push([e.from ?? e.t - e.s * 1000, e.t]);
+  }
+  return out;
+}
+// from~to 안에서 공부 기록이 없는 빈 시간들. minSec 보다 짧은 틈은 버린다
+export function freeGaps(from, to, minSec = 60) {
+  const busy = busyIntervals().map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  const gaps = [];
+  let cur = from;
+  for (const [a, b] of busy) {
+    if (a > cur) gaps.push([cur, a]);
+    cur = Math.max(cur, b);
+  }
+  if (to > cur) gaps.push([cur, to]);
+  return gaps.filter(([a, b]) => (b - a) / 1000 >= minSec);
+}
 export function recordFocus(min) { if (min > 0) addEvent('m', { min }); }
 export function recordExam(summary) { addEvent('x', summary); }
 export function recordAsk(pack, text) { addEvent('q', { pack, text: String(text).slice(0, 300) }); }
@@ -254,7 +299,7 @@ export function importAll(obj) {
 
 // 기록을 모두 지운다 (자료·설정은 남긴다)
 export function resetProgress() {
-  events = events.filter(e => !['a', 'o', 'f', 'c', 'r', 'm', 'x'].includes(e.k));
+  events = events.filter(e => !['a', 'o', 'f', 'c', 'r', 'm', 'x', 's', 'sx'].includes(e.k));
   save('events', events);
   rebuild();
 }
