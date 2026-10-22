@@ -284,3 +284,4 @@ dialog.dlg::backdrop{background:rgba(0,0,0,.35)}
 .attempts .item{padding:8px 0}
 a.chip{text-decoration:none}
 @media (min-width:900px){.grid2{grid-template-columns:1fr 1fr}}
+pre.prompt{white-space:pre-wrap;word-break:break-word;font:.84rem/1.6 var(--mono);background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:12px;max-height:60vh;overflow:auto;margin:10px 0 0;user-select:text}

@@ -4,6 +4,7 @@ import * as AI from './ai.js';
 import * as SYNC from './sync.js';
 import * as HL from './hl.js';
 import * as CH from './charts.js';
+import * as PR from './prompts.js';
 
 const { SUBJECTS, SUBJ, TYPE_NAME } = D;
 const main = document.getElementById('main');
@@ -104,6 +105,7 @@ const routes = {
   '/journal': viewJournal,
   '/marks': viewMarks,
   '/q': viewQuestion,
+  '/prompts': viewPrompts,
   '/help': viewHelp,
 };
 const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
@@ -223,7 +225,7 @@ function viewHome() {
   </section>
 
   ${!packs.length ? `<section class="card"><h2>아직 공부자료가 없다</h2>
-    <p>공부자료를 만드는 Claude 에게 <a href="${REPO_URL}/blob/main/PROMPT.md" target="_blank" rel="noopener">PROMPT.md</a> 의 프롬프트를 보내서 자료를 받은 뒤,</p>
+    <p>과목별 공부자료 Claude 에게 <a href="#/prompts">프롬프트</a> 를 복사해서 보내고 자료를 받은 뒤,</p>
     <ul><li>채팅 Claude 가 준 JSON 은 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣거나</li><li>Claude Code 에게 저장소에 바로 올리게 하면 된다.</li></ul></section>` : ''}
 
   <section class="grid" style="margin-bottom:14px">
@@ -1651,7 +1653,7 @@ function viewSettings() {
   <h1>설정</h1>
   <section class="card" id="import">
     <h2>자료 가져오기</h2>
-    <p class="small muted">공부자료 Claude 가 준 JSON 을 통째로 붙여넣거나 .json 파일을 고른다. 가져온 자료는 이 기기에만 저장된다. 다른 기기에서도 보려면 저장소 data/packs/ 에 올린다.</p>
+    <p class="small muted">공부자료 Claude 가 준 JSON 을 통째로 붙여넣거나 .json 파일을 고른다. 가져온 자료는 이 기기에 저장되고, 기록 동기화를 켜 두면 다른 기기에도 들어간다.</p>
     <textarea id="impText" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-family:var(--mono);font-size:.85rem"></textarea>
     <div class="row" style="margin-top:8px"><button class="btn" id="impCheck">검사</button><label class="btn ghost">파일 고르기<input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden></label></div>
     <div id="impOut"></div>
@@ -1819,6 +1821,40 @@ function syncText(st) {
   return '';
 }
 
+// ================= 공부자료 Claude 프롬프트 =================
+function viewPrompts() {
+  const { q } = params();
+  const sel = q.get('s') || 'kor';
+  const text = PR.chatPrompt(sel);
+  main.innerHTML = `
+  <h1>공부자료 Claude 에게 보낼 프롬프트</h1>
+  <ol class="small" style="padding-left:1.2em">
+    <li>과목을 고르고 "복사" 를 누른다.</li>
+    <li>그 과목 공부자료를 만든 Claude 채팅에 붙여넣어 보낸다.</li>
+    <li>Claude 가 목차를 보여주면 확인하고 "시작" 이라고 보낸다.</li>
+    <li>JSON 이 오면 코드 블록 오른쪽 위 복사 버튼으로 복사해서 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣고 "검사" → "가져오기".</li>
+    <li>Claude 에게 "다음" 이라고 보내고 4번을 되풀이한다.</li>
+  </ol>
+  ${chipGroup('ps', SUBJECTS.map(s => ({ value: s.id, label: s.name, dot: true })), [sel], false)}
+  <section class="card" style="margin-top:12px">
+    <div class="row between"><h2 style="margin:0">${subjName(sel)}</h2><button class="btn pri" data-copy-text="main">복사</button></div>
+    <pre class="prompt" id="ptext">${esc(text)}</pre>
+  </section>
+  <section class="card"><div class="row between"><h2 style="margin:0">오류가 났을 때</h2><button class="btn sm" data-copy-text="fix">복사</button></div><pre class="prompt">${esc(PR.FIX_PROMPT)}</pre></section>
+  <section class="card"><div class="row between"><h2 style="margin:0">시험 범위·날짜가 나왔을 때</h2><button class="btn sm" data-copy-text="range">복사</button></div><pre class="prompt">${esc(PR.RANGE_PROMPT)}</pre></section>`;
+  $$('input[name="ps"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + r.value; }));
+  const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT };
+  $$('[data-copy-text]').forEach(b => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(texts[b.dataset.copyText]); toast('복사했다. Claude 채팅에 붙여넣는다.'); }
+    catch (e) {
+      const pre = b.closest('section').querySelector('pre');
+      const r = document.createRange(); r.selectNodeContents(pre);
+      const sel2 = getSelection(); sel2.removeAllRanges(); sel2.addRange(r);
+      toast('자동 복사가 막혔다. 선택된 글을 길게 눌러 복사한다.', 4000);
+    }
+  }));
+}
+
 // ================= 더보기, 도움말 =================
 function viewMore() {
   const links = [
@@ -1828,6 +1864,7 @@ function viewMore() {
     ['#/gen', 'AI 문제 만들기', '자료를 보고 새 문제를 만든다'],
     ['#/plan', '시험 일정과 계획', '과목별 날짜·범위, 할 일 목록'],
     ['#/stats', '공부 기록과 그래프', '잔디 달력, 누적 그래프, 정답률 변화, 쌓은 기록, 집중 타이머'],
+    ['#/prompts', '공부자료 Claude 프롬프트', '과목별 프롬프트 복사'],
     ['#/settings', '설정', '기록 동기화, API 키, 자료 가져오기, 백업'],
     ['#/help', '사용법', '자료를 넣는 방법과 기능 설명'],
   ];
@@ -1839,7 +1876,7 @@ function viewHelp() {
   <article class="card notes">${md(`
 ## 자료 넣는 방법 두 가지
 
-1. **채팅 Claude 에게 받기**: [PROMPT.md](${REPO_URL}/blob/main/PROMPT.md) 의 "채팅용 프롬프트" 를 공부자료 Claude 에게 보낸다. Claude 가 준 JSON 을 [설정 → 자료 가져오기](#/settings) 에 붙여넣고 "검사" → "가져오기". 이 기기에만 저장된다.
+1. **채팅 Claude 에게 받기**: [프롬프트](#/prompts) 화면에서 과목을 골라 복사해 그 과목 Claude 에게 보낸다. Claude 가 준 JSON 을 [설정 → 자료 가져오기](#/settings) 에 붙여넣고 "검사" → "가져오기". 동기화를 켜 두면 다른 기기에도 들어간다.
 2. **Claude Code 가 저장소에 올리기**: PROMPT.md 의 "Claude Code 용 프롬프트" 를 쓴다. \`data/packs/\` 에 파일이 올라가면 모든 기기에서 보인다.
 
 ## 채점
