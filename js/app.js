@@ -533,7 +533,7 @@ function viewPack() {
 
   // 영어: 책 문제가 있으면 먼저 풀어야 공부자료가 열린다
   const book = p.book || [];
-  const bookDone = S.kvGet('bookdone', p.id);
+  const bookDone = S.kvGet('bookdone', p.id) || (p._mergedFrom || []).map(m => S.kvGet('bookdone', m.id)).find(Boolean) || null;
   if (p.subject === 'eng' && book.length && !bookDone && !q.get('peek')) {
     const pages = [...new Set(book.map(b => (String(b.source || b.page || '').match(/\d+\s*쪽/) || [])[0]).filter(Boolean))];
     main.innerHTML = `
@@ -544,7 +544,8 @@ function viewPack() {
       <p>공부자료를 보기 전에 책 문제 <b>${book.length}개</b>를 먼저 풀어 본다. 다 풀고 채점하면 공부자료가 열린다. 모르는 문제는 "모르겠다" 로 넘긴다.</p>
       ${pages.length ? `<p class="small muted">책 ${esc(pages.length > 2 ? pages[0] + ' ~ ' + pages[pages.length - 1] : pages.join(', '))}</p>` : ''}
       <div class="row"><a class="btn pri" href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 풀기</a><a class="btn ghost" href="#/pack?id=${encodeURIComponent(p.id)}&peek=1">그냥 공부자료 보기</a></div>
-    </section>`;
+    </section>
+    ${(p._mergedFrom || []).length ? `<p class="small muted">책 문제는 ${p._mergedFrom.map(m => esc(m.title)).join(', ')} 에서 합쳐 왔다. 나누려면 "그냥 공부자료 보기" 에서 "따로 보기".</p>` : ''}`;
     return;
   }
 
@@ -555,6 +556,8 @@ function viewPack() {
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
   <p class="small noprint" id="packPdfs" hidden></p>
+  ${(p._mergedFrom || []).length ? `<p class="small muted noprint">합친 자료: ${p._mergedFrom.map(m => `${esc(m.title)}${m.auto ? ' (같은 단원이라 저절로)' : ''} <button class="btn sm ghost" data-unmerge="${esc(m.id)}">따로 보기</button>`).join(' · ')}</p>` : ''}
+  ${(() => { const others = D.db().packs.filter(x => x.subject === p.subject && x.id !== p.id); return others.length ? `<details class="small noprint" style="margin:4px 0 8px"><summary class="muted">이 자료를 다른 자료에 합치기</summary><div class="row" style="margin-top:6px"><select id="mergeTo">${others.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select><button class="btn sm" id="mergeGo">합치기</button></div><p class="small muted" style="margin:4px 0 0">이 자료의 정리·문제·책 문제·카드·원문이 고른 자료 뒤에 붙고, 이 자료는 목록에서 빠진다. 푼 기록은 그대로 이어진다. 언제든 "따로 보기" 로 되돌린다.</p></details>` : ''; })()}
   <div class="row noprint" style="margin:12px 0">
     ${qs.length ? `<a class="btn pri" href="#/run?pack=${encodeURIComponent(p.id)}">문제 ${qs.length}개 풀기</a>` : ''}
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
@@ -590,6 +593,15 @@ function viewPack() {
     <div class="row" style="margin-top:8px">${AI.hasKey() ? '<button class="btn pri">묻기</button>' : '<button type="button" class="btn pri" id="askCopy">채팅으로 묻기 (복사)</button> <a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a>'}${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
   </section></aside></div>
   `;
+  $('#mergeGo')?.addEventListener('click', async () => {
+    const to = $('#mergeTo').value, tp = D.db().byId[to];
+    if (!tp || !confirm(`"${p.title}" 을 "${tp.title}" 에 합칠까?`)) return;
+    D.mergePack(p.id, to); await D.loadAll(); toast('합쳤다.');
+    location.hash = '#/pack?id=' + encodeURIComponent(to);
+  });
+  $$('[data-unmerge]').forEach(b => b.addEventListener('click', async () => {
+    D.unmergePack(b.dataset.unmerge); await D.loadAll(); toast('따로 보게 했다.'); render.keepScroll = true; render();
+  }));
   // 이 자료에 이어 둔 PDF 원본 (이 기기에 있는 것만)
   PDF.listPdfs().then(l => {
     const mine = l.filter(x => x.pack === p.id);
@@ -1989,7 +2001,7 @@ function entryHtml(x) {
     const sec = x.items.reduce((a, e) => a + Math.min(900, (e.ms || 0) / 1000), 0);
     const rows = x.items.map(e => {
       const pk = D.db().byId[e.key.split('::')[0]];
-      const q = pk?.questions?.find(z => String(z.id) === e.key.split('::')[1]);
+      const q = pk ? [...(pk.questions || []), ...(pk.book || [])].find(z => D.qkey(pk, z) === e.key) : null;
       const [cls, word] = RES[e.r] || ['', e.r];
       return `<li class="item"><a class="grow small" href="#/q?key=${encodeURIComponent(e.key)}">${esc((q?.question || e.key).slice(0, 60))}</a><span class="tag ${cls}">${word}${e.fb?.max ? ` ${e.fb.score}/${e.fb.max}` : ''}</span></li>`;
     }).join('');
@@ -2094,7 +2106,7 @@ function viewQuestion() {
   const key = q.get('key') || '';
   const [pid, qid] = key.split('::');
   const pack = D.db().byId[pid];
-  const qq = pack?.questions?.find(z => String(z.id) === qid);
+  const qq = pack ? [...(pack.questions || []), ...(pack.book || [])].find(z => D.qkey(pack, z) === key || (!z._key && String(z.id) === qid)) : null;
   if (!qq) { main.innerHTML = '<p class="muted">문제를 찾지 못했다. 자료가 바뀌었을 수 있다.</p>'; return; }
   const it = { pack, q: qq, key };
   const past = S.attemptsOf(key);

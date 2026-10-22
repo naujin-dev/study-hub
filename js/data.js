@@ -173,6 +173,36 @@ export async function loadAll() {
     const have = new Set((p.book || []).map(q => String(q.id)));
     byId[b.pack] = { ...p, book: [...(p.book || []), ...b.book.filter(q => !have.has(String(q.id)))] };
   }
+  // 자료 합치기: kv 'pmerge' (원래 자료 id → { into }) 와, 영어 책 문제만 있는 자료(eng-rp-*)를 같은 단원 자료에 저절로 붙이기
+  const merges = {};
+  const isBookOnly = p => p && !(p.questions || []).length && !String(p.notes || '').trim() && (p.book || []).length;
+  for (const p of Object.values(byId)) {
+    if (p.subject !== 'eng' || !/^eng-rp-/.test(p.id) || !isBookOnly(p)) continue;
+    const m = String(p.title).match(/unit\s*0?(\d+)/i) || String(p.id).match(/-u(\d+)$/);
+    if (!m) continue;
+    const re = new RegExp(`(?<!\\d)0?${m[1]}(?!\\d)`);
+    const hits = Object.values(byId).filter(x => x.subject === 'eng' && !/^eng-rp-/.test(x.id) && re.test(`${x.title} ${x.unit || ''}`));
+    if (hits.length === 1) merges[p.id] = hits[0].id;
+  }
+  for (const [src, m] of Object.entries(kvAll('pmerge'))) { if (m.into) merges[src] = m.into; else delete merges[src]; }
+  const alias = {};
+  for (const [src, into] of Object.entries(merges)) {
+    const S = byId[src], T = byId[into];
+    if (!S || !T || src === into || alias[into]) continue;
+    const tag = list => { const have = new Set([...(T.questions || []), ...(T.book || [])].map(x => String(x.id))); return (list || []).map(x => ({ ...x, id: have.has(String(x.id)) ? `${src}-${x.id}` : x.id, _key: x._key || `${src}::${x.id}` })); };
+    byId[into] = {
+      ...T,
+      book: [...(T.book || []), ...tag(S.book)],
+      questions: [...(T.questions || []), ...tag(S.questions)],
+      cards: [...(T.cards || []), ...(S.cards || []).map((c, i) => ({ ...c, id: `${src}-${c.id ?? i}`, _key: c._key || `${src}::${c.id ?? i}` }))],
+      texts: [...(T.texts || []), ...(S.texts || []).map(t => ({ ...t, id: `${src}-${t.id}` }))],
+      notes: String(S.notes || '').trim() ? `${T.notes || ''}\n\n---\n\n## ${S.title}\n\n${S.notes}` : T.notes,
+      order: T.order ?? S.order,
+      _mergedFrom: [...(T._mergedFrom || []), { id: src, title: S.title, auto: !kvGet('pmerge', src) }],
+    };
+    alias[src] = into;
+    delete byId[src];
+  }
   // 사이트에서 바꾼 자료 이름(kv 'ptitle'). 원래 이름은 _title 에 남긴다
   for (const [id, t] of Object.entries(kvAll('ptitle'))) {
     const p = byId[id];
@@ -181,14 +211,16 @@ export async function loadAll() {
   // 사이트에서 정한 과목별 자료 순서(kv 'porder'). 목록에 없는 자료는 그 뒤에 원래 순서로
   const rank = {};
   for (const o of Object.values(kvAll('porder'))) (o.ids || []).forEach((id, i) => { rank[id] = i; });
-  const packs = Object.values(byId).sort((a, b) => {
+  const packs = Object.values(byId).filter(p => !alias[p.id]).sort((a, b) => {
     if (a.subject === b.subject) {
       const ra = rank[a.id] ?? 1e9, rb = rank[b.id] ?? 1e9;
       if (ra !== rb) return ra - rb;
     }
     return packOrder(a, b);
   });
-  state = { packs, byId, exam: mergeExam(exam), plan, loadErrors };
+  // 합쳐진 자료 id 로 찾아도 합친 자료가 나오게 (예전 기록의 키가 원래 자료 id 로 시작한다)
+  for (const [src, into] of Object.entries(alias)) byId[src] = byId[into];
+  state = { packs, byId, alias, exam: mergeExam(exam), plan, loadErrors };
   return state;
 }
 
@@ -255,6 +287,9 @@ export function renamePack(id, title) {
 export function savePackOrder(subject, ids) {
   if (ids && ids.length) kvSet('porder', subject, { ids }); else kvDel('porder', subject);
 }
+// 자료 src 를 into 에 합친다. into 가 null 이면 따로 둔다(저절로 합치기도 막는다)
+export function mergePack(src, into) { kvSet('pmerge', src, { into: into || null }); }
+export function unmergePack(src) { kvSet('pmerge', src, { into: null }); }
 export function savePlan(plan) {
   kvSet('notionplan', 'plan', { plan });
 }
@@ -266,8 +301,9 @@ export function clearExamLocal() {
 }
 
 // ---------- 편의 함수 ----------
-export const qkey = (pack, q) => `${pack.id}::${q.id}`;
-export const ckey = (pack, c, i) => `${pack.id}::${c.id ?? i}`;
+// 다른 자료에서 합쳐 온 문제·카드는 원래 키(_key)를 써서 푼 기록이 이어진다
+export const qkey = (pack, q) => q._key || `${pack.id}::${q.id}`;
+export const ckey = (pack, c, i) => c._key || `${pack.id}::${c.id ?? i}`;
 
 export function allQuestions(filter = {}) {
   const out = [];
