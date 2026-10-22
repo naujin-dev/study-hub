@@ -3,7 +3,7 @@
 
     python3 scripts/bump_version.py
 
-index.html 의 스크립트·스타일 주소에 새 버전 번호(?v=...)를 붙이고 version.json 을 쓴다.
+index.html 의 스크립트·스타일 주소에 새 버전 번호(?v=...)를 붙이고 version.json 과 sw.js(오프라인 모드) 를 쓴다.
 브라우저(특히 홈 화면에 추가한 앱)가 예전 파일을 붙잡고 있지 않고 새 파일을 받게 한다.
 """
 import json
@@ -35,4 +35,16 @@ else:
     html = html.replace("</head>", block + "\n</head>", 1)
 (ROOT / "index.html").write_text(html, encoding="utf-8")
 (ROOT / "version.json").write_text(json.dumps({"v": v}) + "\n", encoding="utf-8")
+
+# 오프라인 모드: sw.js 의 버전과 미리 저장할 파일 목록
+files = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "data/index.json", "data/exam.json"]
+files += [f"js/{m}" for m in mods]
+files += sorted(f"js/vendor/{p.name}" for p in (ROOT / "js" / "vendor").glob("*.js"))
+idx = ROOT / "data" / "index.json"
+if idx.exists():
+    files += ["data/" + e["path"] for e in json.loads(idx.read_text(encoding="utf-8")).get("packs", [])]
+sw = (ROOT / "sw.js").read_text(encoding="utf-8")
+sw = re.sub(r"^const VERSION = .*$", f"const VERSION = '{v}';", sw, count=1, flags=re.M)
+sw = re.sub(r"^const FILES = .*$", "const FILES = " + json.dumps(files, ensure_ascii=False) + ";", sw, count=1, flags=re.M)
+(ROOT / "sw.js").write_text(sw, encoding="utf-8")
 print("version", v)

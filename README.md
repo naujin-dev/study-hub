@@ -54,6 +54,7 @@ python3 -m http.server 8000      # http://localhost:8000
 | --- | --- |
 | `index.html` | 사이트 전체 (한 페이지) |
 | `version.json` | 사이트 버전. `scripts/bump_version.py` 가 쓴다 |
+| `sw.js` | 오프라인 모드. 파일 목록과 버전은 `scripts/bump_version.py` 가 쓴다 |
 | `css/style.css` | 스타일. 라이트/다크 모드 |
 | `js/app.js` | 화면 |
 | `js/data.js` | 자료 불러오기, 형식 검사 |
@@ -72,6 +73,8 @@ python3 -m http.server 8000      # http://localhost:8000
 커밋 전에 `python3 scripts/bump_version.py` 를 돌린다. index.html 의 스크립트 주소에 새 버전 번호를 붙이고 version.json 을 바꾼다. 열려 있던 사이트는 다음에 화면을 켤 때 새 버전을 알아채고 새로 연다. 안 돌리면 태블릿 브라우저가 예전 파일을 계속 쓸 수 있다.
 
 ## 알아둘 것
+
+- 오프라인 모드: `sw.js` 가 사이트 파일을 기기에 저장해 둔다. 인터넷이 있으면 늘 새 파일을 먼저 받고, 없을 때만 저장본을 쓴다. AI 채점·동기화·새 자료 받기는 인터넷이 필요하다.
 
 - 기록은 그 기기의 브라우저에 쌓이고, [설정 → 기록 동기화] 에 GitHub 토큰(Gists 읽기·쓰기 권한만)을 넣으면 내 비공개 Gist 에도 쌓인다. 같은 토큰을 넣은 기기끼리 기록이 합쳐진다. 기록은 지우지 않고 더하기만 해서 두 기기에서 동시에 공부해도 사라지지 않는다.
 - API 키와 GitHub 토큰은 Gist 와 백업 파일에 들어가지 않는다.

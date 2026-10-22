@@ -1881,7 +1881,7 @@ function viewSettings() {
     <h2>백업</h2>
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
     <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
-    <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
+    <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label><button class="btn bad ghost" id="reset">기록 초기화</button></div>
   </section>`;
 
@@ -1954,6 +1954,15 @@ function viewSettings() {
   });
 
   $('#updBtn').addEventListener('click', () => checkUpdate(true));
+  (async () => {
+    const el = $('#offState');
+    try {
+      const c = await caches.open('study-hub');
+      const n = (await c.keys()).length;
+      const ok = !!(await c.match(new URL('js/app.js', location.href).origin + new URL('js/app.js', location.href).pathname) || await c.match('js/app.js', { ignoreSearch: true }));
+      if (el) el.textContent = ok ? `오프라인 모드 준비됨 (파일 ${n}개 저장)` : '오프라인 모드 준비 중 (인터넷 연결 상태로 한 번 새로고침)';
+    } catch (e) { if (el) el.textContent = '이 브라우저는 오프라인 모드를 지원하지 않는다'; }
+  })();
   // 백업
   $('#exp').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(S.exportAll())], { type: 'application/json' });
@@ -2095,6 +2104,10 @@ function viewHelp() {
 - **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.
 - **그래프**: [기록](#/stats) 에 공부한 날 달력, 누적 문제 수, 누적 공부 시간, 정답률 변화, 과목별 공부 시간, 달성한 기록이 나온다.
 
+## 인터넷이 없을 때 (오프라인 모드)
+
+인터넷이 될 때 사이트를 한 번 열어 두면 사이트 파일이 이 기기에 저장된다. 그 뒤로는 인터넷이 없어도 열린다 (홈 화면 아이콘도). 자료 읽기, 형광펜·메모, 문제 풀기와 채점(객관식·단답형·스스로 채점), 오답노트, 카드, 일지, 기록이 모두 된다. AI 채점, Claude 채팅 채점, 동기화, 새 자료 받기는 인터넷이 있어야 한다. 끊긴 동안 쌓인 기록은 연결되면 자동으로 올라간다. 위쪽에 "오프라인" 표시가 뜨면 지금 인터넷이 없는 상태다.
+
 ## 기록 동기화
 
 [설정 → 기록 동기화](#/settings) 에 GitHub 토큰(Gists 읽기·쓰기 권한만)을 넣으면 기록이 내 비공개 Gist 에 쌓이고, 같은 토큰을 넣은 다른 기기와 합쳐진다. 동기화를 안 쓰면 기록은 그 기기의 브라우저에만 있다. 어느 쪽이든 가끔 [백업 파일](#/settings) 을 받아 둔다.
@@ -2140,6 +2153,16 @@ window.addEventListener('sh-synced', async () => {
   const busy = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
   if (!busy && !['/run', '/flash'].includes(params().path)) { render.keepScroll = true; render(); }
 });
+// 오프라인 모드
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker?.register('sw.js').catch(e => console.warn('오프라인 모드 등록 실패', e));
+}
+const netDot = document.createElement('span');
+netDot.className = 'netdot'; netDot.textContent = '오프라인'; netDot.hidden = navigator.onLine;
+document.getElementById('topDday').after(netDot);
+window.addEventListener('online', () => { netDot.hidden = true; toast('인터넷이 다시 연결됐다.'); if (SYNC.isOn()) SYNC.syncNow(); });
+window.addEventListener('offline', () => { netDot.hidden = false; toast('인터넷이 끊겼다. 공부는 그대로 할 수 있고, 기록은 연결되면 올라간다.', 4500); });
+
 D.loadAll().then(() => {
   render();
   startTimerLoop();
