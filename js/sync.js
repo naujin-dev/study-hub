@@ -37,8 +37,11 @@ async function gh(path, opts = {}) {
       Authorization: `Bearer ${opts.token || c.token}`,
       'X-GitHub-Api-Version': '2022-11-28',
       ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(opts.etag ? { 'If-None-Match': opts.etag } : {}),
     },
   });
+  // 바뀐 게 없으면 GitHub 이 304 만 돌려준다 (내용을 안 받고, 요청 한도에도 안 센다)
+  if (r.status === 304) return { notModified: true };
   if (!r.ok) {
     let m = '';
     try { m = (await r.json()).message || ''; } catch (e) {}
@@ -46,7 +49,10 @@ async function gh(path, opts = {}) {
     err.status = r.status;
     throw err;
   }
-  return r.status === 204 ? null : r.json();
+  if (r.status === 204) return null;
+  const j = await r.json();
+  if (opts.wantEtag && j && typeof j === 'object') j.__etag = r.headers.get('ETag') || '';
+  return j;
 }
 function explain(st, m) {
   if (st === 401) return 'GitHub 토큰이 맞지 않거나 만료됐다. 설정에서 새 토큰을 넣어 줘.';
@@ -73,6 +79,7 @@ export async function connect(token) {
   }
   setConf({ token, gistId, login: user.login, auto: true });
   S.save('syncHashes', {});
+  S.save('syncEtag', '');
   await syncNow();
   return { login: user.login, gistId };
 }
@@ -114,7 +121,17 @@ async function fileText(f) {
 }
 
 async function pullMerge() {
-  const g = await gh('/gists/' + conf().gistId);
+  let g;
+  const et = S.load('syncEtag', '');
+  try {
+    g = await gh('/gists/' + conf().gistId, { etag: et, wantEtag: true });
+  } catch (err) {
+    // 혹시 브라우저가 If-None-Match 요청을 막으면(네트워크 오류) 예전 방식으로 한 번 더
+    if (err.status || !et) throw err;
+    S.save('syncEtag', '');
+    g = await gh('/gists/' + conf().gistId);
+  }
+  if (g.notModified) return false;
   const incoming = { events: [], kv: {} };
   for (const name in g.files) {
     if (!name.startsWith('study-hub-')) continue;
@@ -124,6 +141,7 @@ async function pullMerge() {
     else if (Array.isArray(data.events)) incoming.events.push(...data.events);
   }
   const changed = S.mergeIn(incoming);
+  S.save('syncEtag', g.__etag || '');
   if (changed) window.dispatchEvent(new CustomEvent('sh-synced'));
   return changed;
 }
@@ -178,7 +196,8 @@ export function startAuto() {
       if (status.state === 'dirty') { clearTimeout(timer); syncNow(); }
     } else if (Date.now() - hiddenAt > 2 * 60000) syncNow();
   });
-  setInterval(() => { if (isOn() && conf().auto && document.visibilityState === 'visible') syncNow(); }, 10 * 60000);
+  // 화면이 켜져 있으면 3분마다 다른 기기 기록을 확인한다. 바뀐 게 없으면 304 라 거의 공짜다
+  setInterval(() => { if (isOn() && conf().auto && document.visibilityState === 'visible') syncNow(); }, 3 * 60000);
   const at = S.load('syncAt', null);
   if (isOn()) { status = { state: 'ok', msg: '', at }; if (conf().auto) syncNow(); }
 }
