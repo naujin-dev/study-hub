@@ -196,8 +196,8 @@ export function startAuto() {
       if (status.state === 'dirty') { clearTimeout(timer); syncNow(); }
     } else if (Date.now() - hiddenAt > 2 * 60000) syncNow();
   });
-  // 화면이 켜져 있으면 3분마다 다른 기기 기록을 확인한다. 바뀐 게 없으면 304 라 거의 공짜다
-  setInterval(() => { if (isOn() && conf().auto && document.visibilityState === 'visible') syncNow(); }, 3 * 60000);
+  // 화면이 켜져 있으면 1분마다 다른 기기 기록을 확인한다. 바뀐 게 없으면 304 라 거의 공짜다
+  setInterval(() => { if (isOn() && conf().auto && document.visibilityState === 'visible') syncNow(); }, 60000);
   const at = S.load('syncAt', null);
   if (isOn()) { status = { state: 'ok', msg: '', at }; if (conf().auto) syncNow(); }
 }

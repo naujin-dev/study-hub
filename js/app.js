@@ -2142,7 +2142,7 @@ function viewSettings() {
     ${SYNC.isOn() ? `
       <p>연결됨: <b>${esc(sc.login || '')}</b> · <a href="${SYNC.gistUrl()}" target="_blank" rel="noopener">Gist 보기</a></p>
       <p class="small" id="syncState">${syncText(st)}</p>
-      <label class="row small"><input type="checkbox" id="syncAuto"${sc.auto ? ' checked' : ''}> 자동 동기화 (기록이 생기면 15초 뒤, 앱을 다시 열 때, 화면이 켜져 있으면 3분마다)</label>
+      <label class="row small"><input type="checkbox" id="syncAuto"${sc.auto ? ' checked' : ''}> 자동 동기화 (기록이 생기면 15초 뒤, 앱을 다시 열 때, 화면이 켜져 있으면 1분마다)</label>
       <div class="row" style="margin-top:8px"><button class="btn pri" id="syncNow">지금 동기화</button><button class="btn ghost bad" id="syncOff">연결 끊기</button></div>
     ` : `
       <details${sc.gistId ? ' open' : ''}><summary>토큰 만드는 법</summary><ol class="small">
