@@ -304,3 +304,22 @@ pre.prompt{white-space:pre-wrap;word-break:break-word;font:.84rem/1.6 var(--mono
 .mcal-g .d.exam{outline:2px solid var(--bad);outline-offset:-2px;color:var(--bad);font-weight:700}
 .mcal-g .d.today{outline:2px solid var(--ink);outline-offset:-2px}
 .heat-legend i.td{border:2px solid var(--ink);background:transparent;vertical-align:-2px}
+
+/* ---------- 본문 같이 보기 ---------- */
+.src-pane{position:sticky;top:60px;z-index:5;max-height:42vh;overflow:auto;margin-bottom:12px;border-color:color-mix(in srgb,var(--acc) 35%,var(--rule))}
+.src-text{counter-reset:ln;font-size:1rem;line-height:1.9;margin-top:4px}
+.src-text .l{white-space:pre-wrap;min-height:1.9em;position:relative}
+.src-text.ln{padding-left:2.4em}
+.src-text.ln .l:not(.e){counter-increment:ln}
+.src-text.ln .l:not(.e)::before{content:counter(ln);position:absolute;left:-2.4em;width:2em;text-align:right;font:.72rem/1.9rem var(--mono);color:var(--ink3)}
+.src-imgs{display:grid;gap:10px;margin-top:10px}
+.src-imgs figure{margin:0}
+.src-imgs img{width:100%;height:auto;border-radius:8px;border:1px solid var(--rule);display:block}
+dialog.dlg.wide{width:min(900px,calc(100% - 32px))}
+@media (min-width:900px){
+  .pack-layout.src-on{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .pack-layout.src-on .src-pane{top:72px;max-height:calc(100vh - 88px);margin:0}
+  .pack-layout.src-on .pack-side{grid-column:1/-1;position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+  .pack-layout.src-on .pack-side .card{margin:0}
+}
+@media print{.src-pane{position:static;max-height:none;overflow:visible}}

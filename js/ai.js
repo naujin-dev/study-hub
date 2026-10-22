@@ -1,6 +1,7 @@
 // Claude API 호출. API 키는 이 기기의 브라우저에만 저장하고, 요청은 브라우저에서 api.anthropic.com 으로 바로 보낸다.
 import { load } from './store.js';
 import { SUBJ, essayMax } from './data.js';
+import { textsForAI } from './src.js';
 
 export const MODELS = [
   { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', note: '채점이 가장 꼼꼼하다. 기본값.' },
@@ -229,7 +230,7 @@ export function parseShortReply(text) {
 export async function askAboutPack(pack, question, history) {
   const prev = (history || []).slice(-4).map(h => `학생: ${h.q}\n선생님: ${h.a}`).join('\n\n');
   const user = `[공부자료: ${pack.title}]
-${(pack.notes || '').slice(0, 60000)}
+${(pack.notes || '').slice(0, 60000)}${textsForAI(pack) ? '\n\n' + textsForAI(pack) : ''}
 
 ${prev ? '[앞에서 나눈 대화]\n' + prev + '\n\n' : ''}[학생 질문]
 ${question}`;
@@ -282,7 +283,7 @@ const GEN_SCHEMA = {
 function genUser(pack, { types, count, difficulty, focus }) {
   const existing = (pack.questions || []).map(q => '- ' + q.question.slice(0, 80)).join('\n');
   const user = `[공부자료: ${pack.title}]
-${(pack.notes || '').slice(0, 60000)}
+${(pack.notes || '').slice(0, 60000)}${textsForAI(pack) ? '\n\n' + textsForAI(pack) : ''}
 
 ${(pack.cards || []).length ? '[암기 항목]\n' + pack.cards.map(c => `- ${c.front}: ${c.back}`).join('\n') + '\n\n' : ''}[이미 있는 문제] (겹치지 않게)
 ${existing || '(없음)'}
@@ -333,7 +334,7 @@ export function askChatPrompt(pack, question) {
 공부자료 내용을 기준으로 답하고, 자료에 없는 내용이면 그렇다고 먼저 말한 뒤 교과 수준에서 설명해. 반말로, 짧게, 예시를 들어.
 
 [공부자료: ${pack.title}]
-${(pack.notes || '').slice(0, 60000)}
+${(pack.notes || '').slice(0, 60000)}${textsForAI(pack) ? '\n\n' + textsForAI(pack) : ''}
 
 [질문]
 ${question}`;

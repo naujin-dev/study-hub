@@ -43,6 +43,13 @@ def check_pack(p, where):
     for k in ("unit", "notes", "summary"):
         if k in p and p[k] is not None and not isinstance(p[k], str):
             e(f"{where}: {k} 는 문자열이어야 한다.")
+    texts = p.get("texts") or []
+    if not isinstance(texts, list):
+        e(f"{where}: texts 는 배열이어야 한다.")
+        texts = []
+    for i, t in enumerate(texts):
+        if not isinstance(t, dict) or not isinstance(t.get("body"), str) or not t["body"].strip():
+            e(f"{where} texts[{i}]: body(본문 글)가 비어 있다.")
     seen = set()
     cards = p.get("cards") or []
     if not isinstance(cards, list):

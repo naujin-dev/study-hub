@@ -29,6 +29,11 @@ export function validatePack(p, where = '자료') {
   if (p.notes != null && typeof p.notes !== 'string') e('notes 는 마크다운 문자열이어야 한다.');
   if (p.cards != null && !Array.isArray(p.cards)) e('cards 는 배열이어야 한다.');
   if (p.questions != null && !Array.isArray(p.questions)) e('questions 는 배열이어야 한다.');
+  if (p.texts != null && !Array.isArray(p.texts)) e('texts 는 배열이어야 한다.');
+  (Array.isArray(p.texts) ? p.texts : []).forEach((t, i) => {
+    if (!t || typeof t.body !== 'string' || !t.body.trim()) e(`texts[${i}]: body(본문 글)가 비어 있다.`);
+    if (t && t.title != null && typeof t.title !== 'string') e(`texts[${i}]: title 은 문자열이어야 한다.`);
+  });
 
   const seen = new Set();
   (Array.isArray(p.cards) ? p.cards : []).forEach((c, i) => {
@@ -80,12 +85,21 @@ export function parseImport(text) {
   let packs = [], exam = null;
   if (Array.isArray(obj)) packs = obj;
   else if (obj && Array.isArray(obj.packs)) { packs = obj.packs; exam = obj.exam || null; }
-  else if (obj && obj.subject) packs = [obj];
+  else if (obj && (obj.subject || obj.texts_for)) packs = obj.texts_for ? [] : [obj];
   else if (obj && obj.subjects) exam = obj;
   else throw new Error('자료(subject, title 이 있는 객체)나 { "packs": [...] } 모양이 아니다.');
+  // 원문만 더하는 묶음: { "texts_for": "자료 id", "texts": [...] }
+  const textPatches = packs.filter(p => p && p.texts_for);
+  packs = packs.filter(p => !(p && p.texts_for));
+  if (obj && obj.texts_for) textPatches.push(obj);
   const errors = [];
   packs.forEach((p, i) => errors.push(...validatePack(p, p && p.id ? p.id : `packs[${i}]`)));
-  return { packs, exam, errors };
+  textPatches.forEach((t, i) => {
+    const w = `원문 ${t.texts_for || i + 1}`;
+    if (typeof t.texts_for !== 'string') errors.push(`${w}: texts_for 에 자료 id 를 쓴다.`);
+    if (!Array.isArray(t.texts) || !t.texts.length || t.texts.some(x => !x || typeof x.body !== 'string' || !x.body.trim())) errors.push(`${w}: texts 는 body 가 있는 배열이어야 한다.`);
+  });
+  return { packs, exam, errors, textPatches };
 }
 
 // ---------- 불러오기 ----------

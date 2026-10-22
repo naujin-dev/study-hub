@@ -5,6 +5,7 @@ import * as SYNC from './sync.js';
 import * as HL from './hl.js';
 import * as CH from './charts.js';
 import * as PR from './prompts.js';
+import * as SRC from './src.js';
 
 const { SUBJECTS, SUBJ, TYPE_NAME } = D;
 const main = document.getElementById('main');
@@ -398,6 +399,24 @@ function viewPack() {
   const memo = S.kvGet('pnote', p.id);
   const readEvents = S.getEvents().filter(e => e.k === 'r' && e.pack === p.id);
   const pos = S.kvGet('pos', p.id);
+  // 본문 같이 보기
+  const texts = SRC.textsOf(p);
+  const srcPref = S.load('srcOn', null);
+  const srcOn = q.get('src') ? true : (srcPref == null ? texts.length > 0 : srcPref);
+  let curTid = q.get('src') || S.load('srcTab', {})[p.id];
+  if (!texts.find(t => t.tid === curTid)) curTid = texts[0]?.tid;
+  const cur = texts.find(t => t.tid === curTid);
+  const lnOn = S.load('srcLn', false);
+  const notesMarks = marks.filter(h => !h.where);
+  const srcMarks = cur ? marks.filter(h => h.where === 'src:' + cur.tid) : [];
+  const srcPane = `<section class="card src-pane" id="srcPane">
+    <div class="row between"><b>본문</b><span class="row">${cur ? `<label class="small"><input type="checkbox" id="lnOn"${lnOn ? ' checked' : ''}> 행 번호</label><button class="btn sm ghost" id="srcEdit">고치기</button>` : ''}<button class="btn sm ghost" id="srcAdd">+ 붙여넣기</button><label class="btn sm ghost">+ 사진<input type="file" id="srcImg" accept="image/*" multiple hidden></label></span></div>
+    ${texts.length > 1 ? `<div class="chips" style="margin:8px 0">${texts.map(t => `<label class="chip${t.tid === curTid ? ' on' : ''}" data-tid="${esc(t.tid)}">${esc(t.title)}</label>`).join('')}</div>` : ''}
+    ${cur ? `<p class="small muted" style="margin:6px 0">${esc(cur.title)}${cur.mine ? ' · 내가 넣거나 고친 본문' : ''}</p>
+      <div class="src-text${lnOn ? ' ln' : ''}" id="srcText">${cur.body.split('\n').map(line => line.trim() ? `<div class="l">${esc(line)}</div>` : '<div class="l e"></div>').join('')}</div>`
+      : `<p class="small muted">아직 본문이 없다. "+ 붙여넣기" 로 원문을 넣거나 "+ 사진" 으로 교과서 사진을 올린다. 공부 Claude 프롬프트로 받은 자료에는 본문이 같이 들어 있다.</p>`}
+    <div id="srcImgs" class="src-imgs"></div>
+  </section>`;
 
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
@@ -408,13 +427,14 @@ function viewPack() {
     ${qs.length ? `<a class="btn pri" href="#/run?pack=${encodeURIComponent(p.id)}">문제 ${qs.length}개 풀기</a>` : ''}
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
     <a class="btn" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a>
+    <button class="btn${srcOn ? ' pri' : ''}" id="srcBtn">${srcOn ? '본문 닫기' : '본문 같이 보기'}${texts.length ? ` (${texts.length})` : ''}</button>
     <button class="btn ghost" id="readBtn">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
     <button class="btn ghost" id="printBtn">인쇄</button>
   </div>
   <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.ymd(new Date(readEvents[readEvents.length - 1].t)))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
   ${pos && pos.r > 0.05 && !hl ? `<p class="noprint"><button class="btn sm" id="resumeBtn">지난번 읽던 곳으로 (${Math.round(pos.r * 100)}%)</button></p>` : ''}
-  <div class="pack-layout"><div class="pack-main">
-  <p class="small muted noprint" style="margin:0 0 6px">본문 글자를 길게 눌러 고르면 형광펜·메모를 남길 수 있다.</p>
+  <div class="pack-layout${srcOn ? ' src-on' : ''}">${srcOn ? srcPane : ''}<div class="pack-main">
+  <p class="small muted noprint" style="margin:0 0 6px">글자를 길게 눌러 고르면 형광펜·메모를 남길 수 있다${srcOn ? ' (본문에도 된다)' : ''}.</p>
   <article class="card notes" id="notes">${p.notes ? md(p.notes) : '<p class="muted">본문이 없는 자료다.</p>'}</article>
   ${(p.cards || []).length ? `<details class="card flat"><summary>암기 항목 ${p.cards.length}개 한눈에 보기</summary><table class="crit">${p.cards.map(c => `<tr><td><b>${esc(c.front)}</b></td><td>${esc(c.back)}</td></tr>`).join('')}</table></details>` : ''}
   </div>
@@ -426,7 +446,7 @@ function viewPack() {
   </section>
   <section class="card noprint">
     <div class="row between"><h2 style="margin:0">형광펜·메모 ${marks.length}</h2><a class="small" href="#/marks?pack=${encodeURIComponent(p.id)}">모아보기</a></div>
-    <ul class="list" id="markList">${marks.map(h => `<li><a class="item" href="#" data-goto="${h.id}"><span class="hl-sw hl-${h.color}"></span><span class="grow small">${esc(h.text.slice(0, 60))}${h.text.length > 60 ? '…' : ''}${h.note ? `<br><span class="muted">✎ ${esc(h.note)}</span>` : ''}</span></a></li>`).join('') || '<li class="item small muted">아직 없다.</li>'}</ul>
+    <ul class="list" id="markList">${marks.map(h => `<li><a class="item" href="#" data-goto="${h.id}"><span class="hl-sw hl-${h.color}"></span><span class="grow small">${h.where ? '<span class="tag">본문</span> ' : ''}${esc(h.text.slice(0, 60))}${h.text.length > 60 ? '…' : ''}${h.note ? `<br><span class="muted">✎ ${esc(h.note)}</span>` : ''}</span></a></li>`).join('') || '<li class="item small muted">아직 없다.</li>'}</ul>
   </section>
   <section class="card noprint">
     <h2>이 자료에 대해 묻기</h2>
@@ -438,10 +458,11 @@ function viewPack() {
   </section></aside></div>
   `;
   const notes = $('#notes');
-  const missing = HL.paint(notes, marks);
+  const srcText = $('#srcText');
+  const missing = [...HL.paint(notes, notesMarks), ...(srcText ? HL.paint(srcText, srcMarks) : [])];
   missing.forEach(id => { const li = $(`[data-goto="${id}"]`); if (li) li.insertAdjacentHTML('beforeend', '<span class="tag warn">본문 바뀜</span>'); });
   if (hl) highlight(notes, hl);
-  else if (q.get('mark')) setTimeout(() => notes.querySelector(`[data-hl="${q.get('mark')}"]`)?.scrollIntoView({ block: 'center' }), 60);
+  else if (q.get('mark')) setTimeout(() => main.querySelector(`[data-hl="${q.get('mark')}"]`)?.scrollIntoView({ block: 'center' }), 60);
   else if (q.get('resume') && pos) setTimeout(() => scrollToRatio(notes, pos.r), 60);
 
   reader.start(p.id);
@@ -452,17 +473,23 @@ function viewPack() {
   };
 
   // 형광펜 고르기
-  bindSelection(notes, p);
-  notes.addEventListener('click', e => {
+  bindSelection([{ root: notes, where: null }, ...(srcText ? [{ root: srcText, where: 'src:' + cur.tid }] : [])], p);
+  [notes, srcText].filter(Boolean).forEach(root => root.addEventListener('click', e => {
     const m = e.target.closest('mark.hl');
     if (m && !window.getSelection().toString()) openMarkDialog(m.dataset.hl);
-  });
+  }));
   $$('[data-goto]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
-    const m = notes.querySelector(`[data-hl="${a.dataset.goto}"]`);
+    const h = S.kvGet('hl', a.dataset.goto);
+    const m = main.querySelector(`[data-hl="${a.dataset.goto}"]`);
     if (m) { m.scrollIntoView({ block: 'center' }); m.classList.add('flash-hl'); setTimeout(() => m.classList.remove('flash-hl'), 1200); }
+    else if (h && h.where && (!srcOn || h.where !== 'src:' + cur?.tid)) location.hash = `#/pack?id=${encodeURIComponent(p.id)}&src=${encodeURIComponent(h.where.slice(4))}&mark=${h.id}`;
     else openMarkDialog(a.dataset.goto);
   }));
+
+  // 본문 같이 보기
+  $('#srcBtn').addEventListener('click', () => { S.save('srcOn', !srcOn); render.keepScroll = true; render(); });
+  if (srcOn) bindSrcPane(p, texts, cur);
   $('#resumeBtn')?.addEventListener('click', () => scrollToRatio(notes, pos.r));
 
   // 단원 메모
@@ -515,10 +542,65 @@ function scrollToRatio(el, r) {
   window.scrollTo({ top: Math.max(0, top) });
 }
 
+// ---------- 본문 칸 ----------
+let srcUrls = [];
+function bindSrcPane(p, texts, cur) {
+  $$('#srcPane [data-tid]').forEach(c => c.addEventListener('click', () => {
+    const tabs = S.load('srcTab', {}); tabs[p.id] = c.dataset.tid; S.save('srcTab', tabs);
+    location.hash = `#/pack?id=${encodeURIComponent(p.id)}&src=${encodeURIComponent(c.dataset.tid)}`;
+  }));
+  $('#lnOn')?.addEventListener('change', e => { S.save('srcLn', e.target.checked); $('#srcText').classList.toggle('ln', e.target.checked); });
+  $('#srcAdd').addEventListener('click', () => openSrcDialog(p, null));
+  $('#srcEdit')?.addEventListener('click', () => openSrcDialog(p, cur));
+  $('#srcImg').addEventListener('change', async e => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    toast('사진을 줄여서 저장하는 중…');
+    try { for (const f of files) await SRC.addImage(p.id, f); toast(`사진 ${files.length}장을 넣었다. 이 기기에만 저장된다.`); }
+    catch (err) { toast('사진을 저장하지 못했다: ' + err.message, 4000); }
+    drawImgs();
+  });
+  const drawImgs = async () => {
+    srcUrls.forEach(u => URL.revokeObjectURL(u)); srcUrls = [];
+    const list = await SRC.listImages(p.id);
+    const box = document.getElementById('srcImgs');
+    if (!box) return;
+    box.innerHTML = list.map(im => { const u = URL.createObjectURL(im.blob); srcUrls.push(u); return `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="교과서 사진" loading="lazy"></a><button class="btn sm ghost bad" data-imgdel="${im.id}">사진 지우기</button></figure>`; }).join('');
+    box.querySelectorAll('[data-imgdel]').forEach(b => b.addEventListener('click', async () => { if (!confirm('이 사진을 지울까?')) return; await SRC.deleteImage(b.dataset.imgdel); drawImgs(); }));
+  };
+  drawImgs();
+}
+
+function openSrcDialog(p, t) {
+  let dlg = document.getElementById('srcDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'srcDlg'; dlg.className = 'dlg wide'; document.body.appendChild(dlg); }
+  dlg.innerHTML = `<form method="dialog">
+    <h2 style="margin-top:0">${t ? '본문 고치기' : '본문 붙여넣기'}</h2>
+    <label class="field"><span>제목 (작품 이름, 지문 제목)</span><input type="text" name="title" value="${esc(t?.title || '')}" placeholder="예: 진달래꽃 - 김소월"></label>
+    <label class="field"><span>본문 (줄바꿈 그대로 붙여넣는다)</span><textarea name="body" style="min-height:45vh;font-size:.95rem">${esc(t?.body || '')}</textarea></label>
+    <div class="row between"><span>${t ? (t.fromPack && t.mine ? '<button value="revert" class="btn sm ghost">자료 원래 본문으로</button>' : '<button value="del" class="btn sm bad">이 본문 지우기</button>') : ''}</span><span class="row"><button value="cancel" class="btn sm ghost">닫기</button><button value="save" class="btn sm pri">저장</button></span></div>
+  </form>`;
+  dlg.onclose = () => {
+    const v = dlg.returnValue, f = dlg.querySelector('form');
+    if (v === 'save') {
+      const body = f.body.value.replace(/\r\n/g, '\n');
+      if (!body.trim()) return toast('본문이 비어 있다.');
+      const tid = SRC.saveText(p, t?.tid, f.title.value.trim() || '본문', body);
+      const tabs = S.load('srcTab', {}); tabs[p.id] = tid; S.save('srcTab', tabs);
+      S.save('srcOn', true);
+    } else if (v === 'del') { if (!confirm('이 본문을 지울까? 여기에 칠한 형광펜은 목록에만 남는다.')) return; SRC.deleteText(p, t); }
+    else if (v === 'revert') SRC.revertText(p, t);
+    else return;
+    location.hash = `#/pack?id=${encodeURIComponent(p.id)}`;
+    render.keepScroll = true; render();
+  };
+  dlg.showModal();
+}
+
 // ---------- 형광펜: 고르면 아래에 도구 띠가 뜬다 ----------
 let selBar = null;
 function hideSelBar() { if (selBar) selBar.style.display = 'none'; }
-function bindSelection(root, pack) {
+function bindSelection(roots, pack) {
   if (!selBar) {
     selBar = document.createElement('div');
     selBar.className = 'selbar noprint';
@@ -528,11 +610,18 @@ function bindSelection(root, pack) {
     selBar.addEventListener('pointerdown', e => e.preventDefault());
     selBar.addEventListener('mousedown', e => e.preventDefault());
   }
-  let anchor = null;
+  let anchor = null, where = null;
+  const find = () => {
+    for (const r of roots) {
+      if (!document.body.contains(r.root)) continue;
+      const a = HL.selectionAnchor(r.root);
+      if (a) return { a, where: r.where };
+    }
+    return null;
+  };
   const onSel = () => {
-    if (!document.body.contains(root)) return;
-    const a = HL.selectionAnchor(root);
-    if (a) { anchor = a; selBar.style.display = 'flex'; }
+    const f = find();
+    if (f) { anchor = f.a; where = f.where; selBar.style.display = 'flex'; }
     else if (!selBar.contains(document.activeElement)) { selBar.style.display = 'none'; }
   };
   document.onselectionchange = onSel;
@@ -540,11 +629,12 @@ function bindSelection(root, pack) {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.hasAttribute('data-x')) { window.getSelection().removeAllRanges(); hideSelBar(); return; }
-    const a = anchor || HL.selectionAnchor(root);
-    if (!a) return hideSelBar();
+    const f = anchor ? { a: anchor, where } : find();
+    if (!f) return hideSelBar();
+    const a = f.a;
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const color = b.dataset.c || 'y';
-    S.kvSet('hl', id, { id, pack: pack.id, subject: pack.subject, text: a.text, prefix: a.prefix, suffix: a.suffix, color, note: '', c: Date.now() });
+    S.kvSet('hl', id, { id, pack: pack.id, subject: pack.subject, text: a.text, prefix: a.prefix, suffix: a.suffix, color, note: '', c: Date.now(), ...(f.where ? { where: f.where } : {}) });
     window.getSelection().removeAllRanges();
     hideSelBar();
     render.keepScroll = true; render();
@@ -1608,7 +1698,7 @@ function entryHtml(x) {
   if (x.kind === 'x') return `<li class="j-row">${time}<div class="grow"><span class="tag vio">실전</span> ${e.n}문제 · ${e.ok} 맞음${e.mx ? ` · 서술형 ${e.sc}/${e.mx}점` : ''} · ${e.min}분 · ${(e.subj || []).map(subjName).join(', ')}</div></li>`;
   if (x.kind === 'q') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} 에 질문: <span class="muted">${esc(e.text)}</span></div></li>`;
   if (x.kind === 'g') return `<li class="j-row">${time}<div class="grow">AI 문제 ${e.n}개 만듦 · ${packName(e.pack)}</div></li>`;
-  if (x.kind === 'hl') return `<li class="j-row">${time}<div class="grow">${packName(x.pack)} 형광펜·메모 ${x.list.length}개<ul class="small" style="margin:4px 0 0;padding-left:1.1em">${x.list.slice(0, 5).map(h => `<li><span class="hl-sw hl-${h.color}"></span> <a href="#/pack?id=${encodeURIComponent(h.pack)}&mark=${h.id}">${esc(h.text.slice(0, 50))}</a>${h.note ? ` <span class="muted">✎ ${esc(h.note.slice(0, 60))}</span>` : ''}</li>`).join('')}</ul></div></li>`;
+  if (x.kind === 'hl') return `<li class="j-row">${time}<div class="grow">${packName(x.pack)} 형광펜·메모 ${x.list.length}개<ul class="small" style="margin:4px 0 0;padding-left:1.1em">${x.list.slice(0, 5).map(h => `<li><span class="hl-sw hl-${h.color}"></span> <a href="#/pack?id=${encodeURIComponent(h.pack)}${h.where ? `&src=${encodeURIComponent(h.where.slice(4))}` : ""}&mark=${h.id}">${esc(h.text.slice(0, 50))}</a>${h.note ? ` <span class="muted">✎ ${esc(h.note.slice(0, 60))}</span>` : ''}</li>`).join('')}</ul></div></li>`;
   if (x.kind === 'plan') return `<li class="j-row">${time}<div class="grow">계획 끝냄: ${x.p.subject ? subjDot(x.p.subject) + ' ' : ''}${esc(x.p.text)}</div></li>`;
   if (x.kind === 'pnote') return `<li class="j-row">${time}<div class="grow">${packName(x.n.pack)} 단원 메모 고침</div></li>`;
   return '';
@@ -1682,7 +1772,7 @@ function viewMarks() {
   ${notes.length && !fc && !term ? `<section class="card flat"><h2>단원 메모</h2>${notes.map(n => `<p><a href="#/pack?id=${encodeURIComponent(n.pack)}"><b>${esc(D.db().byId[n.pack]?.title || n.pack)}</b></a><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
   ${packs.map(pk => {
     const p = D.db().byId[pk];
-    return `<section class="card flat"><h2>${p ? subjDot(p.subject) + ' ' + esc(p.title) : esc(pk)}</h2><ul class="list">${byPack[pk].sort((a, b) => a.c - b.c).map(h => `<li class="item" style="align-items:flex-start"><span class="grow"><a class="hl-text hl-${h.color}" href="#/pack?id=${encodeURIComponent(h.pack)}&mark=${h.id}">${esc(h.text)}</a>${h.note ? `<br><span class="small">✎ ${esc(h.note)}</span>` : ''}</span><span class="small muted">${S.fmtDate(S.ymd(new Date(h.c)))}</span></li>`).join('')}</ul></section>`;
+    return `<section class="card flat"><h2>${p ? subjDot(p.subject) + ' ' + esc(p.title) : esc(pk)}</h2><ul class="list">${byPack[pk].sort((a, b) => a.c - b.c).map(h => `<li class="item" style="align-items:flex-start"><span class="grow"><a class="hl-text hl-${h.color}" href="#/pack?id=${encodeURIComponent(h.pack)}${h.where ? `&src=${encodeURIComponent(h.where.slice(4))}` : ""}&mark=${h.id}">${esc(h.text)}</a>${h.note ? `<br><span class="small">✎ ${esc(h.note)}</span>` : ''}</span><span class="small muted">${S.fmtDate(S.ymd(new Date(h.c)))}</span></li>`).join('')}</ul></section>`;
   }).join('') || '<p class="muted">아직 없다. 자료 본문에서 글자를 길게 눌러 골라 본다.</p>'}`;
   $('#mf').addEventListener('submit', e => { e.preventDefault(); location.hash = link({ q: e.target.q.value.trim() }); });
 }
@@ -1783,22 +1873,24 @@ function viewSettings() {
       const r = D.parseImport(text);
       const bad = new Set(r.errors.map(m => m.split(':')[0]));
       const okPacks = r.packs.filter((p, i) => !bad.has(p && p.id ? p.id : `packs[${i}]`));
-      pendingImport = { packs: okPacks, exam: r.exam };
+      const tp = (r.textPatches || []).filter(t => typeof t.texts_for === 'string' && Array.isArray(t.texts) && t.texts.every(x => x && typeof x.body === 'string' && x.body.trim()));
+      pendingImport = { packs: okPacks, exam: r.exam, textPatches: tp };
       out.innerHTML = `<div class="${r.errors.length ? 'note' : 'note info'}" style="margin-top:10px">
-        <p>자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.${r.exam ? ' 시험 정보도 들어 있다.' : ''}</p>
+        <p>${r.packs.length ? `자료 ${r.packs.length}개 중 ${okPacks.length}개 가져올 수 있다.` : ''}${tp.length ? ` 원문 ${tp.reduce((a, t) => a + t.texts.length, 0)}개 (${tp.map(t => esc(D.db().byId[t.texts_for]?.title || t.texts_for + ' (없는 자료)')).join(', ')}).` : ''}${r.exam ? ' 시험 정보도 들어 있다.' : ''}</p>
         ${okPacks.map(p => `<div class="small">${subjDot(p.subject)} ${esc(p.title)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}${D.db().byId[p.id] ? ' <span class="tag warn">같은 id 덮어씀</span>' : ''}</div>`).join('')}
         ${r.errors.length ? `<details open><summary>고칠 것 ${r.errors.length}개</summary><ul class="small">${r.errors.slice(0, 30).map(m => `<li>${esc(m)}</li>`).join('')}</ul><p class="small">이 목록을 공부자료 Claude 에게 보내고 고쳐 달라고 하면 된다.</p></details>` : ''}
-        ${okPacks.length || r.exam ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
+        ${okPacks.length || r.exam || tp.length ? '<button class="btn pri" id="impGo" style="margin-top:8px">가져오기</button>' : ''}
       </div>`;
       $('#impGo')?.addEventListener('click', async () => {
         if (pendingImport.packs.length) D.saveLocalPacks(pendingImport.packs);
+        for (const tp2 of pendingImport.textPatches || []) tp2.texts.forEach((t, i) => SRC.saveText({ id: tp2.texts_for }, t.id ? String(t.id) : 'add-' + i, t.title || `본문 ${i + 1}`, t.body));
         if (pendingImport.exam && pendingImport.exam.subjects) {
           const sub = {};
           for (const id in pendingImport.exam.subjects) if (SUBJ[id]) { const v = pendingImport.exam.subjects[id]; sub[id] = {}; if ('date' in v) sub[id].date = v.date; if ('range' in v) sub[id].range = v.range; }
           D.saveExamLocal(sub);
         }
         await D.loadAll();
-        toast(`${pendingImport.packs.length}개 가져왔다.`);
+        toast(`자료 ${pendingImport.packs.length}개${(pendingImport.textPatches || []).length ? `, 원문 ${pendingImport.textPatches.length}묶음` : ''} 가져왔다.`);
         pendingImport = null;
         render();
       });
@@ -1919,11 +2011,12 @@ function viewPrompts() {
     <div class="row between"><h2 style="margin:0">${subjName(sel)}${light ? ' · 가벼운 버전' : ''}</h2><button class="btn pri" data-copy-text="main">복사</button></div>
     <pre class="prompt" id="ptext">${esc(text)}</pre>
   </section>
+  <section class="card"><div class="row between"><h2 style="margin:0">이미 만든 자료에 원문만 더 받을 때</h2><button class="btn sm" data-copy-text="texts">복사</button></div><p class="small muted">그 과목 Claude 채팅에 보낸다. 받은 JSON 을 자료 가져오기에 붙여넣으면 문제와 기록은 그대로 두고 원문만 붙는다.</p><pre class="prompt">${esc(PR.TEXTS_PROMPT)}</pre></section>
   <section class="card"><div class="row between"><h2 style="margin:0">오류가 났을 때</h2><button class="btn sm" data-copy-text="fix">복사</button></div><pre class="prompt">${esc(PR.FIX_PROMPT)}</pre></section>
   <section class="card"><div class="row between"><h2 style="margin:0">시험 범위·날짜가 나왔을 때</h2><button class="btn sm" data-copy-text="range">복사</button></div><pre class="prompt">${esc(PR.RANGE_PROMPT)}</pre></section>`;
   $$('input[name="ps"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + r.value + (light ? '&v=light' : ''); }));
   $$('input[name="pv"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/prompts?s=' + sel + (r.value ? '&v=light' : ''); }));
-  const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT };
+  const texts = { main: text, fix: PR.FIX_PROMPT, range: PR.RANGE_PROMPT, texts: PR.TEXTS_PROMPT };
   $$('[data-copy-text]').forEach(b => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(texts[b.dataset.copyText]); toast('복사했다. Claude 채팅에 붙여넣는다.'); }
     catch (e) {
