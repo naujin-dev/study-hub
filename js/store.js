@@ -32,8 +32,11 @@ export function remove(key) {
 }
 
 // ---------- 날짜 ----------
+// 하루는 새벽 2시에 바뀐다. 새벽 1시에 한 공부는 전날 공부로 센다
+export const DAY_START_HOUR = 2;
+export function dayOf(t) { return ymd(new Date(t - DAY_START_HOUR * 3600000)); }
 export function today() {
-  return ymd(new Date());
+  return dayOf(Date.now());
 }
 export function ymd(d) {
   const z = n => String(n).padStart(2, '0');
@@ -65,7 +68,6 @@ export function fmtDur(sec) {
   if (m < 60) return `${m}분`;
   return `${Math.floor(m / 60)}시간${m % 60 ? ' ' + (m % 60) + '분' : ''}`;
 }
-const dayOf = t => ymd(new Date(t));
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // ---------- 바뀜 알림 (동기화가 듣는다) ----------

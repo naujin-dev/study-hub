@@ -551,7 +551,7 @@ function viewPack() {
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
   <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
-  ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.ymd(new Date(bookDone.t)))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
+  ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
   <p class="small noprint" id="packPdfs" hidden></p>
@@ -564,7 +564,7 @@ function viewPack() {
     <button class="btn ghost" id="readBtn">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
     <button class="btn ghost" id="printBtn">인쇄</button>
   </div>
-  <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.ymd(new Date(readEvents[readEvents.length - 1].t)))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
+  <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.dayOf(readEvents[readEvents.length - 1].t))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
   ${pos && pos.r > 0.05 && !hl ? `<p class="noprint"><button class="btn sm" id="resumeBtn">지난번 읽던 곳으로 (${Math.round(pos.r * 100)}%)</button></p>` : ''}
   <div class="pack-layout${srcOn ? ' src-on' : ''}">${srcOn ? srcPane : ''}<div class="pack-main">
   <p class="small muted noprint" style="margin:0 0 6px">글자를 길게 눌러 고르면 형광펜·메모를 남길 수 있다${srcOn ? ' (본문에도 된다)' : ''}.</p>
@@ -575,7 +575,7 @@ function viewPack() {
   <section class="card noprint">
     <h2>내 단원 메모</h2>
     <textarea id="pnote" placeholder="이 단원에서 기억할 것, 선생님이 강조한 것, 헷갈리는 것" style="min-height:90px">${esc(memo?.text || '')}</textarea>
-    <p class="small muted" id="pnoteInfo">${memo ? '저장됨 · ' + S.fmtDate(S.ymd(new Date(memo.u))) + ' ' + S.fmtTime(memo.u) : '쓰면 바로 저장된다.'}</p>
+    <p class="small muted" id="pnoteInfo">${memo ? '저장됨 · ' + S.fmtDate(S.dayOf(memo.u)) + ' ' + S.fmtTime(memo.u) : '쓰면 바로 저장된다.'}</p>
   </section>
   <section class="card noprint">
     <div class="row between"><h2 style="margin:0">형광펜·메모 ${marks.length}</h2><a class="small" href="#/marks?pack=${encodeURIComponent(p.id)}">모아보기</a></div>
@@ -862,7 +862,7 @@ function openMarkDialog(id) {
   let dlg = document.getElementById('markDlg');
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'markDlg'; dlg.className = 'dlg'; document.body.appendChild(dlg); }
   dlg.innerHTML = `<form method="dialog">
-    <p class="small muted" style="margin:0">${subjName(h.subject)} · ${esc(D.db().byId[h.pack]?.title || '')} · ${S.fmtDate(S.ymd(new Date(h.c)))}</p>
+    <p class="small muted" style="margin:0">${subjName(h.subject)} · ${esc(D.db().byId[h.pack]?.title || '')} · ${S.fmtDate(S.dayOf(h.c))}</p>
     <blockquote class="hl-quote hl-${h.color}">${esc(h.text)}</blockquote>
     <div class="chips" style="margin:8px 0">${HL.COLORS.map(c => `<label class="chip"><input type="radio" name="color" value="${c.id}"${c.id === h.color ? ' checked' : ''}><span class="hl-sw hl-${c.id}"></span>${c.name}</label>`).join('')}</div>
     <textarea name="note" placeholder="메모" style="min-height:90px">${esc(h.note || '')}</textarea>
@@ -1781,7 +1781,7 @@ function viewPlan() {
 function dailySeries() {
   const log = S.getLog();
   const evs = S.getEvents();
-  const first = evs.length ? S.ymd(new Date(evs[0].t)) : S.today();
+  const first = evs.length ? S.dayOf(evs[0].t) : S.today();
   const days = CH.dayRange(first < S.today() ? first : S.today(), S.today());
   let cq = 0, cs = 0, cc = 0;
   return days.map(d => {
@@ -1944,7 +1944,7 @@ function startTimerLoop() {
 // ================= 공부 일지 =================
 // 하루의 일들을 묶어서 문장으로 보여준다
 function dayEntries(d) {
-  const evs = S.getEvents().filter(e => S.ymd(new Date(e.t)) === d);
+  const evs = S.getEvents().filter(e => S.dayOf(e.t) === d);
   const out = [];
   let run = null; // 이어서 푼 문제 묶음
   const flushRun = () => { if (run) { out.push(run); run = null; } };
@@ -1970,14 +1970,14 @@ function dayEntries(d) {
   }
   flushRun();
   // 형광펜·메모, 끝낸 계획
-  const marks = Object.values(S.kvAll('hl')).filter(h => S.ymd(new Date(h.c)) === d);
+  const marks = Object.values(S.kvAll('hl')).filter(h => S.dayOf(h.c) === d);
   const byPack = {};
   for (const h of marks) (byPack[h.pack] = byPack[h.pack] || []).push(h);
   for (const pk in byPack) out.push({ kind: 'hl', t: Math.min(...byPack[pk].map(h => h.c)), pack: pk, list: byPack[pk] });
-  for (const p of planList()) if (p.done && p.doneAt && S.ymd(new Date(p.doneAt)) === d) out.push({ kind: 'plan', t: p.doneAt, p });
-  const notes = Object.values(S.kvAll('pnote')).filter(n => S.ymd(new Date(n.u)) === d);
+  for (const p of planList()) if (p.done && p.doneAt && S.dayOf(p.doneAt) === d) out.push({ kind: 'plan', t: p.doneAt, p });
+  const notes = Object.values(S.kvAll('pnote')).filter(n => S.dayOf(n.u) === d);
   for (const n of notes) out.push({ kind: 'pnote', t: n.u, n });
-  for (const b of Object.values(S.kvAll('blank')).filter(b => S.ymd(new Date(b.t)) === d)) out.push({ kind: 'blank', t: b.t, b });
+  for (const b of Object.values(S.kvAll('blank')).filter(b => S.dayOf(b.t) === d)) out.push({ kind: 'blank', t: b.t, b });
   return out.sort((a, b) => a.t - b.t);
 }
 function entryHtml(x) {
@@ -2018,8 +2018,8 @@ function viewJournal() {
   const { q } = params();
   const log = S.getLog();
   const one = q.get('d');
-  const evDays = new Set(S.getEvents().map(e => S.ymd(new Date(e.t))));
-  for (const h of Object.values(S.kvAll('hl'))) evDays.add(S.ymd(new Date(h.c)));
+  const evDays = new Set(S.getEvents().map(e => S.dayOf(e.t)));
+  for (const h of Object.values(S.kvAll('hl'))) evDays.add(S.dayOf(h.c));
   for (const id in S.kvAll('diary')) evDays.add(id);
   evDays.add(S.today());
   let days = [...evDays].sort().reverse();
@@ -2083,7 +2083,7 @@ function viewMarks() {
   ${notes.length && !fc && !term ? `<section class="card flat"><h2>단원 메모</h2>${notes.map(n => `<p><a href="#/pack?id=${encodeURIComponent(n.pack)}"><b>${esc(D.db().byId[n.pack]?.title || n.pack)}</b></a><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
   ${packs.map(pk => {
     const p = D.db().byId[pk];
-    return `<section class="card flat"><h2>${p ? subjDot(p.subject) + ' ' + esc(p.title) : esc(pk)}</h2><ul class="list">${byPack[pk].sort((a, b) => a.c - b.c).map(h => `<li class="item" style="align-items:flex-start"><span class="grow"><a class="hl-text hl-${h.color}" href="#/pack?id=${encodeURIComponent(h.pack)}${h.where ? `&src=${encodeURIComponent(h.where.slice(4))}` : ""}&mark=${h.id}">${esc(h.text)}</a>${h.note ? `<br><span class="small">✎ ${esc(h.note)}</span>` : ''}</span><span class="small muted">${S.fmtDate(S.ymd(new Date(h.c)))}</span></li>`).join('')}</ul></section>`;
+    return `<section class="card flat"><h2>${p ? subjDot(p.subject) + ' ' + esc(p.title) : esc(pk)}</h2><ul class="list">${byPack[pk].sort((a, b) => a.c - b.c).map(h => `<li class="item" style="align-items:flex-start"><span class="grow"><a class="hl-text hl-${h.color}" href="#/pack?id=${encodeURIComponent(h.pack)}${h.where ? `&src=${encodeURIComponent(h.where.slice(4))}` : ""}&mark=${h.id}">${esc(h.text)}</a>${h.note ? `<br><span class="small">✎ ${esc(h.note)}</span>` : ''}</span><span class="small muted">${S.fmtDate(S.dayOf(h.c))}</span></li>`).join('')}</ul></section>`;
   }).join('') || '<p class="muted">아직 없다. 자료 본문에서 글자를 길게 눌러 골라 본다.</p>'}`;
   $('#mf').addEventListener('submit', e => { e.preventDefault(); location.hash = link({ q: e.target.q.value.trim() }); });
 }
@@ -2664,7 +2664,7 @@ function viewMath() {
 
   <section class="card">
     <h2>빈 시간 채우기</h2>
-    <p class="small muted">고른 시간 안에서 공부(자료 읽기, 문제, 카드, 타이머, 잰 시간)로 기록되지 않은 시간을 찾아 고른 과목 시간으로 넣는다. 1분보다 짧은 틈은 뺀다.</p>
+    <p class="small muted">고른 시간 안에서 공부(자료 읽기, 문제, 카드, 타이머, 잰 시간)로 기록되지 않은 시간을 찾아 고른 과목 시간으로 넣는다. 1분보다 짧은 틈은 뺀다. 하루는 새벽 2시에 바뀌므로 00:00~01:59 는 고른 날짜의 밤(다음 날 새벽)이다.</p>
     <form id="gapF" class="row" style="align-items:flex-end">
       <label class="field" style="margin:0"><span>과목</span>${subSel('sub')}</label>
       <label class="field" style="margin:0"><span>날짜</span><input type="date" name="d" value="${esc(q.get('d') || today)}" max="${today}"></label>
@@ -2682,7 +2682,7 @@ function viewMath() {
 
   <section class="card">
     <h2>기록</h2>
-    ${recent.length ? `<ul class="list">${recent.map(e => `<li class="item">${subjDot(e.sub)}<span class="grow">${subjName(e.sub)} · ${S.fmtDate(S.ymd(new Date(e.t)))} ${hm(e.from)}~${hm(e.t)}</span><b class="mono">${S.fmtDur(e.s)}</b><button class="btn sm ghost" data-mx="${e.id}">취소</button></li>`).join('')}</ul>` : '<p class="small muted">아직 없다.</p>'}
+    ${recent.length ? `<ul class="list">${recent.map(e => `<li class="item">${subjDot(e.sub)}<span class="grow">${subjName(e.sub)} · ${S.fmtDate(S.dayOf(e.t))} ${hm(e.from)}~${hm(e.t)}</span><b class="mono">${S.fmtDur(e.s)}</b><button class="btn sm ghost" data-mx="${e.id}">취소</button></li>`).join('')}</ul>` : '<p class="small muted">아직 없다.</p>'}
   </section>`;
 
   const upd = () => {
@@ -2698,7 +2698,8 @@ function viewMath() {
   $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
   $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 수학 시간 기록을 지울까?')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
 
-  const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da, h, mi).getTime(); };
+  // 날짜는 공부한 날 기준이라 새벽 2시 전 시각은 그다음 날 새벽이다 (예: 22일 01:00 = 23일 새벽 1시)
+  const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da + (h < S.DAY_START_HOUR ? 1 : 0), h, mi).getTime(); };
   const find = () => {
     const f = $('#gapF');
     const d = f.d.value || today;
@@ -2762,7 +2763,7 @@ async function viewPdf() {
     if (!xs.length) return '';
     return `<div class="sec-title"><h2>${s.id ? subjDot(s.id) : ''} ${s.name}</h2><span class="small muted">${xs.length}개</span></div>
     <section class="card flat"><ul class="list">${xs.map(x => { const pk = x.pack && D.db().byId[x.pack]; return `<li class="item pdf-item">
-      <a class="grow" href="#/pdf?id=${x.id}"><b>${esc(x.title)}</b><br><span class="small muted">${pk ? `자료: ${esc(pk.title)} · ` : ''}${fmtSize(x.size)} · ${S.fmtDate(S.ymd(new Date(x.c)))}</span></a>
+      <a class="grow" href="#/pdf?id=${x.id}"><b>${esc(x.title)}</b><br><span class="small muted">${pk ? `자료: ${esc(pk.title)} · ` : ''}${fmtSize(x.size)} · ${S.fmtDate(S.dayOf(x.c))}</span></a>
       <details class="pdf-edit"><summary class="btn sm ghost">고치기</summary>
         <div class="stack" style="margin-top:8px">
           <label class="field"><span>이름</span><input data-pt="${x.id}" value="${esc(x.title)}"></label>
@@ -2897,6 +2898,7 @@ function viewHelp() {
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
 - **PDF 원본**: [자료 → PDF 원본 모아보기] 에서 공부 Claude 에게 받은 PDF 를 넣는다. 이 기기에만 저장된다(동기화 안 됨). 자료에 이어 두면 자료 화면 위에 "PDF 원본 보기" 가 생긴다. −/+ 로 크기를 바꾼다.
+- **하루 기준**: 하루는 새벽 2시에 바뀐다. 밤 12시를 넘겨 새벽 1시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
 - **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.
