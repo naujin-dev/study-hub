@@ -2595,7 +2595,7 @@ function checkPack(p) {
   if (['kor', 'eng', 'jpn'].includes(p.subject) && !(p.texts || []).length && !SRC.textsOf(p).length) add('info', '원문', '원문(본문)이 없다. "본문 같이 보기" 를 쓰려면 원문을 넣는다.');
   [...(p.questions || []).map((q, i) => [q, `문제 ${i + 1}`]), ...(p.book || []).map((q, i) => [q, `책 문제 ${q.source || i + 1}`])].forEach(([q, w]) => {
     scanText(w, q.question); scanText(w + ' 지문', q.context); scanText(w + ' 해설', q.explanation);
-    if (/윗글|다음 글|아래 글|<보기>|\[보기\]|다음 시|다음 자료/.test(q.question) && !q.context) add('err', w, `"${q.question.slice(0, 30)}…" — 지문이나 <보기> 를 가리키는데 context 가 비어 있다.`);
+    if (/윗글|다음 글|아래 글|<보기>|\[보기\]|다음 시(?![각간])|다음 자료/.test(q.question) && !q.context) add('err', w, `"${q.question.slice(0, 30)}…" — 지문이나 <보기> 를 가리키는데 context 가 비어 있다.`);
     if (q.type === 'mcq') {
       if (q.choices.some(c => /^\s*([①②③④⑤]|\(?[1-5][).]\s)/.test(c))) add('warn', w, '보기 앞에 ①② 나 1) 번호가 붙어 있다. 사이트가 번호를 또 붙여서 두 번 보인다.');
       if (new Set(q.choices.map(c => c.trim())).size !== q.choices.length) add('err', w, '똑같은 보기가 두 개 있다.');
