@@ -389,7 +389,30 @@ function unitKey(u) {
   return u.replace(/^(고등|공통)\s*\S+\s+/, '').trim() || u;
 }
 const unitOf = p => S.kvGet('punit', p.id)?.unit || unitKey(p.unit);
+// 내 분류 (과목마다): kv pcat[과목] = { cats: [{ id, name }] }, kv pcatof[자료 id] = { cat }
+const myCats = sub => S.kvGet('pcat', sub)?.cats || [];
+const saveCats = (sub, cats) => S.kvSet('pcat', sub, { cats });
+const catOf = p => { const c = S.kvGet('pcatof', p.id)?.cat; return c && myCats(p.subject).some(x => x.id === c) ? c : ''; };
+function setCatOf(id, cat) { if (cat) S.kvSet('pcatof', id, { cat }); else S.kvDel('pcatof', id); }
+function addCat(sub, name) {
+  name = String(name || '').trim();
+  if (!name) return null;
+  const cats = myCats(sub);
+  const hit = cats.find(c => c.name === name);
+  if (hit) return hit.id;
+  const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
+  saveCats(sub, [...cats, { id, name }]);
+  return id;
+}
 function packGroups(list, mode) {
+  if (mode === 'mine') {
+    const sub = list[0]?.subject;
+    const cats = myCats(sub);
+    const out = cats.map(c => ({ name: c.name, cat: c.id, packs: list.filter(p => catOf(p) === c.id) }));
+    const rest = list.filter(p => !catOf(p));
+    if (rest.length) out.push({ name: '분류 안 됨', cat: '', packs: rest });
+    return out;
+  }
   const by = new Map();
   for (const p of list) {
     const k = mode === 'kind' ? packKind(p) : (unitOf(p) || '단원 없음');
@@ -419,7 +442,8 @@ function viewStudy() {
   S.save('studySub', sel);
   const packs = all.filter(p => p.subject === sel);
   const units = new Set(packs.map(unitOf).filter(Boolean));
-  const mode = q.get('g') || S.load('studyGroup:' + sel, units.size >= 2 ? 'unit' : 'kind');
+  const mode = q.get('g') || S.load('studyGroup:' + sel, myCats(sel).length ? 'mine' : units.size >= 2 ? 'unit' : 'kind');
+  const catEdit = mode === 'mine' && q.get('edit') === '1';
   S.save('studyGroup:' + sel, mode);
   const editing = q.get('order') === sel;
   const link = o => { const ps = new URLSearchParams({ s: sel, ...o }); return '#/study?' + ps; };
@@ -469,13 +493,29 @@ function viewStudy() {
   else if (editing) body = `<div class="sec-title"><h2>순서 바꾸기</h2><span class="row"><button class="btn sm ghost" data-ord-reset="${sel}">원래 순서로</button><button class="btn sm pri" data-ord-done>다 했다</button></span></div>
     <section class="card flat"><ul class="list ordlist">${packs.map((p, i) => `<li class="item"><span class="mono small muted" style="width:2em">${i + 1}</span><span class="grow"><b>${esc(p.title)}</b></span>
       <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < packs.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button></li>`).join('')}</ul></section>`;
+  else if (catEdit) {
+    const cats = myCats(sel);
+    body = `<section class="card" style="margin-top:12px"><h3 style="margin-top:0">분류 만들기</h3>
+      <p class="small muted">${SUBJ[sel].name} 자료를 나눌 분류 이름을 만든다. 순서는 ↑↓ 로, 이름은 칸을 고치면 바로 바뀐다. 분류를 지워도 자료는 지워지지 않고 "분류 안 됨" 으로 간다.</p>
+      <ul class="list catrows">${cats.map((c, i) => `<li class="item"><input type="text" class="grow" data-cname="${c.id}" value="${esc(c.name)}" aria-label="분류 이름"><span class="small muted">${packs.filter(p => catOf(p) === c.id).length}개</span>
+        <button class="btn sm" data-cmv="${c.id}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-cmv="${c.id}" data-d="1" ${i < cats.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button><button class="btn sm ghost bad" data-cdel="${c.id}">지우기</button></li>`).join('') || '<li class="item muted small">아직 분류가 없다.</li>'}</ul>
+      <form id="cAdd" class="row" style="margin-top:8px"><input type="text" name="n" placeholder="새 분류 이름 (예: 학평, 교과서, 시험 직전)" style="flex:1"><button class="btn pri">추가</button></form>
+    </section>
+    <section class="card"><h3 style="margin-top:0">자료 나누기</h3>
+      <p class="small muted">자료마다 들어갈 분류를 고른다. 고르면 바로 저장된다.</p>
+      <ul class="list catrows">${packs.map(p => `<li class="item"><span class="grow"><b>${esc(p.title)}</b></span><select data-pcat="${esc(p.id)}"${cats.length ? '' : ' disabled'}><option value="">분류 안 됨</option>${cats.map(c => `<option value="${c.id}"${catOf(p) === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></li>`).join('')}</ul>
+    </section>`;
+  }
+  else if (mode === 'mine' && !myCats(sel).length) {
+    body = `<section class="card flat" style="margin-top:12px"><p>${SUBJ[sel].name} 에 내 분류가 아직 없다. "분류 관리" 에서 분류 이름을 만들고 자료를 나눠 넣는다. 예: 학평 / 교과서 / 실전 문제 / 시험 직전.</p><a class="btn pri" href="${link({ g: 'mine', edit: '1' })}">분류 만들기</a></section>`;
+  }
   else {
     const groups = packGroups(packs, mode);
     const closed = S.load('studyClosed', {});
     // 자료가 하나뿐인 묶음이 이어지면 머리줄 없이 한 칸에 모은다 (카드 위에 단원 이름)
     const parts = [];
     for (const g of groups) {
-      if (g.packs.length === 1 && groups.length > 2) { const last = parts[parts.length - 1]; if (last && last.singles) last.items.push(g); else parts.push({ singles: true, items: [g] }); }
+      if (mode !== 'mine' && g.packs.length === 1 && groups.length > 2) { const last = parts[parts.length - 1]; if (last && last.singles) last.items.push(g); else parts.push({ singles: true, items: [g] }); }
       else parts.push(g);
     }
     body = parts.map(g => {
@@ -484,7 +524,7 @@ function viewStudy() {
       for (const p of g.packs) { const st = packStats(p, prog, read); qn += st.qn; tried += st.tried; }
       const gk = sel + '|' + mode + '|' + g.name;
       return `<details class="pgroup"${closed[gk] ? '' : ' open'} data-gk="${esc(gk)}"><summary><span class="grow"><b>${esc(g.name)}</b> <span class="small muted">${g.packs.length}개${qn ? ` · 문제 ${tried}/${qn}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</summary>
-        <div class="pgrid">${g.packs.map(p => card(p)).join('')}</div></details>`;
+        <div class="pgrid">${g.packs.map(p => card(p)).join('') || '<p class="small muted">비어 있다. 자료 화면의 "분류" 나 "분류 관리" 에서 넣는다.</p>'}</div></details>`;
     }).join('');
   }
 
@@ -496,12 +536,20 @@ function viewStudy() {
     <nav class="study-side" aria-label="과목">${side}</nav>
     <section class="study-main">
       <div class="row between study-head"><h2 style="margin:0">${subjDot(sel)} ${SUBJ[sel].name}</h2>
-        ${packs.length && !editing ? `<span class="row"><span class="seg"><a class="${mode === 'unit' ? 'on' : ''}" href="${link({ g: 'unit' })}">단원별</a><a class="${mode === 'kind' ? 'on' : ''}" href="${link({ g: 'kind' })}">종류별</a></span>${packs.length > 1 ? `<a class="btn sm ghost" href="${link({ order: sel })}">순서</a>` : ''}</span>` : ''}</div>
+        ${packs.length && !editing ? `<span class="row"><span class="seg"><a class="${mode === 'mine' ? 'on' : ''}" href="${link({ g: 'mine' })}">내 분류</a><a class="${mode === 'unit' ? 'on' : ''}" href="${link({ g: 'unit' })}">단원별</a><a class="${mode === 'kind' ? 'on' : ''}" href="${link({ g: 'kind' })}">종류별</a></span>${mode === 'mine' ? `<a class="btn sm${catEdit ? ' pri' : ''}" href="${link(catEdit ? { g: 'mine' } : { g: 'mine', edit: '1' })}">${catEdit ? '다 했다' : '분류 관리'}</a>` : ''}${packs.length > 1 ? `<a class="btn sm ghost" href="${link({ order: sel })}">순서</a>` : ''}</span>` : ''}</div>
       ${!editing && mode === 'unit' && units.size < 2 && packs.length > 3 ? '<p class="small muted" style="margin:6px 0 0">단원이 하나라 다 같이 보인다. 자료 화면 제목 옆 "단원 정하기" 로 단원을 나누거나, "종류별" 로 본다.</p>' : ''}
       ${body}
     </section>
   </div>`;
 
+  if (catEdit) {
+    const again = () => { render.keepScroll = true; render(); };
+    $('#cAdd').addEventListener('submit', e => { e.preventDefault(); if (addCat(sel, e.target.n.value)) again(); });
+    $$('[data-cname]').forEach(inp => inp.addEventListener('change', () => { const v = inp.value.trim(); if (!v) return again(); saveCats(sel, myCats(sel).map(c => c.id === inp.dataset.cname ? { ...c, name: v } : c)); toast('이름을 바꿨다.'); }));
+    $$('[data-cmv]').forEach(b => b.addEventListener('click', () => { const cs = myCats(sel).slice(); const i = cs.findIndex(c => c.id === b.dataset.cmv), j = i + Number(b.dataset.d); if (j < 0 || j >= cs.length) return; [cs[i], cs[j]] = [cs[j], cs[i]]; saveCats(sel, cs); again(); }));
+    $$('[data-cdel]').forEach(b => b.addEventListener('click', () => { const c = myCats(sel).find(x => x.id === b.dataset.cdel); if (!c || !confirm(`"${c.name}" 분류를 지울까? 안에 있던 자료는 "분류 안 됨" 으로 간다.`)) return; saveCats(sel, myCats(sel).filter(x => x.id !== c.id)); again(); }));
+    $$('[data-pcat]').forEach(sl => sl.addEventListener('change', () => { setCatOf(sl.dataset.pcat, sl.value); toast('저장했다.'); }));
+  }
   $$('.pgroup').forEach(d => d.addEventListener('toggle', () => { const c = S.load('studyClosed', {}); if (d.open) delete c[d.dataset.gk]; else c[d.dataset.gk] = 1; S.save('studyClosed', c); }));
   PDF.listPdfs().then(l => {
     const el = document.getElementById('pdfCount'); const n = l.filter(x => x.subject === sel).length; if (el && n) el.textContent = `${n}개`;
@@ -623,7 +671,7 @@ function viewPack() {
     const pages = [...new Set(book.map(b => (String(b.source || b.page || '').match(/\d+\s*쪽/) || [])[0]).filter(Boolean))];
     main.innerHTML = `
     <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-    <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-unitopen="${esc(p.id)}">단원 정하기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
+    <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-catopen="${esc(p.id)}">분류${catOf(p) ? ': ' + esc(myCats(p.subject).find(c => c.id === catOf(p))?.name || '') : ''}</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
     <section class="card book-gate">
       <h2>먼저 책 문제를 푼다</h2>
       <p>공부자료를 보기 전에 책 문제 <b>${book.length}개</b>를 먼저 풀어 본다. 다 풀고 채점하면 공부자료가 열린다. 모르는 문제는 "모르겠다" 로 넘긴다.</p>
@@ -636,7 +684,7 @@ function viewPack() {
 
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-  <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-unitopen="${esc(p.id)}">단원 정하기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
+  <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-catopen="${esc(p.id)}">분류${catOf(p) ? ': ' + esc(myCats(p.subject).find(c => c.id === catOf(p))?.name || '') : ''}</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
@@ -829,6 +877,33 @@ function openSrcDialog(p, t) {
   dlg.showModal();
 }
 
+// 분류 정하기: 이 과목의 내 분류 중 하나를 고르거나 새로 만든다
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-catopen]');
+  if (!b) return;
+  const p = D.db().byId[b.dataset.catopen];
+  if (!p) return;
+  const cats = myCats(p.subject), cur = catOf(p);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'dlg';
+  dlg.innerHTML = `<form method="dialog"><h2 style="margin-top:0">분류</h2>
+    <p class="small">"${esc(p.title)}" 을 넣을 ${subjName(p.subject)} 분류를 고른다.</p>
+    <div class="chips" style="margin:8px 0">${cats.map(c => `<label class="chip"><input type="radio" name="cat" value="${c.id}"${c.id === cur ? ' checked' : ''}>${esc(c.name)}</label>`).join('')}<label class="chip"><input type="radio" name="cat" value=""${cur ? '' : ' checked'}>분류 안 됨</label></div>
+    <label class="field"><span>새 분류 만들어 넣기</span><input type="text" id="catNew" placeholder="새 분류 이름 (비우면 위에서 고른 것)"></label>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn ghost" value="no">닫기</button><button class="btn pri" value="ok">저장</button></div></form>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => {
+    const r = dlg.returnValue, nn = dlg.querySelector('#catNew').value.trim(), pick = dlg.querySelector('input[name="cat"]:checked')?.value || '';
+    dlg.remove();
+    if (r !== 'ok') return;
+    const id = nn ? addCat(p.subject, nn) : pick;
+    setCatOf(p.id, id);
+    S.save('studyGroup:' + p.subject, 'mine');
+    toast(id ? '분류에 넣었다.' : '분류에서 뺐다.'); render.keepScroll = true; render();
+  });
+  dlg.showModal();
+});
+
 // 단원 정하기: 자료 목록의 "단원별" 묶음 이름. 비우면 자료에 원래 있던 단원으로
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-unitopen]');
@@ -840,7 +915,7 @@ document.addEventListener('click', e => {
   dlg.className = 'dlg';
   dlg.innerHTML = `<form method="dialog"><h2 style="margin-top:0">단원 정하기</h2>
     <p class="small">자료 목록에서 "단원별" 로 볼 때 "${esc(p.title)}" 이 들어갈 묶음이다. 있는 단원을 고르거나 새 이름을 쓴다.</p>
-    <label class="field"><span>단원</span><input id="unIn" list="unList" value="${esc(unitOf(p))}" placeholder="예: 1과, Ⅲ단원, 학평"><datalist id="unList">${have.map(u => `<option value="${esc(u)}">`).join('')}</datalist></label>
+    <label class="field"><span>단원</span><input type="text" id="unIn" list="unList" value="${esc(unitOf(p))}" placeholder="예: 1과, Ⅲ단원, 학평"><datalist id="unList">${have.map(u => `<option value="${esc(u)}">`).join('')}</datalist></label>
     ${have.length ? `<div class="chips" style="margin:6px 0">${have.map(u => `<button type="button" class="chip" data-un="${esc(u)}">${esc(u)}</button>`).join('')}</div>` : ''}
     <div class="row" style="justify-content:flex-end;margin-top:12px">${S.kvGet('punit', p.id) ? '<button class="btn ghost" value="reset">원래대로</button>' : ''}<button class="btn ghost" value="no">닫기</button><button class="btn pri" value="ok">저장</button></div></form>`;
   document.body.appendChild(dlg);
@@ -3085,7 +3160,7 @@ function viewHelp() {
 - **하루 기준**: 하루는 새벽 4시에 바뀐다. 밤 12시를 넘겨 새벽 3시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
-- **공부자료 목록**: 왼쪽에서 과목을 고르면 단원별로 묶인 카드가 나온다. "종류별" 을 누르면 정리 노트 / 문제·실전 / 책 문제 / 암기로 묶는다. 묶음 이름을 눌러 접고 펼친다. 단원 묶음이 마음에 안 들면 자료 화면 제목 옆 "단원 정하기" 로 바꾼다.
+- **공부자료 목록**: 왼쪽에서 과목을 고르면 단원별로 묶인 카드가 나온다. "종류별" 을 누르면 정리 노트 / 문제·실전 / 책 문제 / 암기로 묶는다. 묶음 이름을 눌러 접고 펼친다. **내 분류**: 과목마다 분류 이름을 직접 만든다(예: 학평 / 교과서 / 시험 직전). 자료 목록의 "내 분류" → "분류 관리" 에서 분류를 만들고·이름을 바꾸고·순서를 바꾸고·지우며, 자료마다 들어갈 분류를 고른다. 자료 화면 제목 옆 "분류" 버튼으로도 넣는다.
 - **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.
 - **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 화면 위쪽에 색 버튼이 뜬다. (태블릿 Chrome 에서 아래에 "Google 검색" 창이 같이 뜨면 Chrome 설정 → Google 서비스 → "터치하여 검색" 을 끄면 안 뜬다.) 색 버튼 옆 "바로 칠하기" 를 켜면 그다음부터는 글자를 고르기만 해도 그 색으로 칠해지고 선택이 바로 풀려서, 브라우저 메뉴에 가리지 않는다. 끌 때는 화면 아래 "바로 칠하기 켜짐" 띠를 누른다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
 - **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.

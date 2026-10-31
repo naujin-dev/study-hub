@@ -396,3 +396,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 }
 .sbj .grow{flex:1;min-width:0}
 .pc-u{color:var(--acc);font-weight:600;letter-spacing:.02em}
+.catrows .item{gap:8px;flex-wrap:wrap}
+.catrows .grow{flex:1 1 180px;min-width:0}
+.catrows select{width:auto;flex:0 1 200px;max-width:100%}
+.catrows input.grow{width:auto}
