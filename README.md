@@ -74,13 +74,18 @@ python3 -m http.server 8000      # http://localhost:8000
 | `js/sync.js` | Gist 동기화 |
 | `js/hl.js` | 형광펜·메모 위치 찾기 |
 | `js/charts.js` | 그래프 (SVG) |
+| `js/notion.js` | Notion 자동 업데이트 받기(암호 풀기) |
 | `js/pdf.js` | PDF 원본 저장(IndexedDB)과 보기(pdf.js) |
 | `js/vendor/` | 마크다운, HTML 정리, Anthropic SDK 라이브러리 |
 | `data/exam.json` | 시험 날짜와 과목별 범위 |
 | `data/packs/` | 공부자료 |
 | `data/index.json` | 자료 목록. `scripts/check_packs.py` 가 만든다. 직접 고치지 않는다 |
 
-## Notion 주간 계획 (비공개)
+## Notion 자동 업데이트 (6시간마다)
+
+예약 작업이 6시간마다 Notion "School / Exam" 을 읽어 `data/notion.enc.json` 에 암호화해서 올린다. 순서는 [docs/NOTION_SYNC.md](docs/NOTION_SYNC.md), 암호화는 `scripts/notion_status.py`, 사이트 쪽은 `js/notion.js`. 사이트 설정 → Notion 자동 업데이트에 비밀번호를 넣으면 계획 화면과 홈에 주간 계획·시험 범위 현황·하루 공부 시간이 나온다.
+
+## Notion 주간 계획 (비공개, 손으로 넣을 때)
 
 공부 계획은 공개 저장소에 올리지 않는다. Notion "School / Exam / 주간 계획" 을 마크다운으로 옮겨 `data/private/` (git 이 무시함) 에 두고
 

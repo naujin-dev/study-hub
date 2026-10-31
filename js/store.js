@@ -287,7 +287,7 @@ export function mergeIn(other) {
 
 // ---------- 백업 ----------
 export function exportAll() {
-  return { app: 'study-hub', v: 2, exportedAt: new Date().toISOString(), events, kv, prefs: { theme: load('theme', 'auto'), settings: { ...load('settings', {}), apiKey: '' } } };
+  return { app: 'study-hub', v: 2, exportedAt: new Date().toISOString(), events, kv: Object.fromEntries(Object.entries(kv).filter(([c]) => c !== 'secret')), prefs: { theme: load('theme', 'auto'), settings: { ...load('settings', {}), apiKey: '' } } };
 }
 export function importAll(obj) {
   if (!obj || obj.app !== 'study-hub') throw new Error('이 사이트에서 내보낸 백업 파일이 아니다.');

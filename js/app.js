@@ -7,6 +7,7 @@ import * as CH from './charts.js';
 import * as PR from './prompts.js';
 import * as SRC from './src.js';
 import * as PDF from './pdf.js';
+import * as NT from './notion.js';
 
 const { SUBJECTS, SUBJ, TYPE_NAME } = D;
 const main = document.getElementById('main');
@@ -90,7 +91,7 @@ function planList() {
   const kv = S.kvAll('plan');
   const nis = notionItems();
   const ids = new Set(nis.map(n => n.id));
-  const merged = nis.map(n => (kv[n.id] ? { ...n, ...kv[n.id], notion: true, text: n.text, group: n.group, date: n.date } : n));
+  const merged = nis.map(n => (kv[n.id] ? { ...n, ...kv[n.id], notion: true, text: n.text, group: n.group, date: n.date, done: !!(kv[n.id].done || n.done) } : n));
   const mine = Object.values(kv).filter(x => !ids.has(x.id) && !x.notion).map(p => ({ ...p }));
   return [...merged, ...mine].sort((a, b) => ((a.date || '9') + a.id).localeCompare((b.date || '9') + b.id));
 }
@@ -317,6 +318,7 @@ function viewHome() {
   ${plan.length ? `<div class="sec-title"><h2>오늘 계획</h2><a class="small" href="#/plan">전체 보기</a></div>
   <section class="card flat"><ul class="list">${plan.map(p => `<li><label class="item" style="align-items:flex-start"><input type="checkbox" data-plan="${p.id}"${p.done ? ' checked' : ''} style="margin-top:5px"><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${planLine(p)}</span></label></li>`).join('')}</ul>
   <p class="small muted" style="margin:8px 0 0">끝낸 것 ${plan.filter(p => p.done).length}/${plan.length}${weekLeft ? ` · 이번 주 날짜 없는 할 일 ${weekLeft}개 남음` : ''}</p></section>` : ''}
+  ${(() => { const st = NT.status(); if (!st || !st.scope.length) return ''; const sm = NT.scopeSummary(st.scope); return `<a class="subj" href="#/plan" style="margin-bottom:14px"><div class="grow"><div class="row between"><b>시험 범위 회독</b><span class="small muted">Notion · ${esc(String(st.generated || '').slice(5, 16).replace('T', ' '))}</span></div><div class="bar" style="margin:6px 0 4px"><i style="width:${sm.pct}%"></i></div><div class="small muted">회독 칸 ${sm.done}/${sm.cells} (${sm.pct}%) · 범위 ${sm.rows}개</div></div>›</a>`; })()}
 
   ${goals.length ? `<div class="sec-title"><h2>하루 목표</h2><span class="small muted">안 푼 문제 + 오답 ÷ 남은 날</span></div>
   <section class="card flat"><ul class="list">${goals.map(g => `<li class="item">${subjDot(g.s.id)}<span class="grow">${g.s.name}</span><span class="small muted">${g.todo}문제 · ${g.left}일</span><b class="mono">하루 ${g.per}</b></li>`).join('')}</ul></section>` : ''}
@@ -1754,10 +1756,26 @@ function viewPlan() {
       ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
     </details>`;
   }).join('') : '';
+  const nst = NT.status();
+  const notionHtml = nst ? (() => {
+    const sm = NT.scopeSummary(nst.scope);
+    const ck = v => v ? '<span style="color:var(--ok)">●</span>' : '<span class="muted">○</span>';
+    const bySub = {};
+    for (const r of nst.scope) (bySub[r.subject || '기타'] = bySub[r.subject || '기타'] || []).push(r);
+    return `<div class="sec-title"><h2>시험 범위 현황</h2><span class="small muted">Notion Exam Scope · ${esc(String(nst.generated || '').replace('T', ' ').slice(0, 16))} 업데이트</span></div>
+    <section class="card flat">
+      <p class="small">회독 칸 <b>${sm.done}/${sm.cells}</b> (${sm.pct}%)</p><div class="bar" style="margin:4px 0 10px"><i style="width:${sm.pct}%"></i></div>
+      <div style="overflow-x:auto"><table class="crit scope-t"><tr><td class="small muted">과목</td><td class="small muted">범위</td><td class="pt small muted">1회독</td><td class="pt small muted">2회독</td><td class="pt small muted">3회독</td><td class="pt small muted">문제</td><td class="small muted">메모</td></tr>
+      ${Object.entries(bySub).map(([sub, rows]) => rows.map((r, i) => `<tr><td>${i ? '' : esc(sub)}</td><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.range)}</a>` : esc(r.range)}</td><td class="pt">${ck(r.r1)}</td><td class="pt">${ck(r.r2)}</td><td class="pt">${ck(r.r3)}</td><td class="pt">${ck(r.solve)}</td><td class="small">${esc(r.memo || '')}</td></tr>`).join('')).join('')}
+      </table></div>
+    </section>
+    ${nst.exam_md ? `<details class="card flat"><summary><b>Notion Exam 메모</b> <span class="small muted">하루 공부 시간, 회독 흐름</span></summary><div class="notes">${md(nst.exam_md)}</div></details>` : ''}`;
+  })() : '';
   main.innerHTML = `
   <h1>시험 일정과 계획</h1>
-  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획 · 이 기기와 비공개 Gist 에만 저장</span></div>${weeksHtml}
-  <p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>` : `<p class="note info">Notion 주간 계획 파일(study-hub-plan.json)을 <a href="#/settings">설정 → 자료 가져오기</a> 에서 "파일 고르기" 로 넣으면 여기에 주차별 계획이 나온다. 이 기기와 비공개 Gist 에만 저장된다.</p>`}
+  ${notionHtml}
+  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획 · 6시간마다 업데이트 · 사이트에서 체크한 것은 그대로</span></div>${weeksHtml}
+  <p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>` : `<p class="note info">${NT.getKey() ? 'Notion 주간 계획을 기다리는 중이다. 6시간마다 들어온다.' : 'Notion 주간 계획과 시험 범위 현황이 6시간마다 저절로 들어오게 하려면 <a href="#/settings?go=notionSync">설정 → Notion 자동 업데이트</a> 에 비밀번호를 한 번 넣는다.'}</p>`}
   <section class="card">
     <h2>과목별 시험 날짜·범위</h2>
     <p class="small muted">아직 정해지지 않았으면 "미정". 여기서 고친 값은 이 기기에만 저장된다. 저장소의 data/exam.json 이 바뀌면 그 값이 기본값이 된다.</p>
@@ -2170,6 +2188,13 @@ function viewSettings() {
   ${localList.length ? `<section class="card"><h2>이 기기에 가져온 자료 ${localList.length}개</h2><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
   <p class="small muted">"JSON 복사" 한 내용을 저장소 data/packs/과목/ 에 파일로 올리면 모든 기기에서 보인다.</p></section>` : ''}
 
+  <section class="card" id="notionSync">
+    <h2>Notion 자동 업데이트</h2>
+    <p class="small">Notion "School / Exam" 의 주간 계획, 시험 범위 현황, 하루 공부 시간을 6시간마다 읽어 이 사이트에 넣는다. 내용은 암호로 잠가서 올라오니, 받은 비밀번호를 여기에 한 번 넣는다. 동기화를 켜 두면 다른 기기에도 비밀번호가 같이 간다.</p>
+    ${(() => { const st = NT.status(); return st ? `<p class="small">마지막 Notion 내용: ${esc(String(st.generated || '').replace('T', ' ').slice(0, 16))}</p>` : ''; })()}
+    <div class="row"><input type="password" id="ntKey" placeholder="${NT.getKey() ? '저장됨 (바꾸려면 새로 입력)' : 'Notion 업데이트 비밀번호'}" autocomplete="off" style="flex:1"><button class="btn pri" id="ntSave">저장하고 받기</button>${NT.getKey() ? '<button class="btn" id="ntPull">지금 받기</button>' : ''}</div>
+  </section>
+
   <section class="card" id="sync">
     <h2>기록 동기화 (GitHub 비공개 Gist)</h2>
     <p class="small">푼 기록, 풀이 이력, 공부 일지, 형광펜·메모, 계획, 가져온 자료를 내 GitHub 의 <b>비공개 Gist</b> 에 쌓는다. 태블릿·휴대폰·컴퓨터에서 같은 토큰을 넣으면 기록이 합쳐진다. 지우는 일이 없어서 두 기기에서 동시에 공부해도 기록이 사라지지 않는다. API 키와 토큰은 올라가지 않는다.</p>
@@ -2208,6 +2233,23 @@ function viewSettings() {
     <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label><button class="btn bad ghost" id="reset">기록 초기화</button></div>
   </section>`;
+
+  { const go = params().q.get('go'); if (go) setTimeout(() => document.getElementById(go)?.scrollIntoView({ block: 'start' }), 60); }
+  const ntMsg = r => ({ updated: 'Notion 계획을 새로 받았다.', same: '바뀐 게 없다.', nokey: '비밀번호를 넣어 줘.', none: '아직 올라온 Notion 내용이 없다. 예약 작업이 처음 돌 때까지 기다린다.', badkey: '비밀번호가 맞지 않다.', error: '받지 못했다. 인터넷을 확인해 줘.' }[r] || r);
+  $('#ntSave')?.addEventListener('click', async () => {
+    const k = $('#ntKey').value.trim();
+    if (!k) return toast('비밀번호를 넣어 줘.');
+    NT.setKey(k);
+    const r = await NT.pull({ force: true });
+    if (r === 'badkey') NT.setKey('');
+    toast(ntMsg(r), 3500);
+    if (r === 'updated') await D.loadAll();
+    render.keepScroll = true; render();
+  });
+  $('#ntPull')?.addEventListener('click', async () => {
+    const r = await NT.pull({ force: true }); toast(ntMsg(r), 3500);
+    if (r === 'updated') { await D.loadAll(); render.keepScroll = true; render(); }
+  });
 
   // 가져오기
   const out = $('#impOut');
@@ -2929,6 +2971,7 @@ function viewHelp() {
 - **공부 일지**: 자료를 읽은 시간, 푼 문제 묶음과 결과, 카드, 실전, 질문, 형광펜, 끝낸 계획이 시각과 함께 날짜별로 쌓인다. 날마다 한 줄 회고를 남길 수 있다.
 - **풀이 이력**: 한 문제를 여러 번 풀면 매번 쓴 답, 결과, AI 채점이 모두 남는다. 채점 결과 아래 "풀이 이력" 이나 오답노트에서 본다.
 - **PDF 원본**: [자료 → PDF 원본 모아보기] 에서 공부 Claude 에게 받은 PDF 를 넣는다. 이 기기에만 저장된다(동기화 안 됨). 자료에 이어 두면 자료 화면 위에 "PDF 원본 보기" 가 생긴다. −/+ 로 크기를 바꾼다.
+- **Notion 자동 업데이트**: Notion "School / Exam" 의 주간 계획, 시험 범위 회독 현황, 하루 공부 시간표를 6시간마다 읽어 [시험 일정과 계획](#/plan) 과 홈에 넣는다. 설정 → Notion 자동 업데이트에 비밀번호를 한 번 넣으면 된다(동기화를 켜면 다른 기기에도 간다). Notion 에서 체크한 것과 사이트에서 체크한 것 중 하나라도 체크돼 있으면 끝낸 것으로 본다. 사이트에서 체크한 것이 Notion 으로 가지는 않는다.
 - **하루 기준**: 하루는 새벽 4시에 바뀐다. 밤 12시를 넘겨 새벽 3시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
@@ -3002,4 +3045,15 @@ D.loadAll().then(() => {
   startTimerLoop();
   SYNC.startAuto();
   checkUpdate(false);
+  notionPull();
 });
+// Notion 자동 업데이트: 열 때, 30분마다, 화면을 다시 켤 때 새 내용이 있는지 본다
+async function notionPull() {
+  const r = await NT.pull();
+  if (r !== 'updated') return;
+  await D.loadAll();
+  const busy = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+  if (!busy && !['/run', '/flash'].includes(params().path)) { render.keepScroll = true; render(); }
+}
+setInterval(() => { if (document.visibilityState === 'visible') notionPull(); }, 30 * 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') notionPull(); });
