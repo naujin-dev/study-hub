@@ -362,3 +362,37 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .pdf-edit summary{list-style:none}
 .pdf-edit summary::-webkit-details-marker{display:none}
 .pdf-edit[open]{flex-basis:100%}
+
+/* 공부자료: 왼쪽 과목, 오른쪽 단원별 묶음 */
+.study-wrap{display:block;margin-top:6px}
+.study-side{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;scrollbar-width:thin}
+.sbj{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--rule);border-radius:12px;background:var(--card);color:var(--ink);text-decoration:none;flex:none}
+.sbj .grow{display:flex;flex-direction:column;line-height:1.3}
+.sbj.on{border-color:var(--acc);background:var(--accw)}
+.sbj.empty{opacity:.55}
+.sbj .mini-bar{display:none}
+.mini-bar{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;flex:none;vertical-align:middle}
+.mini-bar.wide{width:100%;flex:1}
+.mini-bar i{display:block;height:100%;background:var(--acc)}
+.study-head{margin:6px 0 4px;gap:8px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;background:var(--card)}
+.seg a{padding:5px 12px;font-size:.85rem;color:var(--ink2);text-decoration:none}
+.seg a.on{background:var(--acc);color:#fff}
+.pgroup{margin-top:12px}
+.pgroup>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 2px;border-bottom:1px solid var(--rule);list-style:none}
+.pgroup>summary::-webkit-details-marker{display:none}
+.pgroup>summary::before{content:'▸';color:var(--ink3);transition:transform .15s}
+.pgroup[open]>summary::before{transform:rotate(90deg)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:10px}
+.pcard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r);color:var(--ink);text-decoration:none;min-height:78px}
+.pcard:hover{border-color:var(--acc)}
+.pc-t{line-height:1.35}
+.pc-p{display:flex;align-items:center;gap:8px;margin-top:auto}
+@media (min-width:900px){
+  .study-wrap{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:start}
+  .study-side{flex-direction:column;overflow:visible;position:sticky;top:72px;padding:0;margin:0}
+  .sbj{flex:auto}
+  .sbj .mini-bar{display:inline-block}
+}
+.sbj .grow{flex:1;min-width:0}
+.pc-u{color:var(--acc);font-weight:600;letter-spacing:.02em}

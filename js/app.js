@@ -366,63 +366,149 @@ function viewHome() {
 }
 
 // ================= 자료 목록 =================
+// ---------- 자료 묶기 ----------
+// 자료의 종류: 정리 노트인지, 문제 위주인지, 카드·원문 위주인지
+function packKind(p) {
+  const nl = String(p.notes || '').length, qn = (p.questions || []).length + (p.book || []).length;
+  if ((p.book || []).length && nl < 800) return '책 문제';
+  if (qn >= 30 || (qn >= 15 && nl < 3000)) return '문제·실전';
+  if (nl >= 800) return '정리 노트';
+  if ((p.cards || []).length) return '암기';
+  return '기타';
+}
+const KIND_ORDER = ['정리 노트', '문제·실전', '책 문제', '암기', '기타'];
+// 단원: 내가 정한 것(kv punit) > 자료의 unit > 없음
+// 자료마다 단원 글이 조금씩 달라서("한국사2 Ⅱ. 대한민국의 발전", "한국사2 Ⅱ단원") 단원 번호만 뽑아 묶는다
+function unitKey(u) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  let m = u.match(/chapter\s*0?(\d+)/i); if (m) return `CHAPTER ${m[1].padStart(2, '0')}`;
+  m = u.match(/([\d·~]+)\s*과/); if (m) return `${m[1]}과`;
+  m = u.match(/([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)\s*(?:\.|단원)/); if (m) return `${m[1]}단원`;
+  m = u.match(/(\d+)\s*단원/); if (m) return `${m[1]}단원`;
+  return u.replace(/^(고등|공통)\s*\S+\s+/, '').trim() || u;
+}
+const unitOf = p => S.kvGet('punit', p.id)?.unit || unitKey(p.unit);
+function packGroups(list, mode) {
+  const by = new Map();
+  for (const p of list) {
+    const k = mode === 'kind' ? packKind(p) : (unitOf(p) || '단원 없음');
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(p);
+  }
+  const keys = [...by.keys()];
+  if (mode === 'kind') keys.sort((x, y) => KIND_ORDER.indexOf(x) - KIND_ORDER.indexOf(y));
+  return keys.map(k => ({ name: k, packs: by.get(k) }));
+}
+function packStats(p, prog, read) {
+  const qs = [...(p.questions || []), ...(p.book || [])];
+  const tried = qs.filter(x => prog[D.qkey(p, x)]?.n).length;
+  const wrong = qs.filter(x => prog[D.qkey(p, x)]?.wrong).length;
+  return { qn: qs.length, tried, wrong, cards: (p.cards || []).length, notes: String(p.notes || '').trim().length > 0, read: !!read[p.id], texts: (p.texts || []).length };
+}
+
 function viewStudy() {
   const { q } = params();
-  const sel = q.get('s') || '';
   const term = (q.get('q') || '').trim();
   const read = readMarks();
   const prog = S.getProgress();
-  let packs = D.db().packs.filter(p => !sel || p.subject === sel);
+  const all = D.db().packs;
+  const counts = Object.fromEntries(SUBJECTS.map(s => [s.id, all.filter(p => p.subject === s.id).length]));
+  let sel = q.get('s') || S.load('studySub', '');
+  if (!SUBJ[sel] || !counts[sel]) sel = (SUBJECTS.find(s => counts[s.id]) || SUBJECTS[0]).id;
+  S.save('studySub', sel);
+  const packs = all.filter(p => p.subject === sel);
+  const units = new Set(packs.map(unitOf).filter(Boolean));
+  const mode = q.get('g') || S.load('studyGroup:' + sel, units.size >= 2 ? 'unit' : 'kind');
+  S.save('studyGroup:' + sel, mode);
+  const editing = q.get('order') === sel;
+  const link = o => { const ps = new URLSearchParams({ s: sel, ...o }); return '#/study?' + ps; };
 
   let results = '';
   if (term) {
     const low = term.toLowerCase();
     const hits = [];
-    for (const p of D.db().packs) {
+    for (const p of all) {
       const where = [];
       if ((p.title + ' ' + (p.unit || '')).toLowerCase().includes(low)) where.push('제목');
       const ni = (p.notes || '').toLowerCase().indexOf(low);
       if (ni >= 0) where.push('…' + p.notes.slice(Math.max(0, ni - 30), ni + 50).replace(/\s+/g, ' ') + '…');
-      const qc = (p.questions || []).filter(x => (x.question + ' ' + (x.context || '')).toLowerCase().includes(low)).length;
+      const qc = [...(p.questions || []), ...(p.book || [])].filter(x => (x.question + ' ' + (x.context || '')).toLowerCase().includes(low)).length;
       if (qc) where.push(`문제 ${qc}개`);
       const cc = (p.cards || []).filter(c => (c.front + ' ' + c.back).toLowerCase().includes(low)).length;
       if (cc) where.push(`카드 ${cc}개`);
       if (where.length) hits.push({ p, where });
     }
-    results = `<section class="card flat"><h2>"${esc(term)}" 찾은 결과 ${hits.length}개</h2><ul class="list">${hits.map(h => `<li><a class="item" href="#/pack?id=${encodeURIComponent(h.p.id)}&hl=${encodeURIComponent(term)}">${subjDot(h.p.subject)}<span class="grow"><b>${esc(h.p.title)}</b><br><span class="small muted">${h.where.map(esc).join(' · ')}</span></span></a></li>`).join('') || '<li class="item muted">없다.</li>'}</ul></section>`;
+    results = `<section class="card flat"><div class="row between"><h2 style="margin:0">"${esc(term)}" 찾은 결과 ${hits.length}개</h2><a class="small" href="${link({})}">닫기</a></div><ul class="list">${hits.map(h => `<li><a class="item" href="#/pack?id=${encodeURIComponent(h.p.id)}&hl=${encodeURIComponent(term)}">${subjDot(h.p.subject)}<span class="grow"><b>${esc(h.p.title)}</b><br><span class="small muted">${h.where.map(esc).join(' · ')}</span></span></a></li>`).join('') || '<li class="item muted">없다.</li>'}</ul></section>`;
   }
 
-  const editing = q.get('order') || '';
-  const groups = SUBJECTS.filter(s => !sel || s.id === sel).map(s => {
-    const list = packs.filter(p => p.subject === s.id);
-    if (!list.length) return sel ? `<p class="muted">${s.name} 자료가 아직 없다.</p>` : '';
-    if (editing === s.id) return `<div class="sec-title"><h2>${subjDot(s.id)} ${s.name} 순서 바꾸기</h2><span class="row"><button class="btn sm ghost" data-ord-reset="${s.id}">원래 순서로</button><button class="btn sm pri" data-ord-done>다 했다</button></span></div>
-    <section class="card flat"><ul class="list ordlist">${list.map((p, i) => `<li class="item"><span class="mono small muted" style="width:2em">${i + 1}</span><span class="grow"><b>${esc(p.title)}</b></span>
-      <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < list.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button></li>`).join('')}</ul></section>`;
-    return `<div class="sec-title"><h2>${subjDot(s.id)} ${s.name}</h2><span class="row small muted">${list.length}개${list.length > 1 ? ` <a class="btn sm ghost noprint" href="#/study?${sel ? 's=' + sel + '&' : ''}order=${s.id}">순서 바꾸기</a>` : ''}</span></div>
-    <section class="card flat"><ul class="list">${list.map(p => {
-      const qs = p.questions || [];
-      const tried = qs.filter(x => prog[D.qkey(p, x)]?.n).length;
-      return `<li><a class="item" href="#/pack?id=${encodeURIComponent(p.id)}">
-        <span class="grow"><b>${esc(p.title)}</b>${p.unit && p.unit !== p.title ? `<br><span class="small muted">${esc(p.unit)}</span>` : ''}</span>
-        ${p._src === 'local' ? '<span class="tag vio">내 기기</span>' : ''}
-        ${read[p.id] ? '<span class="tag ok">읽음</span>' : ''}
-        ${qs.length ? `<span class="tag">${tried}/${qs.length}</span>` : ''}
-      </a></li>`;
-    }).join('')}</ul></section>`;
+  // 왼쪽: 과목 목록
+  const ex = examInfo();
+  const side = SUBJECTS.map(s => {
+    const ps = all.filter(p => p.subject === s.id);
+    let qn = 0, tried = 0;
+    for (const p of ps) { const st = packStats(p, prog, read); qn += st.qn; tried += st.tried; }
+    const d = ex.subjects?.[s.id]?.date;
+    return `<a class="sbj${s.id === sel ? ' on' : ''}${ps.length ? '' : ' empty'}" href="#/study?s=${s.id}">${subjDot(s.id)}<span class="grow"><b>${s.name}</b><span class="small muted">${ps.length ? `자료 ${ps.length}` : '없음'}${d ? ` · ${dLabel(d)}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</a>`;
   }).join('');
 
+  const card = (p, label) => {
+    const st = packStats(p, prog, read);
+    const per = st.qn ? pct(st.tried, st.qn) : 0;
+    const badges = [st.notes ? '정리' : '', st.texts ? `원문 ${st.texts}` : '', st.qn ? `문제 ${st.qn}` : '', st.cards ? `카드 ${st.cards}` : ''].filter(Boolean);
+    return `<a class="pcard" href="#/pack?id=${encodeURIComponent(p.id)}">
+      ${label && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
+      <div class="row between" style="gap:6px;align-items:flex-start"><b class="pc-t">${esc(p.title)}</b>${st.read ? '<span class="tag ok">읽음</span>' : ''}</div>
+      <div class="pc-b small muted">${badges.map(esc).join(' · ')}<span class="pdfb" data-pdfb="${esc(p.id)}"></span></div>
+      ${st.qn ? `<div class="pc-p"><span class="mini-bar wide"><i style="width:${per}%"></i></span><span class="small mono muted">${st.tried}/${st.qn}${st.wrong ? ` · <span style="color:var(--bad)">오답 ${st.wrong}</span>` : ''}</span></div>` : ''}
+    </a>`;
+  };
+
+  let body;
+  if (!packs.length) body = `<p class="muted" style="margin-top:16px">${SUBJ[sel].name} 자료가 아직 없다. <a href="#/settings">설정 → 자료 가져오기</a></p>`;
+  else if (editing) body = `<div class="sec-title"><h2>순서 바꾸기</h2><span class="row"><button class="btn sm ghost" data-ord-reset="${sel}">원래 순서로</button><button class="btn sm pri" data-ord-done>다 했다</button></span></div>
+    <section class="card flat"><ul class="list ordlist">${packs.map((p, i) => `<li class="item"><span class="mono small muted" style="width:2em">${i + 1}</span><span class="grow"><b>${esc(p.title)}</b></span>
+      <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < packs.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button></li>`).join('')}</ul></section>`;
+  else {
+    const groups = packGroups(packs, mode);
+    const closed = S.load('studyClosed', {});
+    // 자료가 하나뿐인 묶음이 이어지면 머리줄 없이 한 칸에 모은다 (카드 위에 단원 이름)
+    const parts = [];
+    for (const g of groups) {
+      if (g.packs.length === 1 && groups.length > 2) { const last = parts[parts.length - 1]; if (last && last.singles) last.items.push(g); else parts.push({ singles: true, items: [g] }); }
+      else parts.push(g);
+    }
+    body = parts.map(g => {
+      if (g.singles) return `<div class="pgrid" style="margin-top:12px">${g.items.map(x => card(x.packs[0], x.name)).join('')}</div>`;
+      let qn = 0, tried = 0;
+      for (const p of g.packs) { const st = packStats(p, prog, read); qn += st.qn; tried += st.tried; }
+      const gk = sel + '|' + mode + '|' + g.name;
+      return `<details class="pgroup"${closed[gk] ? '' : ' open'} data-gk="${esc(gk)}"><summary><span class="grow"><b>${esc(g.name)}</b> <span class="small muted">${g.packs.length}개${qn ? ` · 문제 ${tried}/${qn}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</summary>
+        <div class="pgrid">${g.packs.map(p => card(p)).join('')}</div></details>`;
+    }).join('');
+  }
+
   main.innerHTML = `
-  <h1>공부자료</h1>
-  <form id="sf" class="row" style="margin:8px 0 10px"><input type="search" name="q" placeholder="자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
-  ${chipGroup('s', [{ value: '', label: '전체' }, ...SUBJECTS.map(s => ({ value: s.id, label: s.name, dot: true }))], [sel], false)}
-  <p class="small" style="margin:8px 0"><a href="#/pdf${sel ? '?s=' + sel : ''}">PDF 원본 모아보기 <span id="pdfCount"></span> ›</a></p>
+  <div class="row between" style="align-items:center"><h1 style="margin:0">공부자료</h1><a class="small" href="#/pdf?s=${sel}">PDF 원본 <span id="pdfCount"></span> ›</a></div>
+  <form id="sf" class="row" style="margin:10px 0"><input type="search" name="q" placeholder="모든 자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
   ${results}
-  ${groups || '<p class="muted" style="margin-top:16px">자료가 없다. <a href="#/settings">설정 → 자료 가져오기</a></p>'}
-  `;
-  $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/study' + (r.value ? '?s=' + r.value : ''); }));
-  PDF.listPdfs().then(l => { const n = l.filter(x => !sel || x.subject === sel).length; const el = document.getElementById('pdfCount'); if (el && n) el.textContent = `(${n}개)`; });
-  const back = '#/study' + (sel ? '?s=' + sel : '');
+  <div class="study-wrap">
+    <nav class="study-side" aria-label="과목">${side}</nav>
+    <section class="study-main">
+      <div class="row between study-head"><h2 style="margin:0">${subjDot(sel)} ${SUBJ[sel].name}</h2>
+        ${packs.length && !editing ? `<span class="row"><span class="seg"><a class="${mode === 'unit' ? 'on' : ''}" href="${link({ g: 'unit' })}">단원별</a><a class="${mode === 'kind' ? 'on' : ''}" href="${link({ g: 'kind' })}">종류별</a></span>${packs.length > 1 ? `<a class="btn sm ghost" href="${link({ order: sel })}">순서</a>` : ''}</span>` : ''}</div>
+      ${!editing && mode === 'unit' && units.size < 2 && packs.length > 3 ? '<p class="small muted" style="margin:6px 0 0">단원이 하나라 다 같이 보인다. 자료 화면 제목 옆 "단원 정하기" 로 단원을 나누거나, "종류별" 로 본다.</p>' : ''}
+      ${body}
+    </section>
+  </div>`;
+
+  $$('.pgroup').forEach(d => d.addEventListener('toggle', () => { const c = S.load('studyClosed', {}); if (d.open) delete c[d.dataset.gk]; else c[d.dataset.gk] = 1; S.save('studyClosed', c); }));
+  PDF.listPdfs().then(l => {
+    const el = document.getElementById('pdfCount'); const n = l.filter(x => x.subject === sel).length; if (el && n) el.textContent = `${n}개`;
+    const byPack = {}; for (const x of l) if (x.pack) byPack[x.pack] = (byPack[x.pack] || 0) + 1;
+    $$('[data-pdfb]').forEach(b => { const k = byPack[b.dataset.pdfb]; if (k) b.textContent = ` · PDF ${k}`; });
+  });
+  const back = '#/study?s=' + sel;
   $$('[data-mv]').forEach(b => b.addEventListener('click', async () => {
     const p = D.db().byId[b.dataset.mv];
     const ids = D.db().packs.filter(x => x.subject === p.subject).map(x => x.id);
@@ -442,10 +528,7 @@ function viewStudy() {
   $('#sf').addEventListener('submit', e => {
     e.preventDefault();
     const v = e.target.q.value.trim();
-    const ps = new URLSearchParams();
-    if (sel) ps.set('s', sel);
-    if (v) ps.set('q', v);
-    location.hash = '#/study' + (ps.toString() ? '?' + ps : '');
+    location.hash = link(v ? { q: v } : {});
   });
 }
 
@@ -540,7 +623,7 @@ function viewPack() {
     const pages = [...new Set(book.map(b => (String(b.source || b.page || '').match(/\d+\s*쪽/) || [])[0]).filter(Boolean))];
     main.innerHTML = `
     <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-    <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
+    <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-unitopen="${esc(p.id)}">단원 정하기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
     <section class="card book-gate">
       <h2>먼저 책 문제를 푼다</h2>
       <p>공부자료를 보기 전에 책 문제 <b>${book.length}개</b>를 먼저 풀어 본다. 다 풀고 채점하면 공부자료가 열린다. 모르는 문제는 "모르겠다" 로 넘긴다.</p>
@@ -553,7 +636,7 @@ function viewPack() {
 
   main.innerHTML = `
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
-  <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
+  <h1 class="ptitle">${esc(p.title)} <button type="button" class="btn sm ghost noprint" data-rename="${esc(p.id)}" title="자료 이름 바꾸기">이름 바꾸기</button> <button type="button" class="btn sm ghost noprint" data-unitopen="${esc(p.id)}">단원 정하기</button> <button type="button" class="btn sm ghost noprint" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button></h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
@@ -745,6 +828,33 @@ function openSrcDialog(p, t) {
   };
   dlg.showModal();
 }
+
+// 단원 정하기: 자료 목록의 "단원별" 묶음 이름. 비우면 자료에 원래 있던 단원으로
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-unitopen]');
+  if (!b) return;
+  const p = D.db().byId[b.dataset.unitopen];
+  if (!p) return;
+  const have = [...new Set(D.db().packs.filter(x => x.subject === p.subject).map(unitOf).filter(Boolean))];
+  const dlg = document.createElement('dialog');
+  dlg.className = 'dlg';
+  dlg.innerHTML = `<form method="dialog"><h2 style="margin-top:0">단원 정하기</h2>
+    <p class="small">자료 목록에서 "단원별" 로 볼 때 "${esc(p.title)}" 이 들어갈 묶음이다. 있는 단원을 고르거나 새 이름을 쓴다.</p>
+    <label class="field"><span>단원</span><input id="unIn" list="unList" value="${esc(unitOf(p))}" placeholder="예: 1과, Ⅲ단원, 학평"><datalist id="unList">${have.map(u => `<option value="${esc(u)}">`).join('')}</datalist></label>
+    ${have.length ? `<div class="chips" style="margin:6px 0">${have.map(u => `<button type="button" class="chip" data-un="${esc(u)}">${esc(u)}</button>`).join('')}</div>` : ''}
+    <div class="row" style="justify-content:flex-end;margin-top:12px">${S.kvGet('punit', p.id) ? '<button class="btn ghost" value="reset">원래대로</button>' : ''}<button class="btn ghost" value="no">닫기</button><button class="btn pri" value="ok">저장</button></div></form>`;
+  document.body.appendChild(dlg);
+  dlg.querySelectorAll('[data-un]').forEach(c => c.addEventListener('click', () => { dlg.querySelector('#unIn').value = c.dataset.un; }));
+  dlg.addEventListener('close', () => {
+    const v = dlg.querySelector('#unIn').value.trim(), r = dlg.returnValue;
+    dlg.remove();
+    if (r === 'reset') S.kvDel('punit', p.id);
+    else if (r === 'ok') { if (v) S.kvSet('punit', p.id, { unit: v }); else S.kvDel('punit', p.id); }
+    else return;
+    toast('단원을 정했다.'); render.keepScroll = true; render();
+  });
+  dlg.showModal();
+});
 
 // 자료 합치기 대화상자: 이 자료의 정리·문제·책 문제·카드·원문을 고른 자료 뒤에 붙인다
 document.addEventListener('click', e => {
@@ -2975,6 +3085,7 @@ function viewHelp() {
 - **하루 기준**: 하루는 새벽 4시에 바뀐다. 밤 12시를 넘겨 새벽 3시 59분까지 한 공부는 전날 공부 시간, 일지, 달력에 들어간다.
 - **하루 목표 시간**: 홈의 "목표 정하기" 에 하루 공부 시간을 넣으면 오늘 얼마나 채웠는지 막대로 보인다. 어제 공부 시간도 옆에 나온다.
 - **스톱워치**: [공부 시간 재기] 에서 과목을 골라 잰다. 책으로 공부할 때도 쓴다. 재는 동안 화면 맨 위에 과목과 시간이 떠 있다.
+- **공부자료 목록**: 왼쪽에서 과목을 고르면 단원별로 묶인 카드가 나온다. "종류별" 을 누르면 정리 노트 / 문제·실전 / 책 문제 / 암기로 묶는다. 묶음 이름을 눌러 접고 펼친다. 단원 묶음이 마음에 안 들면 자료 화면 제목 옆 "단원 정하기" 로 바꾼다.
 - **수학**: 자료 없이 공부 시간만 잰다. 홈의 수학 칸이나 [더보기 → 수학 공부 시간] 에서 스톱워치를 켜고 끈다. 깜빡하고 안 쟀으면 "빈 시간 수학으로 채우기" 에 시작·끝 시각을 넣는다. 그 사이 다른 과목 기록이 없는 시간만 수학으로 들어가고, 잘못 넣은 것은 기록 목록에서 취소한다.
 - **형광펜·메모**: 자료 본문 글자를 길게 눌러 고르면 화면 위쪽에 색 버튼이 뜬다. (태블릿 Chrome 에서 아래에 "Google 검색" 창이 같이 뜨면 Chrome 설정 → Google 서비스 → "터치하여 검색" 을 끄면 안 뜬다.) 색 버튼 옆 "바로 칠하기" 를 켜면 그다음부터는 글자를 고르기만 해도 그 색으로 칠해지고 선택이 바로 풀려서, 브라우저 메뉴에 가리지 않는다. 끌 때는 화면 아래 "바로 칠하기 켜짐" 띠를 누른다. 칠한 곳을 누르면 메모를 달거나 지운다. [모아보기](#/marks) 에서 과목·색별로 훑는다. 단원마다 따로 쓰는 "단원 메모" 도 있다.
 - **읽은 시간과 이어 읽기**: 자료를 펼쳐 두고 실제로 보고 있던 시간만 센다 (90초 넘게 손대지 않으면 멈춤). 홈의 "이어 읽기" 로 지난번 읽던 곳부터 연다.
