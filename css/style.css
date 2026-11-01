@@ -68,7 +68,7 @@ p{margin:.4em 0}
 code,kbd,pre{font-family:var(--mono)}
 
 /* 머리띠 */
-.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--rule)}
+.top{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:1px solid var(--rule)}
 .top-in{display:flex;align-items:center;gap:10px;height:52px}
 .brand{font-weight:600;color:var(--ink);text-decoration:none;font-size:1.05rem}
 .brand span{color:var(--ink3);font-weight:400}
@@ -430,7 +430,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .subj.tinted .bar{background:color-mix(in srgb,var(--ink) 9%,transparent)}
 .sbj.on{background:var(--tint,var(--accw));border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
 .pgroup>summary{border-bottom-color:var(--rule)}
-.top{background:color-mix(in srgb,var(--paper) 92%,transparent)}
+.top{background:var(--paper)}
 .brand{letter-spacing:-.02em}
 .stat{box-shadow:none}
 .note{border-radius:8px}
@@ -484,7 +484,8 @@ dialog.dlg::backdrop{transition:background-color .2s ease}
 .selbar{transition:opacity .14s ease,transform .18s var(--ease-out)}
 @starting-style{.selbar{opacity:0;transform:translateX(-50%) translateY(6px)}}
 .plan-item .grow,.list .item .grow{transition:color .2s ease}
-.bar>i,.mini-bar i{transition:width .5s var(--ease-out)}
+.bar>i,.mini-bar i{transform-origin:left center;transition:transform .5s var(--ease-out)}
+@starting-style{.bar>i,.mini-bar i{transform:scaleX(0)}}
 .pcard,.subj,.resume,.sbj{transition:border-color .15s ease,box-shadow .2s ease,background-color .15s ease,transform .16s var(--ease-out)}
 .pcard:active,.subj:active,.resume:active,.sbj:active{transform:scale(.985)}
 @media (hover:none){.pcard:hover{box-shadow:none}}
