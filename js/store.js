@@ -234,6 +234,84 @@ export function recordGen(pack, n) { addEvent('g', { pack, n }); }
 // ================= kv =================
 // kv[모음][id] = { ...값, u: 고친 시각(ms), del?: true }
 let kv = load('kv', {});
+
+// 가져온 자료(packs)·책 문제(bookq)·원문(srctext)은 크다. localStorage(약 5MB)를 다 채우면
+// 새 공부 기록까지 저장이 안 되므로, 이 셋은 IndexedDB 에 따로 둔다. 나머지 kv 는 localStorage.
+// IndexedDB 를 못 쓰는 브라우저에서는 예전처럼 전부 localStorage 에 둔다.
+const HEAVY = ['packs', 'bookq', 'srctext'];
+const dirtyHeavy = new Set();
+let idbOk = typeof indexedDB !== 'undefined';
+let idbReady = false; // IndexedDB 를 읽고 옮기기까지 끝났는지. 그 전에는 localStorage 에 전부 쓴다
+function kvDb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('study-hub-kv', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('col');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function lightKv() {
+  if (!idbOk || !idbReady) return kv;
+  const o = {};
+  for (const c in kv) if (!HEAVY.includes(c)) o[c] = kv[c];
+  return o;
+}
+let flushTimer = 0, flushing = Promise.resolve(true);
+function flushHeavy() {
+  const cols = [...dirtyHeavy];
+  dirtyHeavy.clear();
+  if (!cols.length) return flushing;
+  flushing = flushing.then(() => kvDb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('col', 'readwrite');
+    for (const c of cols) tx.objectStore('col').put(kv[c] || {}, c);
+    tx.oncomplete = () => { db.close(); res(true); };
+    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+  }))).catch(err => {
+    // IndexedDB 에 못 쓰면 localStorage 에 전부 쓰는 예전 방식으로 돌아간다
+    console.warn('IndexedDB 저장 실패', err);
+    idbOk = false;
+    save('kv', kv);
+    return false;
+  });
+  return flushing;
+}
+function saveKv(cols) {
+  save('kv', lightKv());
+  if (!idbOk) return;
+  for (const c of cols) if (HEAVY.includes(c)) dirtyHeavy.add(c);
+  if (!idbReady) return; // 다 읽기 전에 쓰면 IndexedDB 의 나머지 자료를 덮어쓴다. 읽고 나서 한꺼번에 쓴다
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushHeavy, 200);
+}
+// 앱이 자료를 읽기 전에 기다린다 (data.js loadAll 맨 앞)
+export const kvReady = (async () => {
+  if (!idbOk) return;
+  try {
+    const db = await kvDb();
+    const got = await new Promise((res, rej) => {
+      const out = {}, tx = db.transaction('col', 'readonly'), st = tx.objectStore('col');
+      const rq = st.openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (c) { out[c.key] = c.value; c.continue(); } };
+      tx.oncomplete = () => res(out);
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+    for (const col in got) {
+      const mine = kv[col] || (kv[col] = {});
+      for (const id in got[col]) { const v = got[col][id]; if (v && (!mine[id] || (mine[id].u || 0) < (v.u || 0))) mine[id] = v; }
+    }
+    // 예전에 localStorage 에 있던 큰 모음은 IndexedDB 로 옮긴 뒤에만 localStorage 에서 뺀다
+    const old = load('kv', {});
+    const moving = HEAVY.filter(c => old[c]);
+    moving.forEach(c => dirtyHeavy.add(c));
+    if (dirtyHeavy.size && !(await flushHeavy())) return;
+    idbReady = true;
+    save('kv', lightKv());
+  } catch (err) {
+    console.warn('IndexedDB 를 못 연다. localStorage 만 쓴다.', err);
+    idbOk = false;
+  }
+})();
 export function kvAll(col) {
   const o = kv[col] || {};
   const out = {};
@@ -246,13 +324,13 @@ export function kvGet(col, id) {
 }
 export function kvSet(col, id, value) {
   (kv[col] || (kv[col] = {}))[id] = { ...value, u: Date.now() };
-  save('kv', kv);
+  saveKv([col]);
   changed();
 }
 export function kvDel(col, id) {
   if (!kv[col] || !kv[col][id]) return;
   kv[col][id] = { del: true, u: Date.now() };
-  save('kv', kv);
+  saveKv([col]);
   changed();
 }
 
@@ -280,7 +358,7 @@ export function mergeIn(other) {
   if (changedAny) {
     rebuild();
     save('events', events);
-    save('kv', kv);
+    saveKv(Object.keys(other.kv || {}));
   }
   return changedAny;
 }
@@ -348,7 +426,7 @@ function migrateOld(src) {
   const ex = get('examLocal');
   if (ex) for (const id in ex) (kv.exam || (kv.exam = {}))[id] = { ...ex[id], u: now };
   save('events', events);
-  save('kv', kv);
+  saveKv(Object.keys(kv));
   if (!src) for (const k of ['progress', 'cards', 'log', 'plan', 'read', 'packs', 'examLocal']) remove(k);
   rebuild();
 }

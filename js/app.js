@@ -2551,7 +2551,7 @@ function viewSettings() {
   <section class="card">
     <h2>백업</h2>
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
-    <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
+    <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 기록 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB (가져온 자료·원문은 따로 저장해서 여기 안 들어간다)</p>
     <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><button type="button" class="btn" data-file="impBk">백업 불러오기</button><input type="file" id="impBk" accept=".json" hidden></div>
     <p style="margin:18px 0 0"><button class="btn sm bad ghost" id="reset">기록 초기화</button></p>

@@ -1,5 +1,5 @@
 // 공부자료(자료 묶음)를 불러오고 검사한다.
-import { kvAll, kvSet, kvDel, kvGet } from './store.js';
+import { kvAll, kvSet, kvDel, kvGet, kvReady } from './store.js';
 
 export const FORMAT = 'study-hub/1';
 
@@ -134,6 +134,7 @@ async function getJSON(url) {
 }
 
 export async function loadAll() {
+  await kvReady;
   const loadErrors = [];
   let repoPacks = [];
   let exam = null;
