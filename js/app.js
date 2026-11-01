@@ -22,7 +22,7 @@ const $$ = (sel, root = main) => [...root.querySelectorAll(sel)];
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const shuffle = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 // 자료 없이 공부 시간만 재는 과목
-const TIME_SUBJ = { math: { id: 'math', name: '수학', color: '#4D7C0F' } };
+const TIME_SUBJ = { math: { id: 'math', name: '수학' } };
 // 과목 색은 css 의 --s-과목 토큰 (다크 모드에서 밝은 색으로 바뀐다)
 const subjColor = id => (SUBJ[id] || TIME_SUBJ[id]) ? `var(--s-${id})` : 'var(--acc)';
 const subjDot = id => `<span class="dot" style="--c:${subjColor(id)}"></span>`;
@@ -111,7 +111,8 @@ function setPlan(id, patch) {
   const { u, ...rest } = cur;
   S.kvSet('plan', id, rest.notion ? { id, notion: true, done: rest.done, ...patch } : { ...rest, ...patch });
 }
-const planLine = p => `${p.subject ? subjDot(p.subject) + ' ' : p.label ? `<span class="tag">${esc(p.label)}</span> ` : ''}${esc(p.text)}${p.group ? `<br><span class="small muted">${esc(p.group.length > 60 ? p.group.slice(0, 60) + '…' : p.group)}</span>` : ''}`;
+const planText = t => String(t || '').replace(/\s*\(study-hub [a-z]{3}-\d+[a-z0-9-]*\)/g, '');
+const planLine = p => `${p.subject ? subjDot(p.subject) + ' ' : p.label ? `<span class="tag">${esc(p.label)}</span> ` : ''}${esc(planText(p.text))}${p.group ? `<br><span class="small muted">${esc(p.group.length > 60 ? p.group.slice(0, 60) + '…' : p.group)}</span>` : ''}`;
 
 // 계획 한 줄이 가리키는 자료를 찾는다. 「작품」 이름이나 자료 제목이 줄에 들어 있으면 그 자료.
 const coreTitle = t => String(t || '').replace(/^[\s\d.\-–·()]+/, '').replace(/[「」『』"'()\[\]]/g, '').replace(/\s+/g, '').trim();
@@ -213,6 +214,8 @@ function render() {
   render.keepScroll = false;
 }
 window.addEventListener('hashchange', render);
+// 되돌리기 같은 버튼이 달린 알림은 다른 화면으로 가면 닫는다
+window.addEventListener('hashchange', () => { const t = document.getElementById('toast'); if (t.classList.contains('act')) t.classList.remove('show'); });
 
 function updateTop() {
   const ex = examInfo();
@@ -768,7 +771,7 @@ function viewPack() {
   <article class="card notes" id="notes">${p.notes ? md(p.notes) : '<p class="muted">본문이 없는 자료다.</p>'}</article>
   ${(p.cards || []).length ? `<details class="card flat"><summary>암기 항목 ${p.cards.length}개 한눈에 보기</summary><table class="crit">${p.cards.map(c => `<tr><td><b>${esc(c.front)}</b></td><td>${esc(c.back)}</td></tr>`).join('')}</table></details>` : ''}
   </div>
-  <aside class="pack-side">
+  ${srcOn ? '</div>' : ''}<aside class="pack-side${srcOn ? ' below' : ''}">
   <section class="card noprint">
     <h2>내 단원 메모</h2>
     <textarea id="pnote" aria-label="내 단원 메모" placeholder="이 단원에서 기억할 것, 선생님이 강조한 것, 헷갈리는 것" style="min-height:90px">${esc(memo?.text || '')}</textarea>
@@ -785,7 +788,7 @@ function viewPack() {
     <form id="askf"><textarea name="q" rows="3" aria-label="이 자료에 대해 물을 것" placeholder="예: 이 시에서 화자의 태도가 바뀌는 부분이 어디야?" style="min-height:80px"></textarea>
     <pre class="prompt" id="askPre" hidden></pre>
     <div class="row" style="margin-top:8px">${AI.hasKey() ? '<button class="btn pri">묻기</button>' : '<button type="button" class="btn pri" id="askCopy">채팅으로 묻기 (복사)</button> <a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a>'}${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
-  </section></aside></div>
+  </section></aside>${srcOn ? '' : '</div>'}
   `;
   $$('[data-unmerge]').forEach(b => b.addEventListener('click', async () => {
     D.unmergePack(b.dataset.unmerge); await D.loadAll(); toast('따로 보게 했다.'); render.keepScroll = true; render();
@@ -889,6 +892,8 @@ function bindSrcPane(p, texts, cur) {
   $$('#srcPane [data-tid]').forEach(c => c.addEventListener('click', () => {
     const tabs = S.load('srcTab', {}); tabs[p.id] = c.dataset.tid; S.save('srcTab', tabs);
     location.hash = `#/pack?id=${encodeURIComponent(p.id)}&src=${encodeURIComponent(c.dataset.tid)}`;
+    // 다시 그린 뒤에도 고른 원문 탭에 초점을 둔다
+    setTimeout(() => document.querySelector(`#srcPane [data-tid="${CSS.escape(c.dataset.tid)}"]`)?.focus({ preventScroll: true }), 120);
   }));
   $('#lnOn')?.addEventListener('change', e => { S.save('srcLn', e.target.checked); $('#srcText').classList.toggle('ln', e.target.checked); });
   $('#srcAdd').addEventListener('click', () => openSrcDialog(p, null));
@@ -1375,9 +1380,25 @@ function announce(text) {
   el.textContent = '';
   setTimeout(() => { el.textContent = text; }, 30);
 }
+// 채점 결과 제목으로 초점을 옮기고 읽어 준다
+function focusResult() {
+  const h = $('#resBox h2');
+  if (!h) return;
+  h.tabIndex = -1; h.focus({ preventScroll: true });
+  announce(h.textContent);
+}
+// 다음 문제로 넘어가면 문제 글로 초점을 옮기고 몇 번 문제인지 알려 준다
+function focusQuestion() {
+  const t = $('.q-text');
+  if (!t || !session) return;
+  t.tabIndex = -1; t.focus({ preventScroll: true });
+  announce(`${session.i + 1}번 문제`);
+}
 function restoreFocus(sel) {
   if (!sel) return;
-  const el = $(sel) || ((sel === '#checkBtn' || sel === '#skipBtn') ? $('#next') : null);
+  // 서술형은 채점 뒤 '채점 안 하고 다음' 대신 채점 칸으로
+  const after = $('#selfForm input') || $('#next');
+  const el = $(sel) || ((sel === '#checkBtn' || sel === '#skipBtn') ? after : null);
   el?.focus({ preventScroll: true });
 }
 function drawQuestion() {
@@ -1396,8 +1417,9 @@ function drawQuestion0() {
   const locked = !!res || (exam && session.submitted);
 
   // 지문 없이 (가)·(나)·㉠·윗글을 가리키는 문제는 자료의 원문을 옆에 펼쳐 준다
-  const citeAll = !q.context && /\([가-하]\)|[㉠-㉭]|윗글|위 글|밑줄 친|이 시|이 글/.test(q.question) ? SRC.textsOf(pack).filter(t => t.body) : [];
+  const citeAll = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body) : [];
   const citeSrc = citeAll.length ? citeAll : null;
+  const citeMissing = !q.context && !citeSrc && CITE_RE.test(q.question);
   let body = '';
   if (q.type === 'mcq') {
     const sel = Array.isArray(ans) ? ans : [];
@@ -1427,17 +1449,19 @@ function drawQuestion0() {
     <div class="q-split">
     ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : citeSrc ? `<details class="q-ctx q-src"${S.load('qSrcOpen', true) ? ' open' : ''}><summary>원문 보기 · ${esc(citeSrc.map(t => t.title).join(', '))}</summary>${citeSrc.map(t => `<div class="src-text">${t.body.split('\n').map(l => l.trim() ? `<div class="l">${esc(l)}</div>` : '<div class="l e"></div>').join('')}</div>`).join('<hr>')}</details>` : ''}
     <div class="q-main">
+    ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}">자료 열기</a> 에서 원문을 넣거나, <button type="button" class="linkbtn" id="noSrcSkip">이 문제 건너뛰기</button> (오답에 안 넣는다).</p>` : ''}
     <div class="q-text">${qHtml(q.question)}</div>
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
-    ${q.type === 'mcq' && !res ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 로 보기 고르기, Enter 로 채점</p>` : ''}
+    ${q.type === 'mcq' && !res ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 보기 · Q/W/E 확신도 · Enter 채점 · ? 단축키 전체</p>` : ''}
     </div></div>
   </section>
   <div class="row"><label class="chip${pr?.star ? ' on' : ''}" id="starBtn">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</label>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
   `;
 
   $('.q-src')?.addEventListener('toggle', e => S.save('qSrcOpen', e.target.open));
+  $('#noSrcSkip')?.addEventListener('click', () => { if (session.i < session.items.length - 1) { session.i++; drawQuestion(); } else toSummary(); });
   // 답 입력
   $$('[data-ch]').forEach(b => b.addEventListener('click', () => {
     const n = Number(b.dataset.ch);
@@ -1486,10 +1510,10 @@ function drawQuestion0() {
   $('#prev')?.addEventListener('click', () => { session.i--; drawQuestion(); });
   $('#next')?.addEventListener('click', () => {
     if (session.viewing) {
-      if (last) toSummary(); else { session.i++; drawQuestion(); }
+      if (last) toSummary(); else { session.i++; drawQuestion(); focusQuestion(); }
       return;
     }
-    session.i++; render();
+    session.i++; render(); focusQuestion();
   });
   $('#toSum')?.addEventListener('click', e => { e.preventDefault(); toSummary(); });
   $('#submitAll')?.addEventListener('click', submitExam);
@@ -1511,6 +1535,8 @@ function drawQuestion0() {
   if (exam && !session.submitted) tickTimer();
 }
 
+// (가)·(나)·㉠·윗글 처럼 지문을 가리키는 말
+const CITE_RE = /\([가-하]\)|[㉠-㉭]|윗글|위 글|밑줄 친|이 시에|이 글에/;
 // 문제 글에 표(| 칸 | 칸 |)가 있으면 정리 노트처럼 표로 그린다. 나머지는 쓴 그대로.
 function qHtml(t) {
   const text = String(t || '');
@@ -1525,12 +1551,35 @@ function syncCheck() {
   b.disabled = a == null || (typeof a === 'string' ? !a.trim() : Array.isArray(a) && !a.length);
 }
 
+// ? 를 누르면 키보드 단축키 목록
+document.addEventListener('keydown', e => {
+  if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (['textarea', 'input', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
+  e.preventDefault();
+  const d = document.createElement('dialog');
+  d.className = 'dlg';
+  d.innerHTML = `<form method="dialog"><h2 style="margin-top:0">키보드 단축키</h2>
+    <table class="crit"><tr><td>문제 풀이</td><td>1~6 보기 고르기 · Q/W/E 확실·애매·찍음 · Enter 채점·다음</td></tr>
+    <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
+    <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다</td></tr>
+    <tr><td>채점 방법 탭</td><td>← → 탭 옮기기</td></tr>
+    <tr><td>메뉴·형광펜 띠</td><td>Esc 닫기</td></tr></table>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn pri">닫기</button></div></form>`;
+  document.body.append(d);
+  d.addEventListener('close', () => d.remove());
+  d.showModal();
+});
+
 // 태블릿 키보드용: 숫자로 보기 고르기, Enter 로 채점·다음
 document.addEventListener('keydown', e => {
   if (params().path !== '/run' || !session || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = (e.target.tagName || '').toLowerCase();
-  if (['textarea', 'input', 'select', 'button', 'a', 'summary'].includes(tag)) return;
+  if (['textarea', 'input', 'select'].includes(tag)) return;
+  // 버튼에 초점이 있을 때 Enter 는 그 버튼이 받는다 (두 번 누르는 것을 막는다)
+  if (e.key === 'Enter' && ['button', 'a', 'summary'].includes(tag)) return;
+  const conf = { q: 'sure', w: 'unsure', e: 'guess' }[e.key.toLowerCase()];
   if (/^[1-6]$/.test(e.key)) { const b = main.querySelector(`[data-ch="${e.key}"]:not([disabled])`); if (b) { e.preventDefault(); b.click(); } }
+  else if (conf) { const b = main.querySelector(`[data-conf="${conf}"]`); if (b) { e.preventDefault(); b.click(); } }
   else if (e.key === 'Enter') { const b = $('#checkBtn') || $('#next'); if (b) { e.preventDefault(); b.click(); } }
   else if (e.key === 'ArrowRight' && session.mode === 'exam' && !session.submitted) $('#next')?.click();
   else if (e.key === 'ArrowLeft' && session.mode === 'exam' && !session.submitted) $('#prev')?.click();
@@ -1731,7 +1780,7 @@ function bindResult(i) {
     S.overrideOk(it.key);
     session.results[i] = { ...r, result: 'ok', overridden: true };
     toast('맞음으로 고쳤다.');
-    render.keepScroll = true; drawQuestion();
+    render.keepScroll = true; drawQuestion(); focusResult();
   });
   $('#selfForm')?.addEventListener('submit', e => {
     e.preventDefault();
@@ -1743,7 +1792,7 @@ function bindResult(i) {
     const fb = { kind: 'essay', self: true, score, max, criteria: it.q.rubric.map((c, k) => ({ criterion: c.criterion, max: c.points, earned: got.includes(k) ? c.points : 0, comment: '' })), good: '', missing: '', improved: '' };
     session.results[i] = { result, fb };
     S.recordAnswer(it.key, result, session.answers[i], fb, session.spent[i], { sess: session.id, exam: session.mode === 'exam' || undefined });
-    render.keepScroll = true; drawQuestion();
+    render.keepScroll = true; drawQuestion(); focusResult();
   });
   // Claude 채팅으로 채점
   $('[data-cg-copy]')?.addEventListener('click', () => {
@@ -1846,7 +1895,7 @@ function viewSummary() {
   <section class="card flat"><ul class="list">${items.map((it, i) => {
     const r = res[i];
     const tag = r?.result === 'ok' ? '<span class="tag ok">맞음</span>' : r?.result === 'part' ? '<span class="tag warn">부분</span>' : r?.result === 'wrong' ? '<span class="tag bad">틀림</span>' : r?.selfGrade ? '<span class="tag vio">채점 필요</span>' : '<span class="tag">안 풂</span>';
-    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${subjName(it.pack.subject)} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a></li>`;
+    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${subjName(it.pack.subject)} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeChips(it.key) : ''}</li>`;
   }).join('')}</ul></section>`;
   scrollTo(0, 0);
   $$('[data-open]').forEach(a => a.addEventListener('click', e => {
@@ -1908,13 +1957,17 @@ function viewWrong() {
   $('#retry')?.addEventListener('click', () => startSession(shuffle(items), 'practice'));
   $$('[data-one]').forEach(b => b.addEventListener('click', () => startSession(items.filter(x => x.key === b.dataset.one), 'practice')));
   $$('[data-done]').forEach(b => b.addEventListener('click', () => { S.setFlag(b.dataset.done, 'wrong', false); toast('오답노트에서 뺐다.'); render.keepScroll = true; render(); }));
-  $$('[data-cause]').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.ck;
-    if (causeOf(k) === b.dataset.cause) S.kvDel('wcause', k); else S.kvSet('wcause', k, { cause: b.dataset.cause });
-    const box = b.closest('.chips');
-    box.querySelectorAll('[data-cause]').forEach(x => x.classList.toggle('on', x === b && causeOf(k) === b.dataset.cause));
-  }));
 }
+
+// 오답 원인 칩 (오답노트, 결과 화면 공통)
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-cause]');
+  if (!b) return;
+  const k = b.dataset.ck;
+  if (causeOf(k) === b.dataset.cause) S.kvDel('wcause', k); else S.kvSet('wcause', k, { cause: b.dataset.cause });
+  b.closest('.chips').querySelectorAll('[data-cause]').forEach(x => { const on = x === b && causeOf(k) === b.dataset.cause; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); });
+});
+const causeChips = key => `<div class="chips cause-row" role="group" aria-label="왜 틀렸나"><span class="small muted" style="align-self:center">왜 틀렸나</span>${CAUSES.map(([v, l]) => `<button type="button" class="chip sm${causeOf(key) === v ? ' on' : ''}" aria-pressed="${causeOf(key) === v}" data-cause="${v}" data-ck="${esc(key)}">${l}</button>`).join('')}</div>`;
 
 // ================= 암기카드 =================
 let flash = null;
@@ -1982,7 +2035,7 @@ function viewFlash() {
   <div class="row between"><span class="small muted">남은 카드 ${flash.list.length - flash.i}장 · ${subjName(x.pack.subject)} · ${esc(x.pack.title)}</span><a class="btn sm ghost" href="#/cards">그만</a></div>
   <div class="bar" style="margin:8px 0 14px"><i style="width:${pct(flash.i, flash.list.length)}%"></i></div>
   <h1 class="vh">암기카드</h1>
-  <section class="card flash ${showBack ? 'back' : ''}" id="fc" role="button" tabindex="0" aria-describedby="fcHint">
+  <section class="card flash ${showBack ? 'back' : ''}" id="fc" role="button" tabindex="0">
     <span class="side" id="fcHint">${showBack ? '뒷면' : '앞면'} · 눌러서 뒤집기 (스페이스)</span>
     <div>${esc(showBack ? x.c.back : x.c.front)}</div>
     ${showBack && x.c.note ? `<p class="small muted" style="margin-top:10px">${esc(x.c.note)}</p>` : ''}
@@ -2124,7 +2177,7 @@ function viewPlan() {
         if (!gi.length) return '';
         const self = g.items.length === 1 && g.items[0].self;
         return `<div class="wgroup">${self ? '' : `<div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(g.title)}</b></div>`}
-          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}${p.date && p.date < t && !p.done ? '<br><span class="tag warn">밀림</span>' : ''}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${self && p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
+          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}${p.date && p.date < t && !p.done ? '<br><span class="tag warn">밀림</span>' : ''}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${self && p.subject ? subjDot(p.subject) + ' ' : ''}${esc(planText(p.text))}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
       }).join('')}
       ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
     </details>`;
@@ -2444,7 +2497,7 @@ function viewJournal() {
   if (one) days = [one];
   const shown = days.slice(0, limit);
   main.innerHTML = `
-  <div class="row between"><h1 style="margin:0">공부 일지</h1>${one ? '<a class="btn sm" href="#/journal">전체 날짜</a>' : '<a class="btn sm ghost" href="#/stats">그래프</a>'}</div>
+  <div class="row between"><h1 style="margin:0">공부 일지</h1>${one ? '<a class="btn sm" href="#/journal">전체 날짜</a>' : '<a class="btn sm" href="#/stats">공부 기록 그래프</a>'}</div>
   <p class="small muted">공부한 흔적이 날짜별로 쌓인다. 하루 끝에 한 줄 회고를 남겨 두면 시험 전에 다시 볼 수 있다.</p>
   ${shown.map(d => {
     const l = log[d] || {};
@@ -2462,7 +2515,7 @@ function viewJournal() {
         ${l.fs?.math ? `<span><b>${S.fmtDur(l.fs.math)}</b> 수학</span>` : ''}
       </div>
       ${list.length ? `<ul class="j-list">${list.map(entryHtml).join('')}</ul>` : '<p class="small muted">기록이 없다.</p>'}
-      <label class="field"><span>한 줄 회고</span><textarea class="diary" data-day="${d}" rows="2" style="min-height:56px" placeholder="오늘 잘된 것, 헷갈린 것, 내일 할 것">${esc(diary?.text || '')}</textarea></label>
+      ${diary?.text || d === S.today() || one ? `<label class="field"><span>한 줄 회고 <span class="small muted" data-saved="${d}"></span></span><textarea class="diary" data-day="${d}" rows="2" style="min-height:56px" placeholder="오늘 잘된 것, 헷갈린 것, 내일 할 것">${esc(diary?.text || '')}</textarea></label>` : `<p class="small"><a href="#/journal?d=${d}">이날 회고 쓰기</a></p>`}
     </section>`;
   }).join('')}
   ${!one && days.length > limit ? `<a class="btn block" href="#/journal?n=${limit + 14}">이전 날짜 더 보기</a>` : ''}`;
@@ -2470,7 +2523,8 @@ function viewJournal() {
     let tm = null;
     t.addEventListener('input', () => {
       clearTimeout(tm);
-      tm = setTimeout(() => { if (t.value.trim()) S.kvSet('diary', t.dataset.day, { text: t.value }); else S.kvDel('diary', t.dataset.day); }, 700);
+      // 지워도 빈 글로 남긴다 (기록은 지우지 않는다)
+      tm = setTimeout(() => { S.kvSet('diary', t.dataset.day, { text: t.value }); const m = $(`[data-saved="${t.dataset.day}"]`); if (m) m.textContent = '· 저장됨'; }, 700);
     });
   });
 }
@@ -2835,14 +2889,35 @@ function viewPrompts() {
 // ================= 백지 복습 =================
 // 서울대생 "백지 공부법" + 파인만 기법: 자료를 덮고 기억나는 것을 다 쓴 뒤, 자료와 비교해 빠진 것을 찾는다.
 let blank = null;
-function keywordsOf(p) {
-  const out = new Set();
-  const notes = p.notes || '';
-  for (const m of notes.matchAll(/\*\*([^*\n]{2,40})\*\*/g)) out.add(m[1].trim());
-  for (const m of notes.matchAll(/<mark>([^<\n]{2,40})<\/mark>/g)) out.add(m[1].trim());
-  for (const m of notes.matchAll(/^#{2,4}\s+(.{2,30})$/gm)) out.add(m[1].replace(/[*`]/g, '').trim());
-  for (const c of p.cards || []) if (c.front.length <= 20) out.add(c.front.trim());
-  return [...out].filter(k => k && !/^[\d\s.()·-]+$/.test(k)).slice(0, 80);
+// 백지 복습 핵심어: 굵은 글씨·<mark>·카드 앞면. 제목(##)은 "작가", "특징" 같은 칸 이름이라 뺀다.
+// "A, B·C" 처럼 묶인 것은 하나씩 나눈다. 각 핵심어가 어느 소제목 아래에 있었는지도 같이 둔다.
+function keywordItems(p) {
+  const out = new Map();
+  let sec = '';
+  const add = (raw, where) => {
+    for (const part of String(raw).replace(/\([^)]*\)/g, '').split(/[,，·/、]|\s그리고\s/)) {
+      const k = part.replace(/[*`]/g, '').trim();
+      if (k.length < 2 || k.length > 24 || /^[\d\s.()·-]+$/.test(k) || out.has(k)) continue;
+      out.set(k, where);
+    }
+  };
+  for (const line of String(p.notes || '').split('\n')) {
+    const h = line.match(/^#{2,4}\s+(.+)$/);
+    if (h) { sec = h[1].replace(/[*`]/g, '').replace(/\([^)]*\)/g, '').trim(); continue; }
+    for (const m of line.matchAll(/\*\*([^*\n]{2,60})\*\*/g)) add(m[1], sec);
+    for (const m of line.matchAll(/<mark>([^<\n]{2,60})<\/mark>/g)) add(m[1], sec);
+  }
+  for (const c of p.cards || []) if (c.front.length <= 24) add(c.front, '암기카드');
+  return [...out].slice(0, 80).map(([k, sec]) => ({ k, sec }));
+}
+function keywordsOf(p) { return keywordItems(p).map(x => x.k); }
+// 핵심어를 썼는지: 띄어쓰기·문장부호를 빼고 비교. 여러 낱말이면 절반 넘게 들어 있으면 쓴 것으로 본다.
+function kwHit(k, mine) {
+  const whole = nk(k);
+  if (whole && mine.includes(whole)) return true;
+  const toks = String(k).split(/[\s.,·'"()\[\]「」『』<>:;!?~-]+/).map(nk).filter(t => t.length >= 2);
+  if (toks.length < 2) return false;
+  return toks.filter(t => mine.includes(t)).length / toks.length > 0.5;
 }
 const nk = s => String(s).normalize('NFKC').toLowerCase().replace(/[\s.,·'"‘’“”()\[\]「」『』<>:;!?~-]/g, '');
 
@@ -2877,7 +2952,7 @@ function viewBlank() {
     $('#bDone').addEventListener('click', () => {
       if (blank.text.replace(/\s/g, '').length < 10) return toast('조금 더 써 본다. 생각나는 단어만이라도.');
       const mine = nk(blank.text);
-      const hit = kws.filter(k => mine.includes(nk(k)));
+      const hit = kws.filter(k => kwHit(k, mine));
       blank.hit = hit; blank.miss = kws.filter(k => !hit.includes(k));
       blank.cov = kws.length ? Math.round(hit.length / kws.length * 100) : 0;
       blank.phase = 'compare';
@@ -2892,12 +2967,22 @@ function viewBlank() {
   let notesHtml = md(p.notes);
   main.innerHTML = `<p class="small"><a href="#/pack?id=${encodeURIComponent(p.id)}">← ${esc(p.title)}</a></p>
   <h1>백지 복습 결과</h1>
-  <section class="grid" style="margin-bottom:12px">
-    <div class="stat"><b>${blank.cov}%</b><span>핵심어를 떠올림</span></div>
-    <div class="stat"><b>${blank.hit.length}/${kws.length}</b><span>쓴 핵심어</span></div>
-    <div class="stat"><b>${blank.miss.length}</b><span>빠진 핵심어</span></div>
-  </section>
-  ${blank.miss.length ? `<section class="card flat"><h2>빠진 핵심어</h2><div class="chips">${blank.miss.map(k => `<span class="chip" style="border-color:var(--bad);color:var(--bad)">${esc(k)}</span>`).join('')}</div><p class="small muted" style="margin-top:8px">오른쪽 자료에서 빨간 밑줄로 표시했다. 이것만 다시 읽고 내일 한 번 더 백지 복습을 한다.</p></section>` : '<p class="note info">핵심어를 다 떠올렸다.</p>'}
+  <p class="result-line">핵심어 <b>${kws.length}개 중 ${blank.hit.length}개</b>를 떠올렸다 (${blank.cov}%)</p>
+  ${blank.miss.length ? (() => {
+    // 빠진 핵심어는 소제목별로 묶고, 처음 10개만 펼친다
+    const secOf = Object.fromEntries(keywordItems(p).map(x => [x.k, x.sec || '기타']));
+    const groups = {};
+    for (const k of blank.miss) (groups[secOf[k] || '기타'] = groups[secOf[k] || '기타'] || []).push(k);
+    let shown = 0;
+    const chip = k => `<span class="chip miss">${esc(k)}</span>`;
+    const first = [], rest = [];
+    for (const [g, ks] of Object.entries(groups)) {
+      const a = ks.slice(0, Math.max(0, 10 - shown)); shown += a.length;
+      if (a.length) first.push(`<div class="kw-g"><span class="small muted">${esc(g)}</span><div class="chips">${a.map(chip).join('')}</div></div>`);
+      if (ks.length > a.length) rest.push(`<div class="kw-g"><span class="small muted">${esc(g)}</span><div class="chips">${ks.slice(a.length).map(chip).join('')}</div></div>`);
+    }
+    return `<section class="card flat"><h2>빠진 핵심어 ${blank.miss.length}개</h2>${first.join('')}${rest.length ? `<details class="fold"><summary class="small">나머지 ${blank.miss.length - shown}개 더 보기</summary>${rest.join('')}</details>` : ''}<p class="small muted" style="margin-top:8px">오른쪽 자료에서 빨간 밑줄로 표시했다. 이것만 다시 읽고 내일 한 번 더 백지 복습을 한다.</p></section>`;
+  })() : '<p class="note info">핵심어를 다 떠올렸다.</p>'}
   <div class="grid2">
     <section class="card"><h2>내가 쓴 것</h2><p style="white-space:pre-wrap">${esc(blank.text)}</p></section>
     <section class="card notes" id="bNotes">${notesHtml}</section>
@@ -2957,7 +3042,7 @@ function viewFinal() {
   const right = qq => qq.type === 'mcq' ? (Array.isArray(qq.answer) ? qq.answer : [qq.answer]).map(n => esc(qq.choices[n - 1])).join(', ') : qq.type === 'short' ? esc(qq.answers[0]) : esc(qq.model_answer);
   const qRow = x => `<li class="item" style="align-items:flex-start;display:block"><b>${esc(x.q.question)}</b><br><span class="small">→ ${right(x.q)}</span>${causeOf(x.key) ? ` <span class="tag">${CAUSES.find(c => c[0] === causeOf(x.key))?.[1]}</span>` : ''}${x.q.explanation ? `<br><span class="small muted">${esc(x.q.explanation)}</span>` : ''}</li>`;
   main.innerHTML = `<div class="row between"><h1 style="margin:0">${subjDot(sel)} ${subjName(sel)} 시험 전 정리</h1><button class="btn sm ghost noprint" id="fPrint">인쇄</button></div>
-  <p class="small muted">${ex.date ? `${S.fmtDate(ex.date)} · ${dLabel(ex.date)}` : '시험 날짜를 아직 안 정했다 · <a href="#/plan">날짜 넣기</a>'}${ex.range ? ' · 범위: ' + esc(ex.range) : ''}</p>
+  <p class="small muted">${ex.date ? `${S.fmtDate(ex.date)} · ${dLabel(ex.date)}` : `${subjName(sel)} 시험이 어느 날인지 아직 안 정했다 · <a href="#/plan">${subjName(sel)} 날짜 넣기</a>`}${ex.range ? ' · 범위: ' + esc(ex.range) : ''}</p>
   <div class="row noprint" style="margin:10px 0">${wrong.length + star.length ? `<button class="btn pri" id="fRetry">오답·헷갈린 문제 ${wrong.length + star.length + guessed.length}개 다시 풀기</button>` : ''}${cards.length ? `<button class="btn" id="fCards">모르는 카드 ${cards.length}장</button>` : ''}</div>
   ${notes.length ? `<section class="card"><h2>내 단원 메모</h2>${notes.map(n => `<p><b>${esc(D.db().byId[n.pack]?.title || '')}</b><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
   ${hls.length ? `<section class="card"><h2>형광펜·메모 ${hls.length}</h2><ul class="list">${hls.map(h => `<li class="item" style="display:block"><span class="hl-text hl-${h.color}">${esc(h.text)}</span>${h.note ? `<br><span class="small">메모: ${esc(h.note)}</span>` : ''}</li>`).join('')}</ul></section>` : ''}
@@ -3006,7 +3091,7 @@ function checkPack(p) {
   if (['kor', 'eng', 'jpn'].includes(p.subject) && !(p.texts || []).length && !SRC.textsOf(p).length) add('info', '원문', '원문(본문)이 없다. "본문 같이 보기" 를 쓰려면 원문을 넣는다.');
   [...(p.questions || []).map((q, i) => [q, `문제 ${i + 1}`]), ...(p.book || []).map((q, i) => [q, `책 문제 ${q.source || i + 1}`])].forEach(([q, w]) => {
     scanText(w, q.question); scanText(w + ' 지문', q.context); scanText(w + ' 해설', q.explanation);
-    if (/윗글|다음 글|아래 글|<보기>|\[보기\]|다음 시(?![각간])|다음 자료/.test(q.question) && !q.context) add('err', w, `"${q.question.slice(0, 30)}…" — 지문이나 <보기> 를 가리키는데 지문 칸이 비어 있다.`);
+    if ((/윗글|다음 글|아래 글|<보기>|\[보기\]|다음 시(?![각간])|다음 자료/.test(q.question) || (CITE_RE.test(q.question) && !SRC.textsOf(p).some(t => t.body))) && !q.context) add('err', w, `"${q.question.slice(0, 30)}…" — 지문이나 <보기> 를 가리키는데 지문 칸이 비어 있다.`);
     if (q.type === 'mcq') {
       if (q.choices.some(c => /^\s*([①②③④⑤]|\(?[1-5][).]\s)/.test(c))) add('warn', w, '보기 앞에 ①② 나 1) 번호가 붙어 있다. 사이트가 번호를 또 붙여서 두 번 보인다.');
       if (new Set(q.choices.map(c => c.trim())).size !== q.choices.length) add('err', w, '똑같은 보기가 두 개 있다.');
@@ -3111,7 +3196,7 @@ function viewMath() {
     <h2>집중 타이머</h2>
     <p class="small muted">정한 시간 동안 한 가지만 한다. 끝까지 채우면 공부 일지에 남는다.</p>
     <p class="timer" id="ft" style="font-size:2.2rem;margin:6px 0">${tm ? '' : '25:00'}</p>
-    <div class="row">${tm ? '<button class="btn bad" id="tStop">멈추기</button>' : [25, 50].map(m => `<button class="btn${m === 25 ? ' pri' : ''}" data-tm="${m}">${m}분</button>`).join('')}</div>
+    <div class="row">${tm ? '<button class="btn bad" id="tStop">멈추기</button>' : [25, 50].map(m => `<button class="btn" data-tm="${m}">${m}분 시작</button>`).join('')}</div>
     ${fmin ? `<p class="small muted">지금까지 ${S.fmtDur(fmin * 60)}.</p>` : ''}
   </section>`;
   })()}
@@ -3147,14 +3232,19 @@ function viewMath() {
     el.textContent = `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   };
   clearInterval(viewMath._t); upd(); if (mc) viewMath._t = setInterval(upd, 1000);
-  $$('[data-tm]').forEach(b => b.addEventListener('click', () => { S.save('timer', { start: Date.now(), len: Number(b.dataset.tm) }); startTimerLoop(); render.keepScroll = true; render(); }));
+  $$('[data-tm]').forEach(b => b.addEventListener('click', () => {
+    // 스톱워치와 같이 돌면 시간이 두 번 셀 수 있어서 하나만 돌게 한다
+    if (S.load('mclock', null) && !confirm('스톱워치가 돌고 있다. 스톱워치를 멈추고(기록하고) 집중 타이머를 켤까?')) return;
+    if (S.load('mclock', null)) stopClock();
+    S.save('timer', { start: Date.now(), len: Number(b.dataset.tm) }); startTimerLoop(); render.keepScroll = true; render();
+  }));
   $('#tStop')?.addEventListener('click', () => {
     const t = S.load('timer', null);
     if (t) S.recordFocus(Math.floor((Date.now() - t.start) / 60000));
     S.remove('timer'); toast('멈췄다. 지난 시간은 기록했다.'); render.keepScroll = true; render();
   });
   startTimerLoop();
-  $('#mcGo')?.addEventListener('click', () => { const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
+  $('#mcGo')?.addEventListener('click', () => { if (S.load('timer', null)) { if (!confirm('집중 타이머가 돌고 있다. 타이머를 멈추고(지난 시간은 기록) 스톱워치를 켤까?')) return; const t = S.load('timer', null); S.recordFocus(Math.floor((Date.now() - t.start) / 60000)); S.remove('timer'); } const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
   $('#mcStop')?.addEventListener('click', () => { stopClock(); render(); });
   $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
   $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 공부 시간 기록을 지울까? 지운 시간은 공부 시간에서 빠진다.')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));

@@ -4,13 +4,13 @@ import { kvAll, kvSet, kvDel, kvGet, kvReady } from './store.js';
 export const FORMAT = 'study-hub/1';
 
 export const SUBJECTS = [
-  { id: 'kor', name: '국어', color: '#C2410C' },
-  { id: 'eng', name: '영어', color: '#1D4ED8' },
-  { id: 'soc', name: '통합사회', color: '#047857' },
-  { id: 'sci', name: '통합과학', color: '#7C3AED' },
-  { id: 'his', name: '한국사', color: '#B45309' },
-  { id: 'lab', name: '과학탐구실험', color: '#0E7490' },
-  { id: 'jpn', name: '일본어', color: '#BE185D' },
+  { id: 'kor', name: '국어' },
+  { id: 'eng', name: '영어' },
+  { id: 'soc', name: '통합사회' },
+  { id: 'sci', name: '통합과학' },
+  { id: 'his', name: '한국사' },
+  { id: 'lab', name: '과학탐구실험' },
+  { id: 'jpn', name: '일본어' },
 ];
 export const SUBJ = Object.fromEntries(SUBJECTS.map(s => [s.id, s]));
 export const TYPE_NAME = { mcq: '객관식', short: '단답형', essay: '서술형' };
