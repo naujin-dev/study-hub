@@ -183,7 +183,8 @@ const routes = {
   '/math': viewMath,
   '/pdf': viewPdf,
 };
-const navOf = { '/': 'home', '/plan': 'home', '/math': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/cards': 'quiz', '/flash': 'quiz', '/wrong': 'wrong' };
+// 아래 메뉴에서 켜질 칸. 암기카드·계획·시간 재기는 더보기에 들어 있으므로 더보기가 켜진다.
+const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 function render() {
@@ -313,6 +314,11 @@ function viewHome() {
 
   main.innerHTML = `
   ${D.db().loadErrors.length ? `<div class="note" style="margin-bottom:12px"><b>자료를 일부 못 읽었다.</b><br>${D.db().loadErrors.slice(0, 5).map(esc).join('<br>')}</div>` : ''}
+  ${(() => {
+    // 기록이 안 남는 일이 없게, 기기 저장 공간이 80% 넘게 차면 홈 맨 위에서 알린다
+    const mb = S.storageBytes() / 1048576;
+    return mb > 4 ? `<p class="note warnbar" role="status"><b>이 기기 저장 공간이 거의 찼다 (${mb.toFixed(2)}MB / 약 5MB).</b> 더 차면 새 기록이 저장되지 않는다. <a href="#/settings">설정</a>에서 백업을 받은 뒤 안 보는 가져온 자료를 지운다.</p>` : '';
+  })()}
   <header class="home-head">
     <h1>${tdate.getMonth() + 1}월 ${tdate.getDate()}일 ${'일월화수목금토'[tdate.getDay()]}요일</h1>
     <p class="muted">${ex.first ? `첫 시험까지 <b class="ink mono">${Math.max(0, S.daysBetween(t, ex.first))}일</b> · ${ex.days.map(d => { const subs = SUBJECTS.filter(s => ex.subjects[s.id]?.date === d); return `${Number(d.slice(5, 7))}/${Number(d.slice(8))}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})${subs.length ? ' ' + subs.map(s => s.name).join('·') : ''}`; }).join(' · ')}${ex.days.some(d => SUBJECTS.some(s => ex.subjects[s.id]?.date === d)) ? '' : ' · 과목별 날짜 미정'}` : '시험 날짜 미정'} · <a href="#/plan">일정</a></p>
@@ -334,9 +340,11 @@ function viewHome() {
       <div class="row today-actions">
         ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제</a>` : ''}
         ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
-        <a class="btn" href="#/quiz">문제 고르기</a>
-        ${D.allQuestions().length ? '<button class="btn" id="mixBtn" title="과목을 번갈아 섞어서 푼다 (인터리빙)">섞어 풀기</button>' : ''}
-        <a class="btn" href="#/cards">암기카드</a>
+        <details class="menu"><summary class="btn">더 풀기</summary><div class="menu-pop" role="menu" style="left:0;right:auto;transform-origin:top left">
+          <a class="mi" role="menuitem" href="#/quiz">문제 골라서 풀기</a>
+          ${D.allQuestions().length ? '<button type="button" class="mi" role="menuitem" id="mixBtn">섞어 풀기 <span class="muted">과목 번갈아 20문제</span></button>' : ''}
+          <a class="mi" role="menuitem" href="#/cards">암기카드</a>
+        </div></details>
       </div>
     </section>
 
@@ -695,7 +703,7 @@ function viewPack() {
   const notesMarks = marks.filter(h => !h.where);
   const srcMarks = cur ? marks.filter(h => h.where === 'src:' + cur.tid) : [];
   const srcPane = `<section class="card src-pane" id="srcPane">
-    <div class="row between"><b>본문</b><span class="row">${cur ? `<label class="small"><input type="checkbox" id="lnOn"${lnOn ? ' checked' : ''}> 행 번호</label><button class="btn sm ghost" id="srcEdit">고치기</button>` : ''}<button class="btn sm ghost" id="srcAdd">+ 붙여넣기</button><label class="btn sm ghost">+ 사진<input type="file" id="srcImg" accept="image/*" multiple hidden></label></span></div>
+    <div class="row between"><b>본문</b><span class="row">${cur ? `<label class="small"><input type="checkbox" id="lnOn"${lnOn ? ' checked' : ''}> 행 번호</label><button class="btn sm ghost" id="srcEdit">고치기</button>` : ''}<button class="btn sm ghost" id="srcAdd">+ 붙여넣기</button><button type="button" class="btn sm ghost" data-file="srcImg">+ 사진</button><input type="file" id="srcImg" accept="image/*" multiple hidden></span></div>
     ${texts.length > 1 ? `<div class="chips" style="margin:8px 0">${texts.map(t => `<label class="chip${t.tid === curTid ? ' on' : ''}" data-tid="${esc(t.tid)}">${esc(t.title)}</label>`).join('')}</div>` : ''}
     ${cur ? `<p class="small muted" style="margin:6px 0">${esc(cur.title)}${cur.mine ? ' · 내가 넣거나 고친 본문' : ''}</p>
       <div class="src-text${lnOn ? ' ln' : ''}" id="srcText">${cur.body.split('\n').map(line => line.trim() ? `<div class="l">${esc(line)}</div>` : '<div class="l e"></div>').join('')}</div>`
@@ -969,6 +977,11 @@ document.addEventListener('click', e => {
   dlg.showModal();
 });
 
+// 파일 고르기 버튼: 숨긴 파일 칸을 연다 (label 로 감싸면 키보드로 못 닿는다)
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-file]');
+  if (b) document.getElementById(b.dataset.file)?.click();
+});
 // 펼친 메뉴는 바깥을 누르거나, 메뉴 안의 항목을 누르거나, Esc 를 누르면 닫는다
 document.addEventListener('click', e => {
   document.querySelectorAll('details.menu[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('.mi')) d.open = false; });
@@ -1182,12 +1195,11 @@ function viewQuizSetup() {
     main.innerHTML = `<h1>문제 풀기</h1><p class="muted">문제가 들어 있는 자료가 아직 없다. <a href="#/settings">자료 가져오기</a></p>`;
     return;
   }
-  main.innerHTML = `
+  main.innerHTML = `<div class="narrow">
   <h1>문제 풀기</h1>
   <form id="qf" class="card">
     <h2 class="h3">과목</h2>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
-    <p class="small muted">아무것도 안 고르면 전체.</p>
-    <h2 class="h3" style="margin-top:14px">단원</h2><div id="packChips"></div>
+    <div id="packChips"></div>
     <h2 class="h3" style="margin-top:14px">유형</h2>${chipGroup('types', Object.entries(TYPE_NAME).map(([v, l]) => ({ value: v, label: l })), last.types)}
     <h2 class="h3" style="margin-top:14px">어떤 문제</h2>${chipGroup('src', [
       { value: 'all', label: '전체' }, { value: 'new', label: '안 푼 문제' }, { value: 'wrong', label: '오답만' },
@@ -1200,15 +1212,15 @@ function viewQuizSetup() {
     </div>
     <p id="qcount" class="small muted"></p>
     <button class="btn pri block" style="margin-top:6px">시작</button>
-  </form>`;
+  </form></div>`;
 
   const drawPacks = () => {
     const subs = picked('subject');
     const keep = picked('packs');
     const sel = keep.length ? keep : last.packs;
     // 과목을 골랐을 때만 그 과목 자료를 단원별로 보여 준다 (전부 펼치면 너무 많다)
-    $('#packChips').innerHTML = !subs.length ? '<p class="small muted">과목을 고르면 그 과목 자료가 단원별로 나온다. 안 고르면 모든 과목에서 낸다.</p>'
-      : SUBJECTS.filter(sb => subs.includes(sb.id)).map(sb => {
+    $('#packChips').innerHTML = !subs.length ? '<p class="small muted" style="margin:8px 0 0">안 고르면 모든 과목에서 낸다. 과목을 고르면 단원도 고를 수 있다.</p>'
+      : '<h2 class="h3" style="margin-top:14px">단원</h2>' + SUBJECTS.filter(sb => subs.includes(sb.id)).map(sb => {
         const groups = packGroups(packs.filter(p => p.subject === sb.id), S.load('studyGroup:' + sb.id, 'unit'));
         return groups.map(g => `<div class="chip-group"><span class="small muted">${subs.length > 1 ? sb.name + ' · ' : ''}${esc(g.name)}</span>${chipGroup('packs', g.packs.map(p => ({ value: p.id, label: p.title })), sel)}</div>`).join('');
       }).join('') + '<p class="small muted">자료를 안 고르면 고른 과목 전체에서 낸다.</p>';
@@ -1371,6 +1383,7 @@ function drawQuestion() {
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
+    ${q.type === 'mcq' && !res ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 로 보기 고르기, Enter 로 채점</p>` : ''}
     </div></div>
   </section>
   <div class="row"><label class="chip${pr?.star ? ' on' : ''}" id="starBtn">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</label>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
@@ -1411,7 +1424,9 @@ function drawQuestion() {
     const cf = (session.conf || {})[session.i] || '';
     acts.innerHTML = `${q.type !== 'essay' ? `<div class="conf small" role="group" aria-label="확신도"><span class="muted">얼마나 확실해?</span>${[['sure', '확실'], ['unsure', '애매'], ['guess', '찍음']].map(([v, l]) => `<button type="button" class="chip${cf === v ? ' on' : ''}" data-conf="${v}">${l}</button>`).join('')}</div>` : ''}<button class="btn pri" id="checkBtn">채점</button><button class="btn ghost" id="skipBtn">모르겠다</button>`;
   } else {
-    acts.innerHTML = `${session.viewing ? `<a class="btn" href="#/run" id="toSum">결과 목록</a>` : ''}<button class="btn pri" id="next">${last ? '결과 보기' : '다음'}</button>`;
+    // 서술형을 아직 채점하지 않았으면 '다음'은 보조 버튼으로 (채점 칸의 버튼이 주 버튼)
+    const pending = res.selfGrade && !res.result;
+    acts.innerHTML = `${session.viewing ? `<a class="btn" href="#/run" id="toSum">결과 목록</a>` : ''}<button class="btn${pending ? '' : ' pri'}" id="next">${pending ? '채점 안 하고 ' : ''}${last ? '결과 보기' : '다음'}</button>`;
   }
   syncCheck();
   $$('[data-conf]').forEach(b => b.addEventListener('click', () => {
@@ -1551,8 +1566,10 @@ async function gradeOne(i, btn) {
 function resultHtml(it, r) {
   const { q } = it;
   const a = session ? session.answers[session.items.indexOf(it)] : '';
-  const title = r.guessed ? '맞았지만 찍었다' : ({ ok: '맞았다', part: '부분 점수', wrong: r.skipped ? '모르는 문제로 넘김' : '틀렸다' }[r.result] || '채점하기');
-  let h = `<div class="result ${r.result || ''}"><h3>${title}</h3>`;
+  // 서술형은 0점이 아니면 '틀렸다' 대신 부분 점수로 부른다 (오답노트에는 그대로 들어간다)
+  const essayPart = q.type === 'essay' && r.result === 'wrong' && r.fb?.score > 0;
+  const title = r.guessed ? '맞았지만 찍었다' : essayPart ? `부분 점수 ${r.fb.score}/${r.fb.max}` : ({ ok: '맞았다', part: '부분 점수', wrong: r.skipped ? '모르는 문제로 넘김' : '틀렸다' }[r.result] || '채점하기');
+  let h = `<div class="result ${essayPart ? 'part' : r.result || ''}"><h3>${title}</h3>`;
   if (r.guessed) h += '<p class="small">찍어서 맞힌 문제는 아는 것으로 치지 않는다. 오답노트에 넣고 복습에 다시 나온다.</p>';
   if (r.overconf) h += '<p class="small"><b>확실하다고 했는데 틀렸다.</b> 잘못 알고 있는 개념이다. 해설을 꼼꼼히 읽고 오답 원인을 적어 둔다.</p>';
   if (q.type === 'mcq') {
@@ -1579,11 +1596,11 @@ function resultHtml(it, r) {
     if (r.fb?.via === 'chat') h += `<p class="small muted">Claude 채팅으로 채점함</p>`;
     if (r.selfGrade) {
       h += `${r.aiError ? `<p class="small">AI 채점 실패: ${esc(r.aiError)}</p>` : ''}
-      <div class="gtabs" role="tablist" aria-label="채점 방법"><button type="button" role="tab" class="gtab" aria-selected="true" data-gtab="self">내가 채점</button><button type="button" role="tab" class="gtab" aria-selected="false" data-gtab="chat">Claude 채팅 채점 (무료)</button></div>
-      <div class="gpanel" data-gpanel="self" role="tabpanel"><p class="small" style="margin-top:0">모범 답안을 보고 맞힌 기준을 고른다.</p>
+      <div class="gtabs" role="tablist" aria-label="채점 방법"><button type="button" role="tab" class="gtab" id="gt-self" aria-controls="gp-self" aria-selected="true" data-gtab="self">내가 채점</button><button type="button" role="tab" class="gtab" id="gt-chat" aria-controls="gp-chat" aria-selected="false" tabindex="-1" data-gtab="chat">Claude 채팅 채점 (무료)</button></div>
+      <div class="gpanel" data-gpanel="self" id="gp-self" aria-labelledby="gt-self" role="tabpanel"><p class="small" style="margin-top:0">모범 답안을 보고 맞힌 기준을 고른다.</p>
       <form id="selfForm">${q.rubric.map((c, i) => `<label class="item" style="display:flex;gap:8px;padding:6px 0"><input type="checkbox" name="c" value="${i}"><span class="grow">${esc(c.criterion)}</span><span class="num small">${c.points}점</span></label>`).join('')}
       <div class="row" style="margin-top:6px"><button class="btn sm pri">이만큼 맞혔다</button>${AI.hasKey() ? '<button type="button" class="btn sm" id="retryAi">AI 채점 다시</button>' : ''}</div></form></div>
-      <div class="gpanel chatgrade" data-gpanel="chat" role="tabpanel" hidden>${chatBox('채점 요청 복사')}</div>`;
+      <div class="gpanel chatgrade" data-gpanel="chat" id="gp-chat" aria-labelledby="gt-chat" role="tabpanel" hidden>${chatBox('채점 요청 복사')}</div>`;
     }
     h += `<details${r.selfGrade ? ' open' : ''}><summary>모범 답안</summary><p style="white-space:pre-wrap">${esc(q.model_answer)}</p></details>`;
     if (!r.selfGrade) h += `<details><summary>채점 기준</summary><ul>${q.rubric.map(c => `<li>${esc(c.criterion)} (${c.points}점)</li>`).join('')}</ul></details>`;
@@ -1601,8 +1618,22 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-gtab]');
   if (!b) return;
   const box = b.closest('.result') || b.parentElement.parentElement;
-  box.querySelectorAll('[data-gtab]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  pickGtab(box, b);
+});
+function pickGtab(box, b) {
+  box.querySelectorAll('[data-gtab]').forEach(x => { x.setAttribute('aria-selected', String(x === b)); x.tabIndex = x === b ? 0 : -1; });
   box.querySelectorAll('[data-gpanel]').forEach(p => { p.hidden = p.dataset.gpanel !== b.dataset.gtab; });
+}
+// 탭 사이는 ← → 로 옮긴다
+document.addEventListener('keydown', e => {
+  const b = e.target.closest?.('[data-gtab]');
+  if (!b || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const tabs = [...b.parentElement.querySelectorAll('[data-gtab]')];
+  const i = tabs.indexOf(b);
+  const n = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  pickGtab(b.closest('.result') || b.parentElement.parentElement, tabs[n]);
+  tabs[n].focus();
 });
 
 // API 키 없이 claude.ai 채팅으로 채점: 요청 복사 → 채팅에 붙여넣기 → 답 붙여넣기
@@ -1842,21 +1873,21 @@ function viewCardsSetup() {
   if (!all.length) { main.innerHTML = '<h1>암기카드</h1><p class="muted">카드가 들어 있는 자료가 없다.</p>'; return; }
   const last = { n: '30', ...S.load('cardPrefs', { subject: [], packs: [], src: 'due', flip: 'front' }) };
   const packs = D.db().packs.filter(p => (p.cards || []).length);
-  main.innerHTML = `<h1>암기카드</h1>
+  main.innerHTML = `<div class="narrow"><h1>암기카드</h1>
   <form id="cf" class="card">
     <h3>과목</h3>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
-    <h3 style="margin-top:14px">단원</h3><div id="cpacks"></div>
+    <div id="cpacks"></div>
     <h3 style="margin-top:14px">어떤 카드</h3>${chipGroup('src', [{ value: 'due', label: '외울 때 된 카드 + 새 카드' }, { value: 'all', label: '전부' }, { value: 'miss', label: '모른다고 한 카드' }], [last.src], false)}
     <h3 style="margin-top:14px">먼저 볼 면</h3>${chipGroup('flip', [{ value: 'front', label: '앞면 (문제)' }, { value: 'back', label: '뒷면 (답)' }], [last.flip], false)}
     <h3 style="margin-top:14px">한 번에</h3>${chipGroup('n', [{ value: '20', label: '20장' }, { value: '30', label: '30장' }, { value: '50', label: '50장' }, { value: 'all', label: '전부' }], [String(last.n)], false)}
     <p class="small muted" id="ccount"></p>
     <button class="btn pri block">시작</button>
-  </form>`;
+  </form></div>`;
   const draw = () => {
     const subs = picked('subject');
     // 단원 칩이 수십 개라 과목을 고른 뒤에만 과목별로 묶어 보여 준다
-    $('#cpacks').innerHTML = subs.length ? SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
-      : '<p class="small muted" style="margin:4px 0">과목을 고르면 단원이 나온다. 안 고르면 모든 과목에서 고른다.</p>';
+    $('#cpacks').innerHTML = subs.length ? '<h3 style="margin-top:14px">단원</h3>' + SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
+      : '<p class="small muted" style="margin:10px 0 0">과목을 고르면 단원도 고를 수 있다.</p>';
     $$('input[name="packs"]').forEach(i => i.addEventListener('change', cnt));
     cnt();
   };
@@ -1898,7 +1929,7 @@ function viewFlash() {
   const x = flash.list[flash.i];
   const showBack = flash.flip === 'back' ? !flash.back : flash.back;
   main.innerHTML = `
-  <div class="row between"><span class="small muted">${flash.i + 1} / ${flash.list.length} · ${subjName(x.pack.subject)} · ${esc(x.pack.title)}</span><a class="btn sm ghost" href="#/cards">그만</a></div>
+  <div class="row between"><span class="small muted">남은 카드 ${flash.list.length - flash.i}장 · ${subjName(x.pack.subject)} · ${esc(x.pack.title)}</span><a class="btn sm ghost" href="#/cards">그만</a></div>
   <div class="bar" style="margin:8px 0 14px"><i style="width:${pct(flash.i, flash.list.length)}%"></i></div>
   <section class="card flash ${showBack ? 'back' : ''}" id="fc" role="button" tabindex="0" aria-label="카드 뒤집기">
     <span class="side">${showBack ? '뒷면' : '앞면'} · 눌러서 뒤집기 (스페이스)</span>
@@ -2080,7 +2111,7 @@ function viewPlan() {
     }).join('')}
     <div class="row"><button class="btn pri">저장</button><button type="button" class="btn ghost" id="resetExam">저장소 값으로 되돌리기</button></div></form>
   </details>
-  ${weeksHtml ? '<p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>' : ''}
+
 
   <section class="card">
     <h2>내가 더한 계획</h2>
@@ -2094,7 +2125,8 @@ function viewPlan() {
       <h3 style="margin-top:16px">${S.fmtDate(d)} ${d === t ? '<span class="tag ok">오늘</span>' : d < t ? '<span class="tag">지남</span>' : ''}</h3>
       <ul class="list">${list.map(p => `<li class="item"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label><button class="btn sm ghost" data-pd="${p.id}" aria-label="지우기">✕</button></li>`).join('')}</ul>`).join('') : '<p class="muted small">계획이 없다.</p>'}
     ${plan.some(p => p.done) ? '<button class="btn sm ghost" id="clearDone" style="margin-top:10px">끝낸 계획 지우기</button>' : ''}
-  </section>`;
+   </section>
+  ${weeksHtml ? '<p class="small muted" style="margin-top:28px">Notion 에서 받은 주간 계획을 이 기기에서 지우려면 <button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>' : ''}`;
   $('#ef').addEventListener('submit', e => {
     e.preventDefault();
     const f = e.target;
@@ -2233,7 +2265,12 @@ function viewStats() {
 
   <section class="card">
     <h2>쌓은 기록</h2>
-    <ul class="list ms">${ms.map(m => `<li class="item"><span class="ms-ic ${m.date ? 'on' : ''}">${m.date ? '✓' : ''}</span><span class="grow">${m.label}</span><span class="small muted">${m.date ? (m.date === '달성' ? '달성' : S.fmtDate(m.date)) : '아직'}</span></li>`).join('')}</ul>
+    ${(() => {
+      // 이룬 것과 다음 3개만 펼치고 나머지는 접는다
+      const row = m => `<li class="item"><span class="ms-ic ${m.date ? 'on' : ''}">${m.date ? '✓' : ''}</span><span class="grow">${m.label}</span><span class="small muted">${m.date ? (m.date === '달성' ? '달성' : S.fmtDate(m.date)) : '아직'}</span></li>`;
+      const got = ms.filter(m => m.date), next = ms.filter(m => !m.date);
+      return `<ul class="list ms">${[...got, ...next.slice(0, 3)].map(row).join('')}</ul>${next.length > 3 ? `<details class="fold"><summary class="small">아직 못 한 기록 ${next.length - 3}개 더</summary><ul class="list ms">${next.slice(3).map(row).join('')}</ul></details>` : ''}`;
+    })()}
   </section>`;
   // 그래프는 들어갈 칸의 실제 너비에 맞춰 그린다 (글자 크기가 일정하게)
   const charts = {
@@ -2466,7 +2503,7 @@ function viewSettings() {
     <h2>자료 가져오기</h2>
     <p class="small muted">공부자료 Claude 가 준 JSON 을 통째로 붙여넣거나 .json 파일을 고른다. 가져온 자료는 이 기기에 저장되고, 기록 동기화를 켜 두면 다른 기기에도 들어간다.</p>
     <textarea id="impText" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-size:.88rem"></textarea>
-    <div class="row" style="margin-top:8px"><button class="btn" id="impCheck">검사</button><label class="btn ghost">파일 고르기<input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden></label></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="impCheck">검사</button><button type="button" class="btn ghost" data-file="impFile">파일 고르기</button><input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden></div>
     <div id="impOut"></div>
   </section>
 
@@ -2516,7 +2553,7 @@ function viewSettings() {
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
     <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
     <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
-    <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label></div>
+    <div class="row"><button class="btn" id="exp">백업 파일 받기</button><button type="button" class="btn" data-file="impBk">백업 불러오기</button><input type="file" id="impBk" accept=".json" hidden></div>
     <p style="margin:18px 0 0"><button class="btn sm bad ghost" id="reset">기록 초기화</button></p>
   </section>`;
 
@@ -3155,7 +3192,7 @@ async function viewPdf() {
   <h1>PDF 모아보기</h1>
   <p class="small muted">공부 Claude 에게 받은 PDF 원본을 넣어 두고 여기서 본다. PDF 는 <b>이 기기에만</b> 저장되고 동기화되지 않는다. 다른 기기에서도 보려면 그 기기에서 한 번 더 넣는다.</p>
   <section class="card">
-    <label class="btn pri">PDF 넣기 (여러 개 가능)<input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden></label>
+    <button type="button" class="btn pri" data-file="pdfIn">PDF 넣기 (여러 개 가능)</button><input type="file" id="pdfIn" accept="application/pdf,.pdf" multiple hidden>
     <p class="small muted" style="margin:8px 0 0">파일 이름과 제목이 맞는 자료가 있으면 그 자료에 저절로 이어 둔다. 이어 둔 자료 화면에 "PDF 원본 보기" 가 생긴다.</p>
     <div id="pdfMsg"></div>
   </section>
@@ -3265,7 +3302,7 @@ function viewHelp() {
 - **백지 복습** (서울대생 백지 공부법, 파인만 기법): 자료 화면의 "백지 복습" 또는 더보기 → 백지 복습. 자료를 덮고 기억나는 것을 다 쓴 뒤 "자료와 비교" 를 누르면 핵심어(굵은 글씨, 형광 강조, 소제목, 카드)를 몇 % 떠올렸는지, 빠진 핵심어가 무엇인지 보여 준다. Claude 에게 잘못 쓴 설명까지 확인받을 수 있다.
 - **확신도 체크** (메타인지): 객관식·단답형에서 채점 전에 "확실 / 애매 / 찍음" 을 고른다. 찍어서 맞힌 문제는 아는 것으로 치지 않고 오답노트와 복습에 다시 나온다. 애매하게 맞힌 문제는 헷갈림 표시가 붙는다. 확실하다고 했는데 틀리면 따로 알려 준다.
 - **오답 원인**: 오답노트에서 개념 부족 / 암기 부족 / 실수 / 문제 잘못 읽음 / 시간 부족을 고른다. 원인별로 모아 보고, 기록 화면에서 비율을 본다.
-- **섞어 풀기** (인터리빙): 홈의 "섞어 풀기 20" 은 복습할 문제·오답·안 푼 문제를 과목을 번갈아 섞어 낸다. 한 과목만 몰아 풀 때보다 시험에서 더 잘 떠오른다.
+- **섞어 풀기** (인터리빙): 홈의 "섞어 풀기" 는 20문제를 복습할 문제·오답·안 푼 문제를 과목을 번갈아 섞어 낸다. 한 과목만 몰아 풀 때보다 시험에서 더 잘 떠오른다.
 - **시험 전 정리**: 더보기 → 시험 전 정리. 과목마다 내 단원 메모, 형광펜·메모, 오답, 헷갈린 문제, 찍어서 맞힌 문제, 모르는 카드를 한 장에 모은다. 시험 3일 전부터는 홈에 바로가기가 뜬다.
 - **자료 점검**: 더보기 → 자료 점검. 수식(LaTeX), 짝 안 맞는 굵게, \n 글자, 표 칸 수, 지문 없는 문제, 보기 번호 중복, 정답 표기 문제를 찾고 고칠 프롬프트를 복사해 준다.
 
