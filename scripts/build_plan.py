@@ -12,6 +12,7 @@ notion-plan.md 모양:
     - [ ] 큰 할 일 (과목 이름으로 시작)
       - [ ] 10/20(화) 날짜가 있는 작은 할 일
       - [x] 끝낸 것
+        - [ ] 날짜 줄 아래에 한 단 더 들여 쓴 줄은 위 줄의 날짜를 받는다
 
 날짜(M/D)가 앞에 있으면 그날 할 일, 없으면 그 주 할 일이 된다.
 "11/10(화) 13 / 11/11(수) 14" 처럼 날짜 여러 개가 ' / ' 로 이어지면 날마다 나눈다.
@@ -92,8 +93,11 @@ def main():
         else:
             if group is None:
                 continue
+            # 날짜 줄 아래에 한 단 더 들여 쓴 줄(예: "공부 사이트 kor-02 …")은 날짜가 없으면 위 날짜 줄의 날짜를 받는다
+            parent = group["items"][-1] if indent >= 4 and group["items"] else None
             for t in split_multi(text):
-                group["items"].append({"id": mk_id(cur["title"], group["title"], t), "text": t, "date": first_date(t), "done": done})
+                d = first_date(t) or (parent["date"] if parent else "")
+                group["items"].append({"id": mk_id(cur["title"], group["title"], t), "text": t, "date": d, "done": done})
     # 작은 할 일이 없는 큰 할 일은 그 자체를 할 일 하나로
     for w in weeks:
         for g in w["groups"]:
