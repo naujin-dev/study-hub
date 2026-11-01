@@ -15,6 +15,7 @@
   --t-kor:#FFE8D4; --t-eng:#DCECFA; --t-soc:#D9F3E1; --t-sci:#E6E0F5; --t-his:#FEF7D6; --t-lab:#F0EEEC; --t-jpn:#FDE0EC; --t-math:#E4F2D2;
   --shadow:0 1px 2px rgba(15,15,15,.05),0 6px 16px -8px rgba(15,15,15,.10);
   --sans:'Pretendard Variable',Pretendard,'Noto Sans CJK KR','Noto Sans KR','Source Han Sans K',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  --serif:'Noto Serif KR','Noto Serif CJK KR','Source Han Serif K','AppleMyungjo','Batang',serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --r:12px;
   --ease-out:cubic-bezier(.23,1,.32,1); --ease-io:cubic-bezier(.77,0,.175,1);
@@ -162,7 +163,7 @@ label.field>span{display:block;font-size:.85rem;color:var(--ink2);margin-bottom:
 /* 문제 */
 .q-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .q-text{font-size:1.05rem;font-weight:500;white-space:pre-wrap}
-.q-ctx{background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-size:.95rem}
+.q-ctx{background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-family:var(--serif);font-size:.97rem;line-height:1.8;letter-spacing:0}
 .choices{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:8px}
 .choice{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--card);cursor:pointer;text-align:left;width:100%;font:inherit;color:var(--ink);transition:background-color .15s ease,border-color .15s ease,transform .16s var(--ease-out)}
 .choice:active:not(:disabled){transform:scale(.985)}
@@ -327,7 +328,7 @@ pre.prompt{white-space:pre-wrap;word-break:break-word;font:.84rem/1.6 var(--mono
 
 /* ---------- 본문 같이 보기 ---------- */
 .src-pane{position:sticky;top:60px;z-index:5;max-height:42vh;overflow:auto;margin-bottom:12px;border-color:color-mix(in srgb,var(--acc) 35%,var(--rule))}
-.src-text{counter-reset:ln;font-size:1rem;line-height:1.9;margin-top:4px}
+.src-text{counter-reset:ln;font-family:var(--serif);font-size:1.02rem;line-height:1.9;letter-spacing:0;margin-top:4px}
 .src-text .l{white-space:pre-wrap;min-height:1.9em;position:relative}
 .src-text.ln{padding-left:2.4em}
 .src-text.ln .l:not(.e){counter-increment:ln}
@@ -421,11 +422,12 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .catrows select{width:auto;flex:0 1 200px;max-width:100%}
 .catrows input.grow{width:auto}
 
-/* 과목 파스텔: 카드 바탕에 과목 색을 옅게 (Notion 데이터베이스 속성 색처럼) */
-.pcard{background:var(--tint,var(--card));border-color:color-mix(in srgb,var(--tint,var(--rule)) 55%,var(--rule))}
+/* 자료 카드: 과목은 왼쪽 목록이 이미 말해 주므로 카드는 무채색, 상태만 색으로 */
 .pcard:hover{border-color:var(--acc);box-shadow:var(--shadow)}
-.pcard .pc-b,.pcard .pc-p .muted{color:color-mix(in srgb,var(--ink2) 88%,var(--tint,var(--ink2)))}
 .pcard .mini-bar{background:color-mix(in srgb,var(--ink) 10%,transparent)}
+.pcard.is-doing{border-color:color-mix(in srgb,var(--acc) 45%,var(--rule));background:color-mix(in srgb,var(--viow) 55%,var(--card))}
+.pcard.is-done{background:var(--paper)}
+.pcard.is-done .pc-t{color:var(--ink2);font-weight:600}
 .subj.tinted{background:var(--tint,var(--card));border-color:color-mix(in srgb,var(--tint,var(--rule)) 55%,var(--rule))}
 .subj.tinted .bar{background:color-mix(in srgb,var(--ink) 9%,transparent)}
 .sbj.on{background:var(--tint,var(--accw));border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
@@ -526,3 +528,25 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);vertical-ali
 /* 작은 글자 링크(← 과목, PDF 원본 ›)도 누르는 높이 24px 이상 */
 a.small,.small>a:only-child,p.small>a{display:inline-block;min-height:24px;line-height:24px}
 details>summary{padding-block:5px;cursor:pointer}
+
+/* 자료 관리 메뉴 */
+.menu{position:relative;display:inline-block}
+.menu>summary{list-style:none;padding-block:9px}
+.menu>summary::-webkit-details-marker{display:none}
+.menu>summary svg{fill:currentColor}
+.menu[open]>summary{background:var(--sunk)}
+.menu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:200px;background:var(--card);border:1px solid var(--rule);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:grid;transform-origin:top right;transition:opacity .16s var(--ease-out),transform .16s var(--ease-out)}
+@starting-style{.menu[open] .menu-pop{opacity:0;transform:scale(.97) translateY(-4px)}}
+.mi{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:40px;padding:8px 12px;border:0;border-radius:6px;background:transparent;color:var(--ink);font:500 .9rem var(--sans);text-align:left;text-decoration:none;cursor:pointer}
+.mi:hover,.mi:focus-visible{background:var(--sunk)}
+.mi .muted{font-weight:400;font-size:.82rem}
+.btn[aria-pressed="true"]{background:var(--viow);border-color:color-mix(in srgb,var(--acc) 45%,var(--rule2));color:var(--acc)}
+@media (pointer:coarse){.mi{min-height:44px}}
+
+/* 계획 줄 옆 자료 바로 가기 */
+.plan-li{display:flex;align-items:flex-start;gap:6px}
+.plan-li>.plan-item{flex:1;min-width:0}
+.plan-go{flex:none;align-self:center;display:inline-flex;align-items:center;min-height:32px;padding:4px 10px;border:1px solid var(--rule);border-radius:8px;font-size:.82rem;font-weight:500;color:var(--ink2);text-decoration:none;white-space:nowrap;transition:background-color .15s ease,transform .16s var(--ease-out)}
+.plan-go:hover{background:var(--sunk);color:var(--ink)}
+.plan-go:active{transform:scale(.97)}
+@media (pointer:coarse){.plan-go{min-height:40px}}
