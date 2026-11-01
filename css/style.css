@@ -1,11 +1,10 @@
-/* 글꼴: Pretendard (SIL OFL 1.1, css/fonts/Pretendard-LICENSE.txt). 저장소 안에 두어 오프라인에서도 쓴다 */
-@font-face{font-family:'Pretendard Variable';src:url('fonts/PretendardVariable.woff2') format('woff2-variations'),url('fonts/PretendardVariable.woff2') format('woff2');font-weight:45 920;font-style:normal;font-display:swap;unicode-range:U+0000-10FF,U+1200-302D,U+3030-A95F,U+A980-D7AF,U+D800-10FFFF}
+/* 글꼴: Pretendard (SIL OFL 1.1). css/fonts/pretendard/pretendard.css 가 화면에 쓰인 글자 묶음만 받는다 */
 *{box-sizing:border-box}
 /* 디자인: Notion 작업 공간 느낌 (docs/design-reference/notion-DESIGN.md 참고).
    흰 바탕, 따뜻한 회색 선, 보라 강조, 과목마다 옅은 파스텔. 다크는 Notion 앱의 어두운 화면처럼 */
 :root{
   --paper:#FFFFFF; --card:#FFFFFF; --sunk:#F6F5F4; --side:#F7F6F3;
-  --ink:#37352F; --ink2:#5D5B54; --ink3:#787671;
+  --ink:#37352F; --ink2:#5D5B54; --ink3:#6C6A64;
   --rule:#E5E3DF; --rule2:#C8C4BE;
   --acc:#5645D4; --acc-press:#4534B3; --accw:#EFEDFB; --on-acc:#FFFFFF;
   --link:#0075DE;
@@ -119,7 +118,9 @@ label.field{display:block;margin:10px 0}
 label.field>span{display:block;font-size:.85rem;color:var(--ink2);margin-bottom:4px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--card);font-size:.86rem;cursor:pointer;color:var(--ink2);user-select:none}
-.chip input{display:none}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.chip:has(input:focus-visible){outline:2px solid var(--acc);outline-offset:2px}
 .chip.on,.chip:has(input:checked){background:var(--accw);border-color:var(--acc);color:var(--acc);font-weight:500}
 .tag{display:inline-block;font-size:.75rem;font-weight:500;padding:1px 7px;border-radius:4px;background:var(--sunk);color:var(--ink2);border:0;white-space:nowrap}
 .tag.ok{background:var(--okw);color:var(--ok);border-color:transparent}
@@ -208,7 +209,6 @@ label.field>span{display:block;font-size:.85rem;color:var(--ink2);margin-bottom:
 @keyframes sp{to{transform:rotate(360deg)}}
 details>summary{cursor:pointer;color:var(--ink2);font-size:.9rem}
 .hl{background:var(--warnw)}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 @media print{.top,.bottom,.noprint{display:none!important}body{padding:0}.card{box-shadow:none;break-inside:avoid}}
 
 /* ---------- 태블릿 가로, 컴퓨터: 넓은 화면 ---------- */
@@ -489,7 +489,9 @@ dialog.dlg::backdrop{transition:background-color .2s ease}
 .pcard:active,.subj:active,.resume:active,.sbj:active{transform:scale(.985)}
 @media (hover:none){.pcard:hover{box-shadow:none}}
 @media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+  *,*::before,*::after{animation:none !important;scroll-behavior:auto !important}
+  .toast,.toast.show,dialog.dlg,.selbar,.bar>i,.mini-bar i,.resume .go{transition-property:opacity,background-color,border-color,color !important}
+  .toast,.toast.show{transform:translateX(-50%) !important}
   .btn:active,.choice:active,.pcard:active,.subj:active,.resume:active,.sbj:active{transform:none}
 }
 .chip-group{margin:8px 0}.chip-group>.small{display:block;margin-bottom:4px}
@@ -499,3 +501,23 @@ dialog.dlg::backdrop{transition:background-color .2s ease}
 .flash .side{font-family:inherit;letter-spacing:.02em}
 .flash.back>*:not(.side){animation:reveal .22s var(--ease-out)}
 @keyframes reveal{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* 점검(audit) 반영 */
+.sbj.empty{opacity:1}
+.sbj.empty b{color:var(--ink2);font-weight:500}
+.pcard .muted,.pcard .pc-b,.pcard .pc-p .muted,.sbj .muted,.subj.tinted .muted,.resume .muted{color:var(--ink2)}
+.pcard .pc-b{color:var(--ink2)}
+.note.info a{color:var(--acc-press)}
+.bottom a{color:var(--ink2)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.plan-row{display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;min-width:0}
+.plan-row input,.list .item>input[type=checkbox]{width:18px;height:18px;margin-top:4px;accent-color:var(--acc);flex:none}
+/* 손가락으로 쓰는 기기: 자주 누르는 작은 버튼과 칩을 키운다 */
+@media (pointer:coarse){
+  .btn.sm{min-height:38px;padding:7px 12px}
+  .chip{min-height:38px;padding:8px 13px}
+  .scope-sub>summary,.pgroup>summary,details.fold>summary{min-height:44px}
+}
+h2.h3{font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);vertical-align:-3px}
+@media (pointer:coarse){details>summary{min-height:40px;display:flex;align-items:center;gap:8px}}

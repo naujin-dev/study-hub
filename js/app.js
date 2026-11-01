@@ -1136,11 +1136,11 @@ function viewQuizSetup() {
   main.innerHTML = `
   <h1>문제 풀기</h1>
   <form id="qf" class="card">
-    <h3>과목</h3>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
+    <h2 class="h3">과목</h2>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
     <p class="small muted">아무것도 안 고르면 전체.</p>
-    <h3 style="margin-top:14px">단원</h3><div id="packChips"></div>
-    <h3 style="margin-top:14px">유형</h3>${chipGroup('types', Object.entries(TYPE_NAME).map(([v, l]) => ({ value: v, label: l })), last.types)}
-    <h3 style="margin-top:14px">어떤 문제</h3>${chipGroup('src', [
+    <h2 class="h3" style="margin-top:14px">단원</h2><div id="packChips"></div>
+    <h2 class="h3" style="margin-top:14px">유형</h2>${chipGroup('types', Object.entries(TYPE_NAME).map(([v, l]) => ({ value: v, label: l })), last.types)}
+    <h2 class="h3" style="margin-top:14px">어떤 문제</h2>${chipGroup('src', [
       { value: 'all', label: '전체' }, { value: 'new', label: '안 푼 문제' }, { value: 'wrong', label: '오답만' },
       { value: 'due', label: '복습할 때 된 문제' }, { value: 'star', label: '헷갈림 표시' }], [last.src], false)}
     <div class="grid" style="margin-top:14px">
@@ -1310,6 +1310,7 @@ function drawQuestion() {
 
   const timer = exam ? `<span class="timer" id="timer"></span>` : '';
   main.innerHTML = `
+  <h1 class="vh">문제 풀이 ${session.i + 1}번</h1>
   <div class="row between"><span class="small muted">${session.i + 1} / ${session.items.length}${exam ? ' · 실전' : ''}</span>${timer}<button class="btn sm ghost" id="quit">그만</button></div>
   ${navButtons()}
   <section class="card qcard${q.context ? ' has-ctx' : ''}">
@@ -1953,7 +1954,7 @@ function viewPlan() {
         if (!gi.length) return '';
         const self = g.items.length === 1 && g.items[0].self;
         return `<div class="wgroup"><div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(self ? '' : g.title)}</b></div>
-          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''} style="margin-top:5px"><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${esc(p.text)}</span></li>`).join('')}</ul></div>`;
+          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${esc(p.text)}</span></label></li>`).join('')}</ul></div>`;
       }).join('')}
       ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
     </details>`;
@@ -2003,7 +2004,7 @@ function viewPlan() {
     </form>
     ${Object.keys(byDate).length ? Object.entries(byDate).map(([d, list]) => `
       <h3 style="margin-top:16px">${S.fmtDate(d)} ${d === t ? '<span class="tag ok">오늘</span>' : d < t ? '<span class="tag">지남</span>' : ''}</h3>
-      <ul class="list">${list.map(p => `<li class="item"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span><button class="btn sm ghost" data-pd="${p.id}" aria-label="지우기">✕</button></li>`).join('')}</ul>`).join('') : '<p class="muted small">계획이 없다.</p>'}
+      <ul class="list">${list.map(p => `<li class="item"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label><button class="btn sm ghost" data-pd="${p.id}" aria-label="지우기">✕</button></li>`).join('')}</ul>`).join('') : '<p class="muted small">계획이 없다.</p>'}
     ${plan.some(p => p.done) ? '<button class="btn sm ghost" id="clearDone" style="margin-top:10px">끝낸 계획 지우기</button>' : ''}
   </section>`;
   $('#ef').addEventListener('submit', e => {
