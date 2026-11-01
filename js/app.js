@@ -271,78 +271,89 @@ function viewHome() {
     return { s, per: Math.ceil(todo / left), todo, left };
   }).filter(Boolean).filter(g => g.todo > 0);
 
+  // 오늘 계획이 없으면 가장 가까운 다음 날 계획을 보여 준다
+  const upcoming = (() => {
+    if (plan.length) return null;
+    const next = planList().filter(p => p.date && p.date > t && !p.done && !p.hidden).sort((a, b) => a.date.localeCompare(b.date));
+    if (!next.length) return null;
+    const d = next[0].date;
+    return { d, items: next.filter(p => p.date === d) };
+  })();
+  const goal = S.kvGet('goal', 'day')?.min || 0;
+  const daySec = S.studySec(log), ySec = S.studySec(S.getLog()[S.addDays(t, -1)]);
+  const mc = S.load('mclock', null);
+  const runSec = mc ? (Date.now() - mc.start) / 1000 : 0;
+  const goalPer = goal ? Math.min(100, Math.round((daySec + runSec) / 60 / goal * 100)) : 0;
+  const nst = NT.status();
+  const sm = nst && nst.scope.length ? NT.scopeSummary(nst.scope) : null;
+  const goalOf = Object.fromEntries(goals.map(g => [g.s.id, g]));
+  const tdate = new Date(t + 'T00:00:00');
+  const planRow = p => `<li><label class="item plan-item"><input type="checkbox" data-plan="${p.id}"${p.done ? ' checked' : ''}><span class="grow${p.done ? ' done' : ''}">${planLine(p)}</span></label></li>`;
+
   main.innerHTML = `
   ${D.db().loadErrors.length ? `<div class="note" style="margin-bottom:12px"><b>자료를 일부 못 읽었다.</b><br>${D.db().loadErrors.slice(0, 5).map(esc).join('<br>')}</div>` : ''}
-  <section class="card">
-    <h1 style="font-size:2rem;margin:0 0 .2em" class="mono">${esc(ex.title || '2회고사')} ${ex.first ? dLabel(ex.first) : '날짜 미정'}</h1>
-    <ul class="list">${dayRows || '<li class="item muted">data/exam.json 에 시험 날짜가 없다.</li>'}</ul>
-    <div class="row" style="margin-top:8px"><a class="btn sm ghost" href="#/plan">과목별 날짜·범위 정하기</a></div>
-  </section>
+  <header class="home-head">
+    <h1>${tdate.getMonth() + 1}월 ${tdate.getDate()}일 ${'일월화수목금토'[tdate.getDay()]}요일</h1>
+    <p class="muted">${ex.first ? `첫 시험까지 <b class="ink mono">${Math.max(0, S.daysBetween(t, ex.first))}일</b> · ${ex.days.map(d => { const subs = SUBJECTS.filter(s => ex.subjects[s.id]?.date === d); return `${Number(d.slice(5, 7))}/${Number(d.slice(8))}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})${subs.length ? ' ' + subs.map(s => s.name).join('·') : ''}`; }).join(' · ')}${ex.days.some(d => SUBJECTS.some(s => ex.subjects[s.id]?.date === d)) ? '' : ' · 과목별 날짜 미정'}` : '시험 날짜 미정'} · <a href="#/plan">일정</a></p>
+  </header>
 
   ${!packs.length ? `<section class="card"><h2>아직 공부자료가 없다</h2>
     <p>과목별 공부자료 Claude 에게 <a href="#/prompts">프롬프트</a> 를 복사해서 보내고 자료를 받은 뒤,</p>
     <ul><li>채팅 Claude 가 준 JSON 은 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣거나</li><li>Claude Code 에게 저장소에 바로 올리게 하면 된다.</li></ul></section>` : ''}
 
-  <section class="grid" style="margin-bottom:14px">
-    <a class="stat" href="#/run?src=due" style="text-decoration:none;color:inherit"><b>${due.length}</b><span>오늘 복습할 문제</span></a>
-    <a class="stat" href="#/wrong" style="text-decoration:none;color:inherit"><b style="color:var(--bad)">${wrong.length}</b><span>오답노트</span></a>
-    <div class="stat"><b>${log.q}</b><span>오늘 푼 문제 (${pct(log.ok, log.q)}%)</span></div>
-    <a class="stat" href="#/journal" style="text-decoration:none;color:inherit"><b>${S.fmtDur(S.studySec(log))}</b><span>오늘 공부 시간 · 연속 ${streakDays()}일</span></a>
-  </section>
-  ${(() => {
-    // 하루 공부 시간 목표 (기록 동기화로 기기끼리 같이 쓴다)
-    const goal = S.kvGet('goal', 'day')?.min || 0;
-    const sec = S.studySec(log), y = S.studySec(S.getLog()[S.addDays(t, -1)]);
-    const mc = S.load('mclock', null);
-    const run = mc ? (Date.now() - mc.start) / 1000 : 0;
-    const per = goal ? Math.min(100, Math.round((sec + run) / 60 / goal * 100)) : 0;
-    return `<section class="card flat goalbar" style="margin-bottom:14px"><div class="row between"><span>${goal ? `오늘 목표 <b>${S.fmtDur(goal * 60)}</b> 중 <b>${per}%</b>${run ? ` <span class="small muted">(재는 중 ${S.fmtDur(run)} 포함)</span>` : ''}` : '하루 공부 시간 목표를 정하면 여기서 얼마나 채웠는지 보인다.'}</span><span class="small muted">${y ? `어제 ${S.fmtDur(y)} · ` : ''}<button class="btn sm ghost" id="goalBtn">${goal ? '목표 바꾸기' : '목표 정하기'}</button></span></div>
-      ${goal ? `<div class="bar" style="--c:${per >= 100 ? 'var(--ok)' : 'var(--acc)'};margin-top:8px"><i style="width:${per}%"></i></div>${per >= 100 ? '<p class="small" style="margin:6px 0 0">오늘 목표를 채웠다.</p>' : ''}` : ''}</section>`;
-  })()}
-  ${lastRead ? `<a class="subj" href="#/pack?id=${encodeURIComponent(lastRead.pack)}&resume=1" style="margin-bottom:14px">${subjDot(D.db().byId[lastRead.pack].subject)}<div class="grow"><span class="small muted">이어 읽기 · ${S.fmtDate(S.ymd(new Date(lastRead.t)))} ${S.fmtTime(lastRead.t)}</span><br><b>${esc(D.db().byId[lastRead.pack].title)}</b>${pos ? ` <span class="small muted">${Math.round(pos.r * 100)}% 지점</span>` : ''}</div>›</a>` : ''}
+  <div class="home-grid">
+  <div class="home-main">
+    <section class="card today">
+      <div class="row between" style="align-items:baseline"><h2 style="margin:0">${plan.length ? '오늘 할 일' : upcoming ? `다음 할 일 · ${S.fmtDate(upcoming.d)}` : '오늘 할 일'}</h2>
+        <span class="small muted">${plan.length ? `${plan.filter(p => p.done).length}/${plan.length} 끝냄` : ''}${weekLeft ? `${plan.length ? ' · ' : ''}이번 주 날짜 없는 일 ${weekLeft}개` : ''}</span></div>
+      ${plan.length ? `<ul class="list plan-list">${plan.map(planRow).join('')}</ul>`
+        : upcoming ? `<p class="small muted" style="margin:4px 0 2px">오늘은 계획이 없다. 미리 보기:</p><ul class="list plan-list">${upcoming.items.slice(0, 6).map(planRow).join('')}</ul>${upcoming.items.length > 6 ? `<p class="small"><a href="#/plan">${upcoming.items.length - 6}개 더 보기</a></p>` : ''}`
+        : '<p class="muted small">계획이 없다. <a href="#/plan">계획 화면</a> 에서 할 일을 더하거나 Notion 자동 업데이트를 켠다.</p>'}
+      <div class="row today-actions">
+        ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제</a>` : ''}
+        ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
+        <a class="btn" href="#/quiz">문제 고르기</a>
+        ${D.allQuestions().length ? '<button class="btn" id="mixBtn" title="과목을 번갈아 섞어서 푼다 (인터리빙)">섞어 풀기</button>' : ''}
+        <a class="btn" href="#/cards">암기카드</a>
+      </div>
+    </section>
 
-  <div class="row" style="margin-bottom:6px">
-    ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제 풀기</a>` : ''}
-    ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 다시 풀기</a>` : ''}
-    <a class="btn" href="#/quiz">문제 고르기</a>
-    ${D.allQuestions().length ? '<button class="btn" id="mixBtn" title="과목을 번갈아 섞어서 푼다 (인터리빙)">섞어 풀기 20</button>' : ''}
-    <a class="btn" href="#/cards">암기카드</a>
+    ${lastRead ? `<a class="resume" href="#/pack?id=${encodeURIComponent(lastRead.pack)}&resume=1" style="--tint:var(--t-${D.db().byId[lastRead.pack].subject})">${subjDot(D.db().byId[lastRead.pack].subject)}<span class="grow"><span class="small muted">이어 읽기 · ${S.fmtDate(S.dayOf(lastRead.t))}${pos ? ` · ${Math.round(pos.r * 100)}% 지점` : ''}</span><br><b>${esc(D.db().byId[lastRead.pack].title)}</b></span><span class="go" aria-hidden="true">→</span></a>` : ''}
+
+    <section class="card time">
+      <div class="row between" style="align-items:baseline">
+        <p class="time-big">오늘 <b class="mono">${daySec + runSec < 60 ? '0분' : S.fmtDur(daySec + runSec)}</b>${goal ? `<span class="muted"> / ${S.fmtDur(goal * 60)}</span>` : ''}</p>
+        <span class="row"><a class="btn sm ghost" href="#/math">${mc ? `⏱ ${subjName(mc.sub || 'math')} 재는 중` : '스톱워치'}</a><button class="btn sm ghost" id="goalBtn">${goal ? '목표 바꾸기' : '목표 정하기'}</button></span>
+      </div>
+      ${goal ? `<div class="bar" style="--c:${goalPer >= 100 ? 'var(--ok)' : 'var(--acc)'}"><i style="width:${goalPer}%"></i></div>` : ''}
+      <p class="small muted" style="margin:8px 0 0">${goal ? `${goalPer >= 100 ? '오늘 목표를 채웠다 · ' : `목표의 ${goalPer}% · `}` : ''}문제 ${log.q}개${log.q ? ` (정답 ${pct(log.ok, log.q)}%)` : ''} · 카드 ${log.c || 0}장 · 어제 ${S.fmtDur(ySec)} · 연속 ${streakDays()}일</p>
+    </section>
+
+    ${(() => {
+      const near = SUBJECTS.filter(s => { const d = subjDate(s.id); return d && S.daysBetween(t, d) >= 0 && S.daysBetween(t, d) <= 3; });
+      return near.length ? `<section class="card flat" style="border-color:var(--bad)"><b>시험이 코앞이다</b><div class="row" style="margin-top:8px">${near.map(s => `<a class="btn sm" href="#/final?s=${s.id}">${subjDot(s.id)} ${s.name} 시험 전 정리 (${dLabel(subjDate(s.id))})</a>`).join('')}</div></section>` : '';
+    })()}
+    ${(() => { const n = checkAll().filter(x => x.level === 'err').length; return n ? `<p class="small muted" style="margin:0 0 12px">공부자료에 고칠 곳 ${n}개 · <a href="#/check">자료 점검</a></p>` : ''; })()}
   </div>
 
-  ${(() => {
-    const near = SUBJECTS.filter(s => { const d = subjDate(s.id); return d && S.daysBetween(t, d) >= 0 && S.daysBetween(t, d) <= 3; });
-    return near.length ? `<section class="card flat" style="border-color:var(--bad)"><b>시험이 코앞이다</b><div class="row" style="margin-top:8px">${near.map(s => `<a class="btn sm" href="#/final?s=${s.id}">${subjDot(s.id)} ${s.name} 시험 전 정리 (${dLabel(subjDate(s.id))})</a>`).join('')}</div></section>` : '';
-  })()}
-  ${(() => { const n = checkAll().filter(x => x.level === 'err').length; return n ? `<p class="note" style="margin-bottom:12px">공부자료에 고칠 곳이 ${n}개 있다. <a href="#/check">자료 점검 보기</a></p>` : ''; })()}
-  ${plan.length ? `<div class="sec-title"><h2>오늘 계획</h2><a class="small" href="#/plan">전체 보기</a></div>
-  <section class="card flat"><ul class="list">${plan.map(p => `<li><label class="item" style="align-items:flex-start"><input type="checkbox" data-plan="${p.id}"${p.done ? ' checked' : ''} style="margin-top:5px"><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${planLine(p)}</span></label></li>`).join('')}</ul>
-  <p class="small muted" style="margin:8px 0 0">끝낸 것 ${plan.filter(p => p.done).length}/${plan.length}${weekLeft ? ` · 이번 주 날짜 없는 할 일 ${weekLeft}개 남음` : ''}</p></section>` : ''}
-  ${(() => { const st = NT.status(); if (!st || !st.scope.length) return ''; const sm = NT.scopeSummary(st.scope); return `<a class="subj" href="#/plan" style="margin-bottom:14px"><div class="grow"><div class="row between"><b>시험 범위 회독</b><span class="small muted">Notion · ${esc(String(st.generated || '').slice(5, 16).replace('T', ' '))}</span></div><div class="bar" style="margin:6px 0 4px"><i style="width:${sm.pct}%"></i></div><div class="small muted">회독 칸 ${sm.done}/${sm.cells} (${sm.pct}%) · 범위 ${sm.rows}개</div></div>›</a>`; })()}
+  <aside class="home-side">
+    ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">Notion · ${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))} · 범위 ${sm.rows}개</span></a>` : ''}
 
-  ${goals.length ? `<div class="sec-title"><h2>하루 목표</h2><span class="small muted">안 푼 문제 + 오답 ÷ 남은 날</span></div>
-  <section class="card flat"><ul class="list">${goals.map(g => `<li class="item">${subjDot(g.s.id)}<span class="grow">${g.s.name}</span><span class="small muted">${g.todo}문제 · ${g.left}일</span><b class="mono">하루 ${g.per}</b></li>`).join('')}</ul></section>` : ''}
+    <section class="card flat subj-table">
+      <div class="row between"><h2 style="margin:0">과목</h2><span class="small muted">푼 문제 · 정답률 · 하루 목표</span></div>
+      <ul class="list">${SUBJECTS.filter(s => st[s.id].packs).map(s => {
+        const o = st[s.id], g = goalOf[s.id], date = subjDate(s.id);
+        return `<li><a class="item srow" href="#/study?s=${s.id}">${subjDot(s.id)}<span class="grow"><b>${s.name}</b>${date ? ` <span class="small muted">${dLabel(date)}</span>` : ''}<span class="mini-bar wide" style="--c:${s.color}"><i style="width:${pct(o.tried, o.total)}%;background:${s.color}"></i></span></span>
+          <span class="nums mono small"><span>${o.tried}/${o.total}</span><span>${o.n ? pct(o.ok, o.n) + '%' : '–'}</span><span>${g ? '하루 ' + g.per : '–'}</span></span></a></li>`;
+      }).join('')}
+        <li><a class="item srow" href="#/math">${subjDot('math')}<span class="grow"><b>수학</b> <span class="small muted">시간만</span></span><span class="small muted mono">오늘 ${S.fmtDur(S.getLog()[t]?.fs?.math || 0)} · 누적 ${S.fmtDur(mathTotal())}</span></a></li>
+        ${SUBJECTS.filter(s => !st[s.id].packs).length ? `<li class="item small muted">자료 없음: ${SUBJECTS.filter(s => !st[s.id].packs).map(s => s.name).join(', ')}</li>` : ''}
+      </ul>
+    </section>
 
-  <div class="sec-title"><h2>과목</h2></div>
-  <section class="stack subj-grid">
-    ${SUBJECTS.map(s => {
-      const o = st[s.id];
-      const date = subjDate(s.id);
-      return `<a class="subj tinted" style="--tint:var(--t-${s.id})" href="#/study?s=${s.id}">${subjDot(s.id)}
-        <div class="grow">
-          <div class="row between"><b>${s.name}</b><span class="small muted">${date ? `${S.fmtDate(date)} · ${dLabel(date)}` : '날짜 미정'}</span></div>
-          <div class="bar" style="--c:${s.color};margin:6px 0 4px"><i style="width:${pct(o.tried, o.total)}%"></i></div>
-          <div class="small muted">자료 ${o.packs}개${o.unread ? ` (안 읽음 ${o.unread})` : ''} · 문제 ${o.tried}/${o.total} · 정답률 ${o.n ? pct(o.ok, o.n) + '%' : '-'}${o.wrong ? ` · 오답 ${o.wrong}` : ''}</div>
-        </div></a>`;
-    }).join('')}
-    ${(() => { const mc = S.load('mclock', null); const td = S.getLog()[S.today()]?.fs?.math || 0; return `<a class="subj tinted" style="--tint:var(--t-math)" href="#/math">${subjDot('math')}
-        <div class="grow">
-          <div class="row between"><b>수학</b><span class="small muted">시간만 잼</span></div>
-          <div class="small muted" style="margin-top:6px">${mc ? `<span class="tag ok">${subjName(mc.sub || 'math')} 재는 중</span> ${S.fmtTime(mc.start)}부터 · ` : ''}오늘 ${S.fmtDur(td)} · 누적 ${S.fmtDur(mathTotal())}</div>
-        </div></a>`; })()}
-  </section>
-
-  ${weak.length ? `<div class="sec-title"><h2>약한 단원</h2><span class="small muted">정답률 낮은 순</span></div>
-  <section class="card flat"><ul class="list">${weak.map(u => `<li><a class="item" href="#/pack?id=${encodeURIComponent(u.pack.id)}">${subjDot(u.pack.subject)}<span class="grow">${esc(u.pack.title)}</span><span class="tag bad">${Math.round(u.rate * 100)}%</span></a></li>`).join('')}</ul></section>` : ''}
+    ${weak.length ? `<section class="card flat"><div class="row between"><h2 style="margin:0">약한 단원</h2><span class="small muted">정답률 낮은 순</span></div><ul class="list">${weak.map(u => `<li><a class="item" href="#/pack?id=${encodeURIComponent(u.pack.id)}">${subjDot(u.pack.subject)}<span class="grow">${esc(u.pack.title)}</span><span class="small mono" style="color:var(--bad)">${Math.round(u.rate * 100)}%</span></a></li>`).join('')}</ul></section>` : ''}
+  </aside>
+  </div>
   `;
   $('#goalBtn')?.addEventListener('click', () => {
     const cur = S.kvGet('goal', 'day')?.min || 0;
@@ -1144,9 +1155,14 @@ function viewQuizSetup() {
 
   const drawPacks = () => {
     const subs = picked('subject');
-    const list = packs.filter(p => !subs.length || subs.includes(p.subject));
     const keep = picked('packs');
-    $('#packChips').innerHTML = chipGroup('packs', list.map(p => ({ value: p.id, label: p.title })), keep.length ? keep : last.packs) + '<p class="small muted">아무것도 안 고르면 고른 과목 전체.</p>';
+    const sel = keep.length ? keep : last.packs;
+    // 과목을 골랐을 때만 그 과목 자료를 단원별로 보여 준다 (전부 펼치면 너무 많다)
+    $('#packChips').innerHTML = !subs.length ? '<p class="small muted">과목을 고르면 그 과목 자료가 단원별로 나온다. 안 고르면 모든 과목에서 낸다.</p>'
+      : SUBJECTS.filter(sb => subs.includes(sb.id)).map(sb => {
+        const groups = packGroups(packs.filter(p => p.subject === sb.id), S.load('studyGroup:' + sb.id, 'unit'));
+        return groups.map(g => `<div class="chip-group"><span class="small muted">${subs.length > 1 ? sb.name + ' · ' : ''}${esc(g.name)}</span>${chipGroup('packs', g.packs.map(p => ({ value: p.id, label: p.title })), sel)}</div>`).join('');
+      }).join('') + '<p class="small muted">자료를 안 고르면 고른 과목 전체에서 낸다.</p>';
     $$('input[name="packs"]').forEach(i => i.addEventListener('change', count));
     count();
   };
@@ -1922,12 +1938,14 @@ function viewPlan() {
   for (const p of plan) (byDate[p.date] = byDate[p.date] || []).push(p);
   const np = D.db().plan;
   const byId = Object.fromEntries(all.map(p => [p.id, p]));
-  const weeksHtml = np && np.weeks ? np.weeks.map(w => {
+  // 지금 주가 없으면(주 사이 빈 날) 다음 주를 펼친다
+  const openWeek = np && np.weeks ? (np.weeks.find(w => w.start <= t && t <= w.end) || np.weeks.find(w => w.start > t) || null) : null;
+  const weeksHtml = np && np.weeks ? np.weeks.filter(w => w.end >= t || w === openWeek).map(w => {
     const items = w.groups.flatMap(g => g.items.map(i => byId[i.id]).filter(Boolean));
     const done = items.filter(i => i.done).length;
-    const isCur = w.start <= t && t <= w.end;
+    const isCur = w === openWeek;
     return `<details class="card flat week${isCur ? ' cur' : ''}"${isCur ? ' open' : ''}>
-      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ' <span class="tag ok">이번 주</span>' : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
+      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ` <span class="tag ok">${w.start > t ? '다음 주' : '이번 주'}</span>` : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
         <div class="bar" style="margin-top:6px"><i style="width:${pct(done, items.length)}%"></i></div></summary>
       ${w.note ? `<p class="small muted" style="white-space:pre-wrap">${esc(w.note)}</p>` : ''}
       ${w.groups.map(g => {
@@ -1948,20 +1966,20 @@ function viewPlan() {
     for (const r of nst.scope) (bySub[r.subject || '기타'] = bySub[r.subject || '기타'] || []).push(r);
     return `<div class="sec-title"><h2>시험 범위 현황</h2><span class="small muted">Notion Exam Scope · ${esc(String(nst.generated || '').replace('T', ' ').slice(0, 16))} 업데이트</span></div>
     <section class="card flat">
-      <p class="small">회독 칸 <b>${sm.done}/${sm.cells}</b> (${sm.pct}%)</p><div class="bar" style="margin:4px 0 10px"><i style="width:${sm.pct}%"></i></div>
-      <div style="overflow-x:auto"><table class="crit scope-t"><tr><td class="small muted">과목</td><td class="small muted">범위</td><td class="pt small muted">1회독</td><td class="pt small muted">2회독</td><td class="pt small muted">3회독</td><td class="pt small muted">문제</td><td class="small muted">메모</td></tr>
-      ${Object.entries(bySub).map(([sub, rows]) => rows.map((r, i) => `<tr><td>${i ? '' : esc(sub)}</td><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.range)}</a>` : esc(r.range)}</td><td class="pt">${ck(r.r1)}</td><td class="pt">${ck(r.r2)}</td><td class="pt">${ck(r.r3)}</td><td class="pt">${ck(r.solve)}</td><td class="small">${esc(r.memo || '')}</td></tr>`).join('')).join('')}
-      </table></div>
+      <p class="small">회독 칸 <b>${sm.done}/${sm.cells}</b> (${sm.pct}%) · 과목을 누르면 범위가 펼쳐진다</p><div class="bar" style="margin:4px 0 6px"><i style="width:${sm.pct}%"></i></div>
+      ${Object.entries(bySub).map(([sub, rows]) => { const d = rows.reduce((a, r) => a + (r.r1 ? 1 : 0) + (r.r2 ? 1 : 0) + (r.r3 ? 1 : 0), 0); return `<details class="scope-sub"><summary><span class="grow"><b>${esc(sub)}</b> <span class="small muted">범위 ${rows.length}개</span></span><span class="mini-bar"><i style="width:${pct(d, rows.length * 3)}%"></i></span><span class="small mono muted">${d}/${rows.length * 3}</span></summary>
+        <div style="overflow-x:auto"><table class="crit scope-t"><tr><td class="small muted">범위</td><td class="pt small muted">1회독</td><td class="pt small muted">2회독</td><td class="pt small muted">3회독</td><td class="pt small muted">문제</td><td class="small muted">메모</td></tr>
+        ${rows.map(r => `<tr><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.range)}</a>` : esc(r.range)}</td><td class="pt">${ck(r.r1)}</td><td class="pt">${ck(r.r2)}</td><td class="pt">${ck(r.r3)}</td><td class="pt">${ck(r.solve)}</td><td class="small">${esc(r.memo || '')}</td></tr>`).join('')}
+        </table></div></details>`; }).join('')}
     </section>
-    ${nst.exam_md ? `<details class="card flat"><summary><b>Notion Exam 메모</b> <span class="small muted">하루 공부 시간, 회독 흐름</span></summary><div class="notes">${md(nst.exam_md)}</div></details>` : ''}`;
+    ${nst.exam_md ? `<details class="card flat fold"><summary><b>Notion Exam 메모</b> <span class="small muted">하루 공부 시간, 회독 흐름</span></summary><div class="notes">${md(nst.exam_md)}</div></details>` : ''}`;
   })() : '';
   main.innerHTML = `
   <h1>시험 일정과 계획</h1>
+  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion · 6시간마다 업데이트 · 사이트에서 체크한 것은 그대로</span></div>${weeksHtml}` : `<p class="note info">${NT.getKey() ? 'Notion 주간 계획을 기다리는 중이다. 6시간마다 들어온다.' : 'Notion 주간 계획과 시험 범위 현황이 6시간마다 저절로 들어오게 하려면 <a href="#/settings?go=notionSync">설정 → Notion 자동 업데이트</a> 에 비밀번호를 한 번 넣는다.'}</p>`}
   ${notionHtml}
-  ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion 주간 계획 · 6시간마다 업데이트 · 사이트에서 체크한 것은 그대로</span></div>${weeksHtml}
-  <p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>` : `<p class="note info">${NT.getKey() ? 'Notion 주간 계획을 기다리는 중이다. 6시간마다 들어온다.' : 'Notion 주간 계획과 시험 범위 현황이 6시간마다 저절로 들어오게 하려면 <a href="#/settings?go=notionSync">설정 → Notion 자동 업데이트</a> 에 비밀번호를 한 번 넣는다.'}</p>`}
-  <section class="card">
-    <h2>과목별 시험 날짜·범위</h2>
+  <details class="card fold">
+    <summary><b>과목별 시험 날짜·범위 고치기</b> <span class="small muted">${SUBJECTS.filter(s => ex.subjects[s.id]?.date).length}/${SUBJECTS.length}과목 날짜 정함</span></summary>
     <p class="small muted">아직 정해지지 않았으면 "미정". 여기서 고친 값은 이 기기에만 저장된다. 저장소의 data/exam.json 이 바뀌면 그 값이 기본값이 된다.</p>
     <form id="ef">${SUBJECTS.map(s => {
       const v = ex.subjects[s.id] || {};
@@ -1972,7 +1990,8 @@ function viewPlan() {
       </div>`;
     }).join('')}
     <div class="row"><button class="btn pri">저장</button><button type="button" class="btn ghost" id="resetExam">저장소 값으로 되돌리기</button></div></form>
-  </section>
+  </details>
+  ${weeksHtml ? '<p class="small"><button class="btn sm ghost bad" id="planDel">주간 계획 지우기</button></p>' : ''}
 
   <section class="card">
     <h2>내가 더한 계획</h2>
