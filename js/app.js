@@ -122,7 +122,7 @@ function planPack(p) {
   for (const qn of quoted) { const hit = pool.find(k => coreTitle(k.title).includes(qn) || qn.includes(coreTitle(k.title))); if (hit) return hit; }
   return pool.filter(k => coreTitle(k.title).length >= 3).sort((a, b) => coreTitle(b.title).length - coreTitle(a.title).length).find(k => flat.includes(coreTitle(k.title))) || null;
 }
-const planGo = p => { const k = planPack(p); return k ? `<a class="plan-go" href="#/pack?id=${encodeURIComponent(k.id)}" aria-label="${esc(k.title)} 자료 열기">자료<span aria-hidden="true"> →</span></a>` : ''; };
+const planGo = p => { const k = planPack(p); return k ? `<a class="plan-go" href="#/pack?id=${encodeURIComponent(k.id)}" aria-label="자료 열기: ${esc(k.title)}">자료<span aria-hidden="true"> →</span></a>` : ''; };
 
 // ---------- 시험 날짜 ----------
 function examInfo() {
@@ -340,10 +340,10 @@ function viewHome() {
       <div class="row today-actions">
         ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제</a>` : ''}
         ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
-        <details class="menu"><summary class="btn">더 풀기</summary><div class="menu-pop" role="menu" style="left:0;right:auto;transform-origin:top left">
-          <a class="mi" role="menuitem" href="#/quiz">문제 골라서 풀기</a>
-          ${D.allQuestions().length ? '<button type="button" class="mi" role="menuitem" id="mixBtn">섞어 풀기 <span class="muted">과목 번갈아 20문제</span></button>' : ''}
-          <a class="mi" role="menuitem" href="#/cards">암기카드</a>
+        <details class="menu"><summary class="btn">더 풀기</summary><div class="menu-pop" style="left:0;right:auto;transform-origin:top left">
+          <a class="mi" href="#/quiz">문제 골라서 풀기</a>
+          ${D.allQuestions().length ? '<button type="button" class="mi" id="mixBtn">섞어 풀기 <span class="muted">과목 번갈아 20문제</span></button>' : ''}
+          <a class="mi" href="#/cards">암기카드</a>
         </div></details>
       </div>
     </section>
@@ -577,7 +577,7 @@ function viewStudy() {
 
   main.innerHTML = `
   <div class="row between" style="align-items:center"><h1 style="margin:0">공부자료</h1><a class="small" href="#/pdf?s=${sel}">PDF 원본 <span id="pdfCount"></span> ›</a></div>
-  <form id="sf" class="row" style="margin:10px 0"><input type="search" name="q" placeholder="모든 자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
+  <form id="sf" class="row" style="margin:10px 0"><input type="search" name="q" aria-label="자료 찾기" placeholder="모든 자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
   ${results}
   <div class="study-wrap">
     <nav class="study-side" aria-label="과목">${side}</nav>
@@ -744,7 +744,7 @@ function viewPack() {
     ${p.notes ? `<a class="btn" href="#/blank?pack=${encodeURIComponent(p.id)}" title="자료를 안 보고 기억나는 것을 다 써 본 뒤 비교한다">백지 복습</a>` : ''}
     <button class="btn" id="srcBtn" aria-pressed="${srcOn}">본문 같이 보기${texts.length > 1 ? ` <span class="small">원문 ${texts.length}개</span>` : ''}</button>
     <button class="btn ghost" id="readBtn" aria-pressed="${!!read[p.id]}">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
-    ${packMenu(p, `<a class="mi" role="menuitem" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a><button type="button" class="mi" role="menuitem" id="printBtn">인쇄</button>`)}
+    ${packMenu(p, `<a class="mi" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a><button type="button" class="mi" id="printBtn">인쇄</button>`)}
   </div>
   <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.dayOf(readEvents[readEvents.length - 1].t))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
   ${pos && pos.r > 0.05 && !hl ? `<p class="noprint"><button class="btn sm" id="resumeBtn">지난번 읽던 곳으로 (${Math.round(pos.r * 100)}%)</button></p>` : ''}
@@ -756,7 +756,7 @@ function viewPack() {
   <aside class="pack-side">
   <section class="card noprint">
     <h2>내 단원 메모</h2>
-    <textarea id="pnote" placeholder="이 단원에서 기억할 것, 선생님이 강조한 것, 헷갈리는 것" style="min-height:90px">${esc(memo?.text || '')}</textarea>
+    <textarea id="pnote" aria-label="내 단원 메모" placeholder="이 단원에서 기억할 것, 선생님이 강조한 것, 헷갈리는 것" style="min-height:90px">${esc(memo?.text || '')}</textarea>
     <p class="small muted" id="pnoteInfo">${memo ? '저장됨 · ' + S.fmtDate(S.dayOf(memo.u)) + ' ' + S.fmtTime(memo.u) : '쓰면 바로 저장된다.'}</p>
   </section>
   <section class="card noprint">
@@ -767,7 +767,7 @@ function viewPack() {
     <h2>이 자료에 대해 묻기</h2>
     ${AI.hasKey() ? '' : '<p class="small muted">API 키가 없으면 "채팅으로 묻기" 를 누른다. 자료 본문과 질문이 같이 복사되니 claude.ai 나 공부 Claude 채팅에 붙여넣는다.</p>'}
     <div id="chat">${hist.map(h => `<p><b>나:</b> ${esc(h.q)}</p><div class="notes" style="margin-bottom:12px">${md(h.a)}</div>`).join('')}</div>
-    <form id="askf"><textarea name="q" rows="3" placeholder="예: 이 시에서 화자의 태도가 바뀌는 부분이 어디야?" style="min-height:80px"></textarea>
+    <form id="askf"><textarea name="q" rows="3" aria-label="이 자료에 대해 물을 것" placeholder="예: 이 시에서 화자의 태도가 바뀌는 부분이 어디야?" style="min-height:80px"></textarea>
     <pre class="prompt" id="askPre" hidden></pre>
     <div class="row" style="margin-top:8px">${AI.hasKey() ? '<button class="btn pri">묻기</button>' : '<button type="button" class="btn pri" id="askCopy">채팅으로 묻기 (복사)</button> <a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a>'}${hist.length ? '<button type="button" class="btn ghost sm" id="clearChat">대화 지우기</button>' : ''}</div></form>
   </section></aside></div>
@@ -996,10 +996,10 @@ document.addEventListener('keydown', e => {
 function packMenu(p, extra = '') {
   const cat = catOf(p) ? myCats(p.subject).find(c => c.id === catOf(p))?.name || '' : '';
   return `<details class="menu noprint"><summary class="btn ghost" aria-label="자료 관리 메뉴"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>관리</summary>
-    <div class="menu-pop" role="menu">${extra}
-      <button type="button" class="mi" role="menuitem" data-rename="${esc(p.id)}">이름 바꾸기</button>
-      <button type="button" class="mi" role="menuitem" data-catopen="${esc(p.id)}">분류${cat ? `<span class="muted">${esc(cat)}</span>` : ''}</button>
-      <button type="button" class="mi" role="menuitem" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button>
+    <div class="menu-pop">${extra}
+      <button type="button" class="mi" data-rename="${esc(p.id)}">이름 바꾸기</button>
+      <button type="button" class="mi" data-catopen="${esc(p.id)}">분류${cat ? `<span class="muted">${esc(cat)}</span>` : ''}</button>
+      <button type="button" class="mi" data-mergeopen="${esc(p.id)}">다른 자료에 합치기</button>
     </div></details>`;
 }
 
@@ -1362,10 +1362,10 @@ function drawQuestion() {
       return `<li><button type="button" class="choice ${cls}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span>${esc(c)}</span></button></li>`;
     }).join('')}</ul>`;
   } else if (q.type === 'short') {
-    body = `<input type="text" id="ansIn" placeholder="답을 쓴다" value="${esc(ans || '')}"${locked ? ' disabled' : ''} autocomplete="off" style="margin-top:12px">`;
+    body = `<input type="text" id="ansIn" aria-label="답" placeholder="답을 쓴다" value="${esc(ans || '')}"${locked ? ' disabled' : ''} autocomplete="off" style="margin-top:12px">`;
   } else {
     const max = D.essayMax(q);
-    body = `<p class="small muted" style="margin-top:10px">${max}점${q.limit ? ' · ' + esc(q.limit) : ''}</p><textarea id="ansIn" placeholder="답안을 쓴다"${locked ? ' disabled' : ''} style="min-height:180px">${esc(ans || '')}</textarea>
+    body = `<p class="small muted" style="margin-top:10px">${max}점${q.limit ? ' · ' + esc(q.limit) : ''}</p><textarea id="ansIn" aria-label="답안" placeholder="답안을 쓴다"${locked ? ' disabled' : ''} style="min-height:180px">${esc(ans || '')}</textarea>
     <p class="small muted" id="lenInfo"></p>`;
   }
 
@@ -1875,18 +1875,18 @@ function viewCardsSetup() {
   const packs = D.db().packs.filter(p => (p.cards || []).length);
   main.innerHTML = `<div class="narrow"><h1>암기카드</h1>
   <form id="cf" class="card">
-    <h3>과목</h3>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
+    <h2 class="h3">과목</h2>${chipGroup('subject', SUBJECTS.filter(s => packs.some(p => p.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
     <div id="cpacks"></div>
-    <h3 style="margin-top:14px">어떤 카드</h3>${chipGroup('src', [{ value: 'due', label: '외울 때 된 카드 + 새 카드' }, { value: 'all', label: '전부' }, { value: 'miss', label: '모른다고 한 카드' }], [last.src], false)}
-    <h3 style="margin-top:14px">먼저 볼 면</h3>${chipGroup('flip', [{ value: 'front', label: '앞면 (문제)' }, { value: 'back', label: '뒷면 (답)' }], [last.flip], false)}
-    <h3 style="margin-top:14px">한 번에</h3>${chipGroup('n', [{ value: '20', label: '20장' }, { value: '30', label: '30장' }, { value: '50', label: '50장' }, { value: 'all', label: '전부' }], [String(last.n)], false)}
+    <h2 class="h3" style="margin-top:14px">어떤 카드</h2>${chipGroup('src', [{ value: 'due', label: '외울 때 된 카드 + 새 카드' }, { value: 'all', label: '전부' }, { value: 'miss', label: '모른다고 한 카드' }], [last.src], false)}
+    <h2 class="h3" style="margin-top:14px">먼저 볼 면</h2>${chipGroup('flip', [{ value: 'front', label: '앞면 (문제)' }, { value: 'back', label: '뒷면 (답)' }], [last.flip], false)}
+    <h2 class="h3" style="margin-top:14px">한 번에</h2>${chipGroup('n', [{ value: '20', label: '20장' }, { value: '30', label: '30장' }, { value: '50', label: '50장' }, { value: 'all', label: '전부' }], [String(last.n)], false)}
     <p class="small muted" id="ccount"></p>
     <button class="btn pri block">시작</button>
   </form></div>`;
   const draw = () => {
     const subs = picked('subject');
     // 단원 칩이 수십 개라 과목을 고른 뒤에만 과목별로 묶어 보여 준다
-    $('#cpacks').innerHTML = subs.length ? '<h3 style="margin-top:14px">단원</h3>' + SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
+    $('#cpacks').innerHTML = subs.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
       : '<p class="small muted" style="margin:10px 0 0">과목을 고르면 단원도 고를 수 있다.</p>';
     $$('input[name="packs"]').forEach(i => i.addEventListener('change', cnt));
     cnt();
@@ -2105,8 +2105,8 @@ function viewPlan() {
       const v = ex.subjects[s.id] || {};
       return `<div style="padding:10px 0;border-top:1px solid var(--rule)">
         <div class="row between"><b>${subjDot(s.id)} ${s.name}</b>
-        <select name="d_${s.id}" style="width:auto">${['', ...ex.days].map(d => `<option value="${d}"${(v.date || '') === d ? ' selected' : ''}>${d ? S.fmtDate(d) : '미정'}</option>`).join('')}</select></div>
-        <textarea name="r_${s.id}" rows="2" style="min-height:52px;margin-top:6px" placeholder="시험 범위">${esc(v.range || '')}</textarea>
+        <select name="d_${s.id}" style="width:auto" aria-label="${s.name} 시험 날짜">${['', ...ex.days].map(d => `<option value="${d}"${(v.date || '') === d ? ' selected' : ''}>${d ? S.fmtDate(d) : '미정'}</option>`).join('')}</select></div>
+        <textarea name="r_${s.id}" rows="2" style="min-height:52px;margin-top:6px" placeholder="시험 범위" aria-label="${s.name} 시험 범위">${esc(v.range || '')}</textarea>
       </div>`;
     }).join('')}
     <div class="row"><button class="btn pri">저장</button><button type="button" class="btn ghost" id="resetExam">저장소 값으로 되돌리기</button></div></form>
@@ -2448,7 +2448,7 @@ function viewMarks() {
   main.innerHTML = `
   <h1>형광펜·메모 모아보기</h1>
   <p class="small muted">시험 직전에 내가 칠한 곳과 메모만 훑어본다.</p>
-  <form id="mf" class="row" style="margin:8px 0"><input type="search" name="q" placeholder="형광펜·메모에서 찾기" value="${esc(q.get('q') || '')}" style="flex:1"><button class="btn">찾기</button></form>
+  <form id="mf" class="row" style="margin:8px 0"><input type="search" name="q" aria-label="형광펜·메모 찾기" placeholder="형광펜·메모에서 찾기" value="${esc(q.get('q') || '')}" style="flex:1"><button class="btn">찾기</button></form>
   <div class="chips" style="margin-bottom:6px"><a class="chip${!fs ? ' on' : ''}" href="${link({ s: '' })}">전체</a>${SUBJECTS.map(s => `<a class="chip${fs === s.id ? ' on' : ''}" href="${link({ s: s.id })}">${subjDot(s.id)}${s.name}</a>`).join('')}</div>
   <div class="chips" style="margin-bottom:12px"><a class="chip${!fc ? ' on' : ''}" href="${link({ c: '' })}">모든 색</a>${HL.COLORS.map(c => `<a class="chip${fc === c.id ? ' on' : ''}" href="${link({ c: c.id })}"><span class="hl-sw hl-${c.id}"></span>${c.name}</a>`).join('')}<a class="chip${q.get('memo') ? ' on' : ''}" href="${link({ memo: q.get('memo') ? '' : '1' })}">메모 있는 것만</a>${fp ? `<a class="chip on" href="${link({ pack: '' })}">${esc(D.db().byId[fp]?.title || fp)} ✕</a>` : ''}</div>
   ${notes.length && !fc && !term ? `<section class="card flat"><h2>단원 메모</h2>${notes.map(n => `<p><a href="#/pack?id=${encodeURIComponent(n.pack)}"><b>${esc(D.db().byId[n.pack]?.title || n.pack)}</b></a><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
@@ -2502,7 +2502,7 @@ function viewSettings() {
   <section class="card" id="import">
     <h2>자료 가져오기</h2>
     <p class="small muted">공부자료 Claude 가 준 JSON 을 통째로 붙여넣거나 .json 파일을 고른다. 가져온 자료는 이 기기에 저장되고, 기록 동기화를 켜 두면 다른 기기에도 들어간다.</p>
-    <textarea id="impText" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-size:.88rem"></textarea>
+    <textarea id="impText" aria-label="가져올 JSON" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-size:.88rem"></textarea>
     <div class="row" style="margin-top:8px"><button class="btn" id="impCheck">검사</button><button type="button" class="btn ghost" data-file="impFile">파일 고르기</button><input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden></div>
     <div id="impOut"></div>
   </section>
@@ -2514,7 +2514,7 @@ function viewSettings() {
     <h2>Notion 자동 업데이트</h2>
     <p class="small">Notion "School / Exam" 의 주간 계획, 시험 범위 현황, 하루 공부 시간을 6시간마다 읽어 이 사이트에 넣는다. 내용은 암호로 잠가서 올라오니, 받은 비밀번호를 여기에 한 번 넣는다. 동기화를 켜 두면 다른 기기에도 비밀번호가 같이 간다.</p>
     ${(() => { const st = NT.status(); return st ? `<p class="small">마지막 Notion 내용: ${esc(String(st.generated || '').replace('T', ' ').slice(0, 16))}</p>` : ''; })()}
-    <div class="row"><input type="password" id="ntKey" placeholder="${NT.getKey() ? '저장됨 (바꾸려면 새로 입력)' : 'Notion 업데이트 비밀번호'}" autocomplete="off" style="flex:1"><button class="btn pri" id="ntSave">저장하고 받기</button>${NT.getKey() ? '<button class="btn" id="ntPull">지금 받기</button>' : ''}</div>
+    <div class="row"><input type="password" id="ntKey" aria-label="Notion 업데이트 비밀번호" placeholder="${NT.getKey() ? '저장됨 (바꾸려면 새로 입력)' : 'Notion 업데이트 비밀번호'}" autocomplete="off" style="flex:1"><button class="btn pri" id="ntSave">저장하고 받기</button>${NT.getKey() ? '<button class="btn" id="ntPull">지금 받기</button>' : ''}</div>
   </section>
 
   <section class="card" id="sync">

@@ -10,17 +10,20 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/fonts/pretendard/pretendard.css">
 <link rel="stylesheet" href="css/fonts/old-hangul/old-hangul.css">
-<link rel="stylesheet" href="css/fonts/noto-serif-kr/noto-serif-kr.css">
+<link rel="stylesheet" href="css/fonts/hanja/hanja.css">
+<!-- 명조는 원문 칸에서만 쓰므로 첫 화면 그리기를 막지 않게 늦게 붙인다 -->
+<link rel="stylesheet" href="css/fonts/noto-serif-kr/noto-serif-kr.css" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="css/fonts/noto-serif-kr/noto-serif-kr.css"></noscript>
 <script>
   try{var t=JSON.parse(localStorage.getItem('sh.theme'));if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}
 </script>
 <!-- version:start (scripts/bump_version.py 가 만든다. 직접 고치지 않는다) -->
-<script>window.SH_VERSION = "20261101175659";</script>
-<script type="importmap">{"imports": {"./js/ai.js": "./js/ai.js?v=20261101175659", "./js/app.js": "./js/app.js?v=20261101175659", "./js/charts.js": "./js/charts.js?v=20261101175659", "./js/data.js": "./js/data.js?v=20261101175659", "./js/hl.js": "./js/hl.js?v=20261101175659", "./js/notion.js": "./js/notion.js?v=20261101175659", "./js/pdf.js": "./js/pdf.js?v=20261101175659", "./js/prompts.js": "./js/prompts.js?v=20261101175659", "./js/src.js": "./js/src.js?v=20261101175659", "./js/store.js": "./js/store.js?v=20261101175659", "./js/sync.js": "./js/sync.js?v=20261101175659"}}</script>
-<link rel="stylesheet" href="css/style.css?v=20261101175659">
+<script>window.SH_VERSION = "20261101180714";</script>
+<script type="importmap">{"imports": {"./js/ai.js": "./js/ai.js?v=20261101180714", "./js/app.js": "./js/app.js?v=20261101180714", "./js/charts.js": "./js/charts.js?v=20261101180714", "./js/data.js": "./js/data.js?v=20261101180714", "./js/hl.js": "./js/hl.js?v=20261101180714", "./js/notion.js": "./js/notion.js?v=20261101180714", "./js/pdf.js": "./js/pdf.js?v=20261101180714", "./js/prompts.js": "./js/prompts.js?v=20261101180714", "./js/src.js": "./js/src.js?v=20261101180714", "./js/store.js": "./js/store.js?v=20261101180714", "./js/sync.js": "./js/sync.js?v=20261101180714"}}</script>
+<link rel="stylesheet" href="css/style.css?v=20261101180714">
 <script src="js/vendor/marked-12.0.2.min.js" defer></script>
 <script src="js/vendor/purify-3.1.6.min.js" defer></script>
-<script type="module" src="js/app.js?v=20261101175659"></script>
+<script type="module" src="js/app.js?v=20261101180714"></script>
 <!-- version:end -->
 </head>
 <body>

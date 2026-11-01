@@ -14,7 +14,7 @@
   --vio:#5645D4; --viow:#EFEDFB;
   --t-kor:#FFE8D4; --t-eng:#DCECFA; --t-soc:#D9F3E1; --t-sci:#E6E0F5; --t-his:#FEF7D6; --t-lab:#F0EEEC; --t-jpn:#FDE0EC; --t-math:#E4F2D2;
   --shadow:0 1px 2px rgba(15,15,15,.05),0 6px 16px -8px rgba(15,15,15,.10);
-  --sans:'Pretendard Variable',Pretendard,'Old Hangul Sans','Noto Sans CJK KR','Noto Sans KR','Source Han Sans K',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  --sans:'Pretendard Variable',Pretendard,'Old Hangul Sans','Hanja Sans','Noto Sans CJK KR','Noto Sans KR','Source Han Sans K',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   --serif:'Noto Serif KR','Old Hangul Serif','Noto Serif CJK KR','Source Han Serif K','AppleMyungjo','Batang',serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --r:12px;
@@ -51,7 +51,7 @@
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px -10px rgba(0,0,0,.6);
 }
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:400;font-size:16px;line-height:1.6;letter-spacing:-.005em;caret-color:var(--acc);word-break:keep-all;overflow-wrap:break-word;padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:400;font-size:1rem;line-height:1.6;letter-spacing:-.005em;caret-color:var(--acc);word-break:keep-all;overflow-wrap:break-word;padding-bottom:calc(72px + env(safe-area-inset-bottom))}
 a{color:var(--link);text-underline-offset:3px;text-decoration-thickness:1px}
 .wrap{max-width:860px;margin:0 auto;padding-inline:16px}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
@@ -74,7 +74,7 @@ code,kbd,pre{font-family:var(--mono)}
 .brand{font-weight:600;color:var(--ink);text-decoration:none;font-size:1.05rem}
 .brand span{color:var(--ink3);font-weight:400}
 .dday{margin-left:auto;font-weight:600;font-size:.85rem;font-variant-numeric:tabular-nums;color:var(--bad)}
-.tbtn{font:500 12px var(--sans);color:var(--ink2);background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 10px;cursor:pointer}
+.tbtn{font:500 .75rem var(--sans);color:var(--ink2);background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 10px;cursor:pointer}
 
 /* 아래 메뉴 */
 .bottom{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;background:var(--side);border-top:1px solid var(--rule);padding-bottom:env(safe-area-inset-bottom)}
@@ -163,7 +163,7 @@ label.field>span{display:block;font-size:.85rem;color:var(--ink2);margin-bottom:
 /* 문제 */
 .q-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .q-text{font-size:1.05rem;font-weight:500;white-space:pre-wrap}
-.q-ctx{background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-family:var(--serif);font-size:.97rem;line-height:1.8;letter-spacing:0}
+.q-ctx{background:var(--sunk);border:0;border-radius:6px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-family:var(--serif);font-size:.97rem;line-height:1.8;letter-spacing:0}
 .choices{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:8px}
 .choice{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--card);cursor:pointer;text-align:left;width:100%;font:inherit;color:var(--ink);transition:background-color .15s ease,border-color .15s ease,transform .16s var(--ease-out)}
 .choice:active:not(:disabled){transform:scale(.985)}
@@ -597,3 +597,17 @@ main#main:focus{outline:none}
 @media (pointer:coarse){.keyhint{display:none}}
 .menu-pop{min-width:248px}
 .mi{white-space:nowrap}
+
+/* 체크 상자도 키보드 초점이 또렷하게 (상자 자체는 테두리 색이 안 바뀐다) */
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:2px solid var(--acc);outline-offset:2px;box-shadow:none}
+
+/* 손가락으로 누를 때는 44px 에 가깝게 */
+@media (pointer:coarse){
+  .btn{min-height:44px}
+  .btn.sm{min-height:40px}
+  .chip{min-height:44px}
+  .qnav button{width:40px;height:40px}
+  .tbtn{min-height:36px}
+  .seg a{min-height:40px;display:inline-flex;align-items:center}
+}
+.j-row li>a,.j-row .item>a{display:inline-block;padding-block:4px}

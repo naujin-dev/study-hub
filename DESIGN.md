@@ -18,7 +18,7 @@
 | `--card` | #FFFFFF | #202020 | 카드 |
 | `--sunk` | #F6F5F4 | #252525 | 들어간 칸, 지문, 인용 |
 | `--side` | #F7F6F3 | #1F1F1F | 왼쪽·아래 메뉴 |
-| `--ink` / `--ink2` / `--ink3` | #37352F / #5D5B54 / #787671 | #E3E2E0 / #B4B2AD / #9B9A97 | 글자 |
+| `--ink` / `--ink2` / `--ink3` | #37352F / #5D5B54 / #64625C | #E3E2E0 / #B4B2AD / #9B9A97 | 글자 |
 | `--rule` / `--rule2` | #E5E3DF / #C8C4BE | #2F2F2F / #454545 | 선, 버튼 테두리 |
 | `--acc` | #5645D4 | #9D92F0 | 주 버튼, 선택, 진도 막대 |
 | `--link` | #0075DE | #5EA8F5 | 링크 |
@@ -31,6 +31,8 @@
 - 화면 글자: Pretendard Variable (저장소 안 `css/fonts`, SIL OFL). 제목은 700, 자간 -0.02em. 숫자는 `.mono` 클래스로 tabular-nums (고정폭 글꼴은 코드에만).
 - 원문(본문 같이 보기, 문제 지문): Noto Serif KR (`--serif`). 읽는 글은 명조, 고르는 글은 고딕으로 나눈다.
 - 옛한글: Pretendard·Noto Serif KR 에 없는 자모(U+1100–11FF 등)만 Noto Sans/Serif CJK KR 에서 잘라 `css/fonts/old-hangul` 에 두고, 'Old Hangul Sans/Serif' 라는 이름으로 `--sans`·`--serif` 목록에서 기본 글꼴 바로 뒤에 둔다.
+- 한자: Pretendard 에 없어서 KS X 1001 한자 4888자를 Noto Sans CJK KR 에서 600자씩 잘라 `css/fonts/hanja` 에 두고 'Hanja Sans' 로 `--sans` 에 붙인다. 쓰인 글자가 든 조각만 받는다.
+- 명조 CSS 는 첫 화면을 막지 않게 늦게 붙인다 (`media="print"` → `all`).
 
 ## 모양
 
