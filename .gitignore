@@ -1,3 +1,8 @@
 __pycache__/
 .DS_Store
 data/private/
+
+# impeccable live-server 가 돌 때 만드는 임시 파일
+.impeccable/live/annotations/
+.impeccable/live/sessions/
+.impeccable/live/server.json
