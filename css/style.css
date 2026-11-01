@@ -8,7 +8,7 @@
   --rule:#E5E3DF; --rule2:#C8C4BE;
   --acc:#5645D4; --acc-press:#4534B3; --accw:#EFEDFB; --on-acc:#FFFFFF;
   --link:#0075DE;
-  --ok:#1A7F37; --okw:#DBF2E1;
+  --ok:#166B2E; --okw:#DBF2E1;
   --bad:#C92A2A; --badw:#FDE6E6;
   --warn:#A84E00; --warnw:#FDEBD9;
   --vio:#5645D4; --viow:#EFEDFB;
@@ -397,7 +397,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .study-head{margin:6px 0 4px;gap:8px;flex-wrap:wrap}
 .seg{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;background:var(--card)}
 .seg a{padding:5px 12px;font-size:.85rem;color:var(--ink2);text-decoration:none}
-.seg a.on{background:var(--acc);color:#fff}
+.seg a.on{background:var(--acc);color:var(--on-acc)}
 .pgroup{margin-top:12px}
 .pgroup>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 2px;border-bottom:1px solid var(--rule);list-style:none}
 .pgroup>summary::-webkit-details-marker{display:none}
@@ -521,3 +521,7 @@ dialog.dlg::backdrop{transition:background-color .2s ease}
 h2.h3{font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
 input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);vertical-align:-3px}
 @media (pointer:coarse){details>summary{min-height:40px;display:flex;align-items:center;gap:8px}}
+
+/* 작은 글자 링크(← 과목, PDF 원본 ›)도 누르는 높이 24px 이상 */
+a.small,.small>a:only-child,p.small>a{display:inline-block;min-height:24px;line-height:24px}
+details>summary{padding-block:5px;cursor:pointer}
