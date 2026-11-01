@@ -642,6 +642,7 @@ details.card.flat[open]>summary::before{transform:rotate(90deg)}
 .kw-g{margin:8px 0}
 .kw-g>.small{display:block;margin-bottom:4px}
 .q-text:focus,.result>h2:focus{outline:none}
-.cause-row{padding:0 12px 10px 3.2em;gap:6px}
+.cause-row{display:flex;align-items:center;gap:8px;padding:0 12px 10px 3.2em}
+.cause-row select{width:auto;min-height:36px;padding-block:4px}
 .chip.sm{padding:4px 10px;font-size:.8rem;min-height:30px}
 @media (pointer:coarse){.chip.sm{min-height:40px}}
