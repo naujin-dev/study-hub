@@ -1,6 +1,7 @@
-/* 옛한글 자모 (Noto Serif/Sans CJK KR 에서 자모 범위만 잘라 냄, SIL OFL 1.1).
-   Pretendard 와 Noto Serif KR 에 옛한글이 없어서, 같은 글꼴 이름에 이 범위만 덧붙인다. */
-@font-face{font-family:'Pretendard Variable';font-style:normal;font-display:swap;font-weight:400;src:url(./sans-400.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
-@font-face{font-family:'Pretendard Variable';font-style:normal;font-display:swap;font-weight:700;src:url(./sans-700.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
-@font-face{font-family:'Noto Serif KR';font-style:normal;font-display:swap;font-weight:400;src:url(./serif-400.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
-@font-face{font-family:'Noto Serif KR';font-style:normal;font-display:swap;font-weight:700;src:url(./serif-700.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
+/* 옛한글 자모 (Noto Sans/Serif CJK KR 에서 자모 범위만 잘라 냄, SIL OFL 1.1).
+   Pretendard 와 Noto Serif KR 에는 옛한글이 없다. 따로 이름을 붙여 글꼴 목록에서 바로 뒤에 둔다
+   (style.css 의 --sans, --serif). 같은 이름에 붙이면 크롬이 굵기 묶음이 다르다고 건너뛴다. */
+@font-face{font-family:'Old Hangul Sans';font-style:normal;font-display:swap;font-weight:400;src:url(./sans-400.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
+@font-face{font-family:'Old Hangul Sans';font-style:normal;font-display:swap;font-weight:700;src:url(./sans-700.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
+@font-face{font-family:'Old Hangul Serif';font-style:normal;font-display:swap;font-weight:400;src:url(./serif-400.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}
+@font-face{font-family:'Old Hangul Serif';font-style:normal;font-display:swap;font-weight:700;src:url(./serif-700.woff2) format('woff2');unicode-range:U+1100-11FF,U+302E-302F,U+A960-A97F,U+D7B0-D7FF,U+25CC}

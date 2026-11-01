@@ -83,7 +83,7 @@ function notionItems() {
   if (!p || !Array.isArray(p.weeks)) return [];
   const out = [];
   for (const w of p.weeks) for (const g of w.groups || []) for (const it of g.items || []) {
-    out.push({ id: it.id, date: it.date || null, subject: g.subject || '', label: g.label || '', text: it.self ? it.text : stripDate(it.text), raw: it.text, group: it.self ? '' : g.title, week: w.id, done: !!it.done, notion: true });
+    out.push({ id: it.id, date: it.date || null, subject: g.subject || '', label: g.label || '', text: it.self && !it.date ? it.text : stripDate(it.text), raw: it.text, group: it.self ? '' : g.title, week: w.id, done: !!it.done, notion: true });
   }
   return out;
 }
@@ -110,6 +110,14 @@ function planPack(p) {
   const text = String(p.raw || p.text || '');
   const flat = text.replace(/\s+/g, '');
   const pool = D.db().packs.filter(k => !p.subject || k.subject === p.subject);
+  // 1) 줄에 자료 id 가 적혀 있으면 (예: "study-hub eng-02") 그 자료
+  for (const m of text.matchAll(/\b([a-z]{3}-\d{2,})\b/g)) { const hit = D.db().packs.find(k => k.id === m[1] || k.id.startsWith(m[1] + '-') || (k._mergedFrom || []).some(x => x.id.startsWith(m[1]))); if (hit) return hit; }
+  // 2) "리딩파워 14단원" 처럼 교재 이름 + 번호
+  for (const m of text.matchAll(/([가-힣A-Za-z]{2,})\s*(\d{1,3})\s*(?:단원|강|과|課|unit|Unit)?/g)) {
+    const re = new RegExp(m[1] + '\\s*(?:CHAPTER\\s*|unit\\s*)?0*' + m[2] + '(?!\\d)', 'i');
+    const hit = pool.find(k => re.test(k.title));
+    if (hit) return hit;
+  }
   const quoted = [...text.matchAll(/[「『]([^」』]{2,})[」』]/g)].map(m => m[1].replace(/\s+/g, ''));
   for (const qn of quoted) { const hit = pool.find(k => coreTitle(k.title).includes(qn) || qn.includes(coreTitle(k.title))); if (hit) return hit; }
   return pool.filter(k => coreTitle(k.title).length >= 3).sort((a, b) => coreTitle(b.title).length - coreTitle(a.title).length).find(k => flat.includes(coreTitle(k.title))) || null;
@@ -140,10 +148,10 @@ function applyTheme() {
   const t = S.load('theme', 'auto');
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
-  themeBtn.textContent = { auto: '자동', light: '밝게', dark: '어둡게' }[t] || '자동';
+  themeBtn.textContent = '화면: ' + ({ auto: '자동', light: '밝게', dark: '어둡게' }[t] || '자동');
 }
 themeBtn.addEventListener('click', () => {
-  const order = ['auto', 'light', 'dark'];
+  const order = ['auto', 'dark', 'light']; // 밤에 많이 쓰므로 자동 다음은 어둡게
   const t = S.load('theme', 'auto');
   S.save('theme', order[(order.indexOf(t) + 1) % 3]);
   applyTheme();
@@ -175,7 +183,7 @@ const routes = {
   '/math': viewMath,
   '/pdf': viewPdf,
 };
-const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/': 'home', '/plan': 'home', '/math': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/cards': 'quiz', '/flash': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 function render() {
@@ -271,7 +279,7 @@ function viewHome() {
     return `<li class="item"><span class="mono" style="min-width:4.2em">${dLabel(d)}</span><span class="grow">${S.fmtDate(d)}</span><span class="small muted">${subs.length ? subs.map(s => s.name).join(', ') : '과목 미정'}</span></li>`;
   }).join('');
 
-  const weak = unitStats().filter(u => u.n >= 3).sort((a, b) => a.rate - b.rate).slice(0, 3);
+  const weak = unitStats().filter(u => u.n >= 3 && u.rate < 0.8).sort((a, b) => a.rate - b.rate).slice(0, 3);
 
   // 과목별 하루 목표: 아직 안 푼 문제 + 오답 / 남은 날
   const goals = SUBJECTS.map(s => {
@@ -355,7 +363,7 @@ function viewHome() {
   </div>
 
   <aside class="home-side">
-    ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">Notion · ${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))} · 범위 ${sm.rows}개</span></a>` : ''}
+    ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">Notion 에서 체크한 회독 · ${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))} 기준 · 범위 ${sm.rows}개</span></a>` : ''}
 
     <section class="card flat subj-table">
       <div class="row between"><h2 style="margin:0">과목</h2><span class="small muted">푼 문제 · 정답률 · 하루 목표</span></div>
@@ -726,7 +734,7 @@ function viewPack() {
     ${qs.length ? `<a class="btn pri" href="#/run?pack=${encodeURIComponent(p.id)}">문제 ${qs.length}개 풀기</a>` : ''}
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
     ${p.notes ? `<a class="btn" href="#/blank?pack=${encodeURIComponent(p.id)}" title="자료를 안 보고 기억나는 것을 다 써 본 뒤 비교한다">백지 복습</a>` : ''}
-    <button class="btn" id="srcBtn" aria-pressed="${srcOn}">본문 같이 보기${texts.length ? ` (${texts.length})` : ''}</button>
+    <button class="btn" id="srcBtn" aria-pressed="${srcOn}">본문 같이 보기${texts.length > 1 ? ` <span class="small">원문 ${texts.length}개</span>` : ''}</button>
     <button class="btn ghost" id="readBtn" aria-pressed="${!!read[p.id]}">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
     ${packMenu(p, `<a class="mi" role="menuitem" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a><button type="button" class="mi" role="menuitem" id="printBtn">인쇄</button>`)}
   </div>
@@ -967,6 +975,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (selBar && selBar.style.display !== 'none') { hideSelBar(); getSelection().removeAllRanges(); return; }
   const d = document.querySelector('details.menu[open]');
   if (d) { d.open = false; d.querySelector('summary').focus(); }
 });
@@ -1186,7 +1195,7 @@ function viewQuizSetup() {
     <div class="grid" style="margin-top:14px">
       <label class="field"><span>개수</span><select name="count">${['5', '10', '20', '30', 'all'].map(v => `<option value="${v}"${last.count === v ? ' selected' : ''}>${v === 'all' ? '전부' : v + '문제'}</option>`).join('')}</select></label>
       <label class="field"><span>순서</span><select name="order"><option value="shuffle"${last.order === 'shuffle' ? ' selected' : ''}>섞기</option><option value="seq"${last.order === 'seq' ? ' selected' : ''}>자료 순서대로</option></select></label>
-      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 (한 문제씩 바로 채점)</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 (시간 재고 끝에 채점)</option></select></label>
+      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
       <label class="field" id="minField"><span>제한 시간(분)</span><input type="number" name="minutes" min="1" max="180" value="${esc(last.minutes)}"></label>
     </div>
     <p id="qcount" class="small muted"></p>
@@ -1354,17 +1363,17 @@ function drawQuestion() {
   <div class="row between"><span class="small muted">${session.i + 1} / ${session.items.length}${exam ? ' · 실전' : ''}</span>${timer}<button class="btn sm ghost" id="quit">그만</button></div>
   ${navButtons()}
   <section class="card qcard${q.context ? ' has-ctx' : ''}">
-    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag">${'★'.repeat(q.difficulty)}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">전에 ${pr.ok}/${pr.n}</span>` : ''}</div>
+    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag" title="난이도">난이도 ${q.difficulty}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
     <div class="q-split">
     ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : ''}
     <div class="q-main">
-    <div class="q-text">${esc(q.question)}</div>
+    <div class="q-text">${qHtml(q.question)}</div>
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
     </div></div>
   </section>
-  <div class="row"><label class="chip${pr?.star ? ' on' : ''}" id="starBtn">${pr?.star ? '★ 헷갈림 표시됨' : '☆ 헷갈림 표시'}</label>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
+  <div class="row"><label class="chip${pr?.star ? ' on' : ''}" id="starBtn">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</label>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
   `;
 
   // 답 입력
@@ -1435,6 +1444,12 @@ function drawQuestion() {
   });
   bindResult(session.i);
   if (exam && !session.submitted) tickTimer();
+}
+
+// 문제 글에 표(| 칸 | 칸 |)가 있으면 정리 노트처럼 표로 그린다. 나머지는 쓴 그대로.
+function qHtml(t) {
+  const text = String(t || '');
+  return /^\s*\|.+\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}/m.test(text) ? `<div class="q-md">${md(text)}</div>` : esc(text);
 }
 
 // 답을 아직 안 골랐으면 채점 버튼을 잠근다 (모르면 "모르겠다")
@@ -1536,7 +1551,7 @@ async function gradeOne(i, btn) {
 function resultHtml(it, r) {
   const { q } = it;
   const a = session ? session.answers[session.items.indexOf(it)] : '';
-  const title = r.guessed ? '맞았지만 찍었다' : ({ ok: '맞았다', part: '부분 점수', wrong: r.skipped ? '모르는 문제로 넘김' : '틀렸다' }[r.result] || '스스로 채점');
+  const title = r.guessed ? '맞았지만 찍었다' : ({ ok: '맞았다', part: '부분 점수', wrong: r.skipped ? '모르는 문제로 넘김' : '틀렸다' }[r.result] || '채점하기');
   let h = `<div class="result ${r.result || ''}"><h3>${title}</h3>`;
   if (r.guessed) h += '<p class="small">찍어서 맞힌 문제는 아는 것으로 치지 않는다. 오답노트에 넣고 복습에 다시 나온다.</p>';
   if (r.overconf) h += '<p class="small"><b>확실하다고 했는데 틀렸다.</b> 잘못 알고 있는 개념이다. 해설을 꼼꼼히 읽고 오답 원인을 적어 둔다.</p>';
@@ -1564,10 +1579,11 @@ function resultHtml(it, r) {
     if (r.fb?.via === 'chat') h += `<p class="small muted">Claude 채팅으로 채점함</p>`;
     if (r.selfGrade) {
       h += `${r.aiError ? `<p class="small">AI 채점 실패: ${esc(r.aiError)}</p>` : ''}
-      <div class="chatgrade"><h3 style="margin:0 0 4px">Claude 채팅으로 채점 (무료)</h3>${chatBox('채점 요청 복사')}</div>
-      <details style="margin-top:10px"><summary>또는 스스로 채점</summary><p class="small">모범 답안을 보고 맞힌 기준을 고른다.</p>
-      <form id="selfForm">${q.rubric.map((c, i) => `<label class="item" style="display:flex;gap:8px;padding:6px 0"><input type="checkbox" name="c" value="${i}"><span class="grow">${esc(c.criterion)}</span><span class="mono small">${c.points}점</span></label>`).join('')}
-      <div class="row" style="margin-top:6px"><button class="btn sm pri">이만큼 맞혔다</button>${AI.hasKey() ? '<button type="button" class="btn sm" id="retryAi">AI 채점 다시</button>' : ''}</div></form></details>`;
+      <div class="gtabs" role="tablist" aria-label="채점 방법"><button type="button" role="tab" class="gtab" aria-selected="true" data-gtab="self">내가 채점</button><button type="button" role="tab" class="gtab" aria-selected="false" data-gtab="chat">Claude 채팅 채점 (무료)</button></div>
+      <div class="gpanel" data-gpanel="self" role="tabpanel"><p class="small" style="margin-top:0">모범 답안을 보고 맞힌 기준을 고른다.</p>
+      <form id="selfForm">${q.rubric.map((c, i) => `<label class="item" style="display:flex;gap:8px;padding:6px 0"><input type="checkbox" name="c" value="${i}"><span class="grow">${esc(c.criterion)}</span><span class="num small">${c.points}점</span></label>`).join('')}
+      <div class="row" style="margin-top:6px"><button class="btn sm pri">이만큼 맞혔다</button>${AI.hasKey() ? '<button type="button" class="btn sm" id="retryAi">AI 채점 다시</button>' : ''}</div></form></div>
+      <div class="gpanel chatgrade" data-gpanel="chat" role="tabpanel" hidden>${chatBox('채점 요청 복사')}</div>`;
     }
     h += `<details${r.selfGrade ? ' open' : ''}><summary>모범 답안</summary><p style="white-space:pre-wrap">${esc(q.model_answer)}</p></details>`;
     if (!r.selfGrade) h += `<details><summary>채점 기준</summary><ul>${q.rubric.map(c => `<li>${esc(c.criterion)} (${c.points}점)</li>`).join('')}</ul></details>`;
@@ -1580,16 +1596,25 @@ function resultHtml(it, r) {
   return h;
 }
 
+// 서술형 채점 방법 탭
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-gtab]');
+  if (!b) return;
+  const box = b.closest('.result') || b.parentElement.parentElement;
+  box.querySelectorAll('[data-gtab]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  box.querySelectorAll('[data-gpanel]').forEach(p => { p.hidden = p.dataset.gpanel !== b.dataset.gtab; });
+});
+
 // API 키 없이 claude.ai 채팅으로 채점: 요청 복사 → 채팅에 붙여넣기 → 답 붙여넣기
 function chatBox(copyLabel) {
   return `<ol class="small" style="padding-left:1.2em;margin:6px 0">
-    <li><button type="button" class="btn sm pri" data-cg-copy>${copyLabel}</button> <a class="btn sm ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a><br><span class="muted">claude.ai 무료 계정이나 그 과목 공부 Claude 채팅 어디든 된다.</span></li>
+    <li><button type="button" class="btn sm" data-cg-copy>${copyLabel}</button> <a class="btn sm ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a><br><span class="muted">claude.ai 무료 계정이나 그 과목 공부 Claude 채팅 어디든 된다.</span></li>
     <li>Claude 채팅에 붙여넣고 보낸다.</li>
     <li>Claude 가 준 코드 블록을 복사해서 아래에 붙여넣는다.</li>
   </ol>
   <pre class="prompt" data-cg-text hidden></pre>
-  <textarea data-cg-in placeholder='Claude 의 답을 여기에 붙여넣기 ({"criteria": ... } 또는 {"verdict": ... })' style="min-height:80px;font-family:var(--mono);font-size:.82rem"></textarea>
-  <button type="button" class="btn sm pri" data-cg-apply style="margin-top:6px">채점 결과 넣기</button>`;
+  <textarea data-cg-in placeholder='Claude 의 답을 여기에 붙여넣기 ({"criteria": ... } 또는 {"verdict": ... })' style="min-height:80px;font-size:.85rem"></textarea>
+  <button type="button" class="btn sm" data-cg-apply style="margin-top:6px">채점 결과 넣기</button>`;
 }
 async function copyText(text, pre) {
   try { await navigator.clipboard.writeText(text); toast('복사했다. Claude 채팅에 붙여넣는다.'); return; }
@@ -1731,8 +1756,8 @@ function viewSummary() {
   ${bookMsg}
   <section class="grid" style="margin-bottom:14px">
     <div class="stat"><b style="color:var(--ok)">${count('ok')}</b><span>맞음</span></div>
-    <div class="stat"><b style="color:var(--warn)">${count('part')}</b><span>부분 점수</span></div>
-    <div class="stat"><b style="color:var(--bad)">${count('wrong')}</b><span>틀림</span></div>
+    ${count('part') ? `<div class="stat"><b style="color:var(--warn)">${count('part')}</b><span>부분 점수</span></div>` : ''}
+    <div class="stat"><b>${count('wrong')}</b><span>틀림</span></div>
     ${objIdx.length ? `<div class="stat"><b>${objOk}/${objIdx.length}</b><span>객관식·단답형</span></div>` : ''}
     ${eMax ? `<div class="stat"><b>${eScore}/${eMax}</b><span>서술형 점수</span></div>` : ''}
     ${session.usedMs ? `<div class="stat"><b>${Math.round(session.usedMs / 60000)}분</b><span>걸린 시간</span></div>` : ''}
@@ -1784,8 +1809,8 @@ function viewWrong() {
     if (qq.type === 'short') right = qq.answers.map(esc).join(' / ');
     if (qq.type === 'essay') right = esc(qq.model_answer);
     let mine = r.ans;
-    if (qq.type === 'mcq' && Array.isArray(mine)) mine = mine.map(n => '①②③④⑤⑥'[n - 1]).join(', ');
-    return `<details class="card flat"><summary style="color:var(--ink)"><span class="q-head" style="display:inline-flex;margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n}</span>${r.star ? '<span class="tag warn">★</span>' : ''}</span><br>${esc(qq.question)}</summary>
+    if (qq.type === 'mcq' && Array.isArray(mine)) mine = mine.map(n => `${'①②③④⑤⑥'[n - 1]} ${qq.choices[n - 1] || ''}`).join('\n');
+    return `<details class="card flat"><summary style="color:var(--ink)"><span class="q-head" style="display:inline-flex;margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n}</span>${r.star ? '<span class="tag warn">헷갈림</span>' : ''}<span class="small muted">${esc(x.pack.title)}</span></span><br>${esc(qq.question)}</summary>
       ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
       ${qq.type === 'mcq' ? `<ol class="small">${qq.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
       <p><b>내 답</b> <span style="white-space:pre-wrap">${esc(mine || '(안 씀)')}</span></p>
@@ -1815,7 +1840,7 @@ let flash = null;
 function viewCardsSetup() {
   const all = D.allCards();
   if (!all.length) { main.innerHTML = '<h1>암기카드</h1><p class="muted">카드가 들어 있는 자료가 없다.</p>'; return; }
-  const last = S.load('cardPrefs', { subject: [], packs: [], src: 'due', flip: 'front' });
+  const last = { n: '30', ...S.load('cardPrefs', { subject: [], packs: [], src: 'due', flip: 'front' }) };
   const packs = D.db().packs.filter(p => (p.cards || []).length);
   main.innerHTML = `<h1>암기카드</h1>
   <form id="cf" class="card">
@@ -1823,25 +1848,29 @@ function viewCardsSetup() {
     <h3 style="margin-top:14px">단원</h3><div id="cpacks"></div>
     <h3 style="margin-top:14px">어떤 카드</h3>${chipGroup('src', [{ value: 'due', label: '외울 때 된 카드 + 새 카드' }, { value: 'all', label: '전부' }, { value: 'miss', label: '모른다고 한 카드' }], [last.src], false)}
     <h3 style="margin-top:14px">먼저 볼 면</h3>${chipGroup('flip', [{ value: 'front', label: '앞면 (문제)' }, { value: 'back', label: '뒷면 (답)' }], [last.flip], false)}
+    <h3 style="margin-top:14px">한 번에</h3>${chipGroup('n', [{ value: '20', label: '20장' }, { value: '30', label: '30장' }, { value: '50', label: '50장' }, { value: 'all', label: '전부' }], [String(last.n)], false)}
     <p class="small muted" id="ccount"></p>
     <button class="btn pri block">시작</button>
   </form>`;
   const draw = () => {
     const subs = picked('subject');
-    $('#cpacks').innerHTML = chipGroup('packs', packs.filter(p => !subs.length || subs.includes(p.subject)).map(p => ({ value: p.id, label: p.title })), last.packs);
+    // 단원 칩이 수십 개라 과목을 고른 뒤에만 과목별로 묶어 보여 준다
+    $('#cpacks').innerHTML = subs.length ? SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
+      : '<p class="small muted" style="margin:4px 0">과목을 고르면 단원이 나온다. 안 고르면 모든 과목에서 고른다.</p>';
     $$('input[name="packs"]').forEach(i => i.addEventListener('change', cnt));
     cnt();
   };
-  const collect = () => ({ subject: picked('subject'), packs: picked('packs'), src: picked('src')[0], flip: picked('flip')[0] });
-  const cnt = () => { $('#ccount').textContent = `카드 ${pickCards(collect()).length}장`; };
+  const collect = () => ({ subject: picked('subject'), packs: picked('packs'), src: picked('src')[0], flip: picked('flip')[0], n: picked('n')[0] || '30' });
+  const cnt = () => { const c = collect(), k = pickCards(c).length; $('#ccount').textContent = `고른 조건에 맞는 카드 ${k}장${c.n !== 'all' && k > Number(c.n) ? ` 중 ${c.n}장을 섞어서 본다` : ''}`; };
   $$('input[name="subject"]').forEach(i => i.addEventListener('change', draw));
-  $$('input[name="src"]').forEach(i => i.addEventListener('change', cnt));
+  $$('input[name="src"], input[name="n"]').forEach(i => i.addEventListener('change', cnt));
   draw();
   $('#cf').addEventListener('submit', e => {
     e.preventDefault();
     const c = collect();
     S.save('cardPrefs', c);
-    const list = shuffle(pickCards(c));
+    let list = shuffle(pickCards(c));
+    if (c.n !== 'all') list = list.slice(0, Number(c.n));
     if (!list.length) return toast('해당하는 카드가 없다.');
     flash = { list, i: 0, back: false, knew: 0, flip: c.flip };
     location.hash = '#/flash';
@@ -1872,11 +1901,11 @@ function viewFlash() {
   <div class="row between"><span class="small muted">${flash.i + 1} / ${flash.list.length} · ${subjName(x.pack.subject)} · ${esc(x.pack.title)}</span><a class="btn sm ghost" href="#/cards">그만</a></div>
   <div class="bar" style="margin:8px 0 14px"><i style="width:${pct(flash.i, flash.list.length)}%"></i></div>
   <section class="card flash ${showBack ? 'back' : ''}" id="fc" role="button" tabindex="0" aria-label="카드 뒤집기">
-    <span class="side">${showBack ? '뒷면' : '앞면'} · 눌러서 뒤집기</span>
+    <span class="side">${showBack ? '뒷면' : '앞면'} · 눌러서 뒤집기 (스페이스)</span>
     <div>${esc(showBack ? x.c.back : x.c.front)}</div>
     ${showBack && x.c.note ? `<p class="small muted" style="margin-top:10px">${esc(x.c.note)}</p>` : ''}
   </section>
-  ${flash.back ? `<div class="row" style="justify-content:center"><button class="btn bad" id="no" style="flex:1">몰랐다</button><button class="btn ok" id="yes" style="flex:1">알았다</button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
+  ${flash.back ? `<div class="row flash-acts"><button class="btn bad" id="no">몰랐다 <kbd>1</kbd></button><button class="btn ok" id="yes">알았다 <kbd>2</kbd></button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
   if (!flash.shownAt || flash.shownFor !== flash.i) { flash.shownAt = Date.now(); flash.shownFor = flash.i; }
   const flip = () => { flash.back = !flash.back; viewFlash(); };
   $('#fc').addEventListener('click', flip);
@@ -1884,7 +1913,17 @@ function viewFlash() {
   const next = knew => { S.recordCard(x.key, knew, Date.now() - flash.shownAt); flash.shownAt = 0; if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash(); };
   $('#yes')?.addEventListener('click', () => next(true));
   $('#no')?.addEventListener('click', () => next(false));
+  flash.next = next;
+  // 다시 그린 뒤에도 키보드로 이어서 넘길 수 있게 카드에 초점을 둔다
+  $('#fc').focus({ preventScroll: true });
 }
+// 카드: 1 = 몰랐다, 2 = 알았다 (뒤집은 뒤에만)
+document.addEventListener('keydown', e => {
+  if (params().path !== '/flash' || !flash || !flash.back || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['input', 'textarea', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
+  if (e.key === '1') { e.preventDefault(); flash.next?.(false); }
+  if (e.key === '2') { e.preventDefault(); flash.next?.(true); }
+});
 
 // ================= AI 문제 만들기 =================
 let genResult = null;
@@ -2002,8 +2041,8 @@ function viewPlan() {
         const gi = g.items.map(i => byId[i.id]).filter(Boolean);
         if (!gi.length) return '';
         const self = g.items.length === 1 && g.items[0].self;
-        return `<div class="wgroup"><div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(self ? '' : g.title)}</b></div>
-          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${esc(p.text)}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
+        return `<div class="wgroup">${self ? '' : `<div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(g.title)}</b></div>`}
+          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${self && p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
       }).join('')}
       ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
     </details>`;
@@ -2154,7 +2193,7 @@ function viewStats() {
   <section class="grid" style="margin:12px 0 14px">
     <div class="stat"><b>${S.fmtDur(last.cs)}</b><span>쌓인 공부 시간</span></div>
     <div class="stat"><b>${total.q}</b><span>푼 문제 · 정답률 ${pct(total.ok, total.q)}%</span></div>
-    <div class="stat"><b>${studiedDays}일</b><span>공부한 날 · 연속 ${streakDays()}일</span></div>
+    <div class="stat"><b>${studiedDays}일</b><span>공부한 날${streakDays() ? ` · ${streakDays()}일째 이어서` : ''}</span></div>
     <div class="stat"><b>${Object.keys(S.kvAll('hl')).length}</b><span>형광펜·메모</span></div>
   </section>
 
@@ -2252,6 +2291,13 @@ function dayEntries(d) {
     }
     if (e.k === 'o' || e.k === 'f' || e.k === 'sx') continue;
     if (e.k === 's' && !S.subjectTimeEvents(e.sub).some(x => x.id === e.id)) continue;
+    // 같은 자료를 30분 안에 이어서 읽은 기록은 한 줄로 합친다
+    if (e.k === 'r') {
+      if (run && run.kind === 'read' && run.pack === e.pack && e.t - run.end < 30 * 60000) { run.s += e.s || 0; run.end = e.t; continue; }
+      flushRun();
+      run = { kind: 'read', t: e.t, end: e.t, pack: e.pack, s: e.s || 0 };
+      continue;
+    }
     flushRun();
     out.push({ kind: e.k, t: e.t, e });
   }
@@ -2288,6 +2334,7 @@ function entryHtml(x) {
     return `<li class="j-row">${time}<div class="grow">암기카드 ${x.items.length}장 · ${knew}장 알았음 · ${packs.map(packName).join(', ')}</div></li>`;
   }
   const e = x.e;
+  if (x.kind === 'read') return x.s < 30 ? '' : `<li class="j-row">${time}<div class="grow">${packName(x.pack)} ${S.fmtDur(x.s)} 읽음</div></li>`;
   if (x.kind === 'r') return `<li class="j-row">${time}<div class="grow">${packName(e.pack)} ${S.fmtDur(e.s)} 읽음</div></li>`;
   if (x.kind === 's') return `<li class="j-row">${time}<div class="grow">${subjDot(e.sub)} ${subjName(e.sub)} ${S.fmtDur(e.s)} (${S.fmtTime(e.from)}~${S.fmtTime(e.t)})</div></li>`;
   if (x.kind === 'm') return `<li class="j-row">${time}<div class="grow">집중 타이머 ${e.min}분</div></li>`;
@@ -2394,9 +2441,9 @@ function viewQuestion() {
   main.innerHTML = `
   <p class="small"><a href="#/pack?id=${encodeURIComponent(pid)}">← ${esc(pack.title)}</a></p>
   <section class="card">
-    <div class="q-head">${subjDot(pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span>${pr ? `<span class="tag">${pr.ok}/${pr.n} 맞음</span>${pr.wrong ? '<span class="tag bad">오답노트</span>' : ''}${pr.star ? '<span class="tag warn">★</span>' : ''}${pr.due ? `<span class="tag">다음 복습 ${pr.due.slice(5).replace('-', '/')}</span>` : ''}` : ''}</div>
+    <div class="q-head">${subjDot(pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span>${pr ? `<span class="tag">${pr.ok}/${pr.n} 맞음</span>${pr.wrong ? '<span class="tag bad">오답노트</span>' : ''}${pr.star ? '<span class="tag warn">헷갈림</span>' : ''}${pr.due ? `<span class="tag">다음 복습 ${pr.due.slice(5).replace('-', '/')}</span>` : ''}` : ''}</div>
     ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
-    <div class="q-text">${esc(qq.question)}</div>
+    <div class="q-text">${qHtml(qq.question)}</div>
     ${qq.type === 'mcq' ? `<ol class="small">${qq.choices.map(c => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
     <details><summary>정답과 해설</summary><p>${right}</p>${qq.explanation ? `<p class="small">${esc(qq.explanation)}</p>` : ''}</details>
     <div class="row" style="margin-top:10px"><button class="btn pri" id="again">다시 풀기</button></div>
@@ -2418,13 +2465,13 @@ function viewSettings() {
   <section class="card" id="import">
     <h2>자료 가져오기</h2>
     <p class="small muted">공부자료 Claude 가 준 JSON 을 통째로 붙여넣거나 .json 파일을 고른다. 가져온 자료는 이 기기에 저장되고, 기록 동기화를 켜 두면 다른 기기에도 들어간다.</p>
-    <textarea id="impText" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-family:var(--mono);font-size:.85rem"></textarea>
+    <textarea id="impText" placeholder='{ "format": "study-hub/1", "id": "...", ... }' style="min-height:140px;font-size:.88rem"></textarea>
     <div class="row" style="margin-top:8px"><button class="btn" id="impCheck">검사</button><label class="btn ghost">파일 고르기<input type="file" id="impFile" accept=".json,application/json,text/plain" multiple hidden></label></div>
     <div id="impOut"></div>
   </section>
 
-  ${localList.length ? `<section class="card"><h2>이 기기에 가져온 자료 ${localList.length}개</h2><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
-  <p class="small muted">"JSON 복사" 한 내용을 저장소 data/packs/과목/ 에 파일로 올리면 모든 기기에서 보인다.</p></section>` : ''}
+  ${localList.length ? `<details class="card fold"><summary><h2 style="display:inline;margin:0">이 기기에 가져온 자료 ${localList.length}개</h2></summary><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm ghost bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
+  <p class="small muted">"JSON 복사" 한 내용을 저장소 data/packs/과목/ 에 파일로 올리면 모든 기기에서 보인다.</p></details>` : ''}
 
   <section class="card" id="notionSync">
     <h2>Notion 자동 업데이트</h2>
@@ -2469,7 +2516,8 @@ function viewSettings() {
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
     <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB</p>
     <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
-    <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label><button class="btn bad ghost" id="reset">기록 초기화</button></div>
+    <div class="row"><button class="btn" id="exp">백업 파일 받기</button><label class="btn">백업 불러오기<input type="file" id="impBk" accept=".json" hidden></label></div>
+    <p style="margin:18px 0 0"><button class="btn sm bad ghost" id="reset">기록 초기화</button></p>
   </section>`;
 
   { const go = params().q.get('go'); if (go) setTimeout(() => document.getElementById(go)?.scrollIntoView({ block: 'start' }), 60); }
@@ -2962,7 +3010,7 @@ function viewMath() {
   const subSel = name => `<select name="${name}">${allSubj.map(x => `<option value="${x.id}"${x.id === (q.get('sub') || lastSub) ? ' selected' : ''}>${x.name}</option>`).join('')}</select>`;
   const days = Array.from({ length: 7 }, (_, i) => S.addDays(today, -i));
   main.innerHTML = `
-  <h1>${subjDot('math')} 공부 시간 재기</h1>
+  <h1>공부 시간 재기</h1>
   <p class="small muted">수학은 공부자료 없이 공부한 시간만 잰다. 다른 과목도 책으로 공부할 때 여기서 잴 수 있다. 잰 시간은 공부 일지, 기록 그래프, 과목별 시간에 들어간다.</p>
 
   <section class="card">
@@ -2999,13 +3047,13 @@ function viewMath() {
   </section>
 
   <section class="card">
-    <h2>최근 7일</h2>
-    <ul class="list">${days.map(d => `<li class="item"><span class="grow">${S.fmtDate(d)}</span><b class="mono">${log[d]?.fs?.math ? S.fmtDur(log[d].fs.math) : '-'}</b></li>`).join('')}</ul>
+    <h2>최근 7일 수학</h2>
+    ${days.some(d => log[d]?.fs?.math) ? `<ul class="list">${days.filter(d => log[d]?.fs?.math).map(d => `<li class="item"><span class="grow">${S.fmtDate(d)}</span><b class="mono">${S.fmtDur(log[d].fs.math)}</b></li>`).join('')}</ul><p class="small muted">7일 합계 ${S.fmtDur(days.reduce((a, d) => a + (log[d]?.fs?.math || 0), 0))}</p>` : '<p class="small muted">최근 7일 동안 잰 수학 시간이 없다.</p>'}
   </section>
 
   <section class="card">
     <h2>기록</h2>
-    ${recent.length ? `<ul class="list">${recent.map(e => `<li class="item">${subjDot(e.sub)}<span class="grow">${subjName(e.sub)} · ${S.fmtDate(S.dayOf(e.t))} ${hm(e.from)}~${hm(e.t)}</span><b class="mono">${S.fmtDur(e.s)}</b><button class="btn sm ghost" data-mx="${e.id}">취소</button></li>`).join('')}</ul>` : '<p class="small muted">아직 없다.</p>'}
+    ${recent.length ? `<ul class="list">${recent.map(e => `<li class="item">${subjDot(e.sub)}<span class="grow">${subjName(e.sub)} · ${S.fmtDate(S.dayOf(e.t))} ${hm(e.from)}~${hm(e.t)}</span><b class="mono">${S.fmtDur(e.s)}</b><button class="btn sm ghost" data-mx="${e.id}" aria-label="${subjName(e.sub)} ${hm(e.from)}~${hm(e.t)} 기록 지우기">지우기</button></li>`).join('')}</ul>` : '<p class="small muted">아직 없다.</p>'}
   </section>`;
 
   const upd = () => {
@@ -3026,7 +3074,7 @@ function viewMath() {
   $('#mcGo')?.addEventListener('click', () => { const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
   $('#mcStop')?.addEventListener('click', () => { stopClock(); render(); });
   $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
-  $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 수학 시간 기록을 지울까?')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
+  $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 공부 시간 기록을 지울까? 지운 시간은 공부 시간에서 빠진다.')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
 
   // 날짜는 공부한 날 기준이라 새벽 4시 전 시각은 그다음 날 새벽이다 (예: 22일 03:00 = 23일 새벽 3시)
   const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da + (h < S.DAY_START_HOUR ? 1 : 0), h, mi).getTime(); };

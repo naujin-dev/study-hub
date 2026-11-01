@@ -15,12 +15,12 @@
   try{var t=JSON.parse(localStorage.getItem('sh.theme'));if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}
 </script>
 <!-- version:start (scripts/bump_version.py 가 만든다. 직접 고치지 않는다) -->
-<script>window.SH_VERSION = "20261101154352";</script>
-<script type="importmap">{"imports": {"./js/ai.js": "./js/ai.js?v=20261101154352", "./js/app.js": "./js/app.js?v=20261101154352", "./js/charts.js": "./js/charts.js?v=20261101154352", "./js/data.js": "./js/data.js?v=20261101154352", "./js/hl.js": "./js/hl.js?v=20261101154352", "./js/notion.js": "./js/notion.js?v=20261101154352", "./js/pdf.js": "./js/pdf.js?v=20261101154352", "./js/prompts.js": "./js/prompts.js?v=20261101154352", "./js/src.js": "./js/src.js?v=20261101154352", "./js/store.js": "./js/store.js?v=20261101154352", "./js/sync.js": "./js/sync.js?v=20261101154352"}}</script>
-<link rel="stylesheet" href="css/style.css?v=20261101154352">
+<script>window.SH_VERSION = "20261101174527";</script>
+<script type="importmap">{"imports": {"./js/ai.js": "./js/ai.js?v=20261101174527", "./js/app.js": "./js/app.js?v=20261101174527", "./js/charts.js": "./js/charts.js?v=20261101174527", "./js/data.js": "./js/data.js?v=20261101174527", "./js/hl.js": "./js/hl.js?v=20261101174527", "./js/notion.js": "./js/notion.js?v=20261101174527", "./js/pdf.js": "./js/pdf.js?v=20261101174527", "./js/prompts.js": "./js/prompts.js?v=20261101174527", "./js/src.js": "./js/src.js?v=20261101174527", "./js/store.js": "./js/store.js?v=20261101174527", "./js/sync.js": "./js/sync.js?v=20261101174527"}}</script>
+<link rel="stylesheet" href="css/style.css?v=20261101174527">
 <script src="js/vendor/marked-12.0.2.min.js" defer></script>
 <script src="js/vendor/purify-3.1.6.min.js" defer></script>
-<script type="module" src="js/app.js?v=20261101154352"></script>
+<script type="module" src="js/app.js?v=20261101174527"></script>
 <!-- version:end -->
 </head>
 <body>
@@ -30,12 +30,9 @@
     <a class="brand" href="#/">2회고사 <span>공부방</span></a>
     <span class="dday" id="topDday"></span>
     <a class="syncdot off" id="syncDot" href="#/settings" hidden>동기화</a>
-    <button class="tbtn" id="themeBtn" type="button" aria-label="화면 모드 바꾸기">자동</button>
+    <button class="tbtn" id="themeBtn" type="button" title="눌러서 자동 → 어둡게 → 밝게">화면: 자동</button>
   </div>
 </header>
-<main id="main" class="wrap" tabindex="-1">
-  <p class="muted">불러오는 중…</p>
-</main>
 <nav class="bottom" aria-label="메뉴">
   <a href="#/" data-nav="home"><svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h5v-6h4v6h5V9.5"/></svg>홈</a>
   <a href="#/study" data-nav="study"><svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2z"/><path d="M22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/></svg>자료</a>
@@ -43,6 +40,9 @@
   <a href="#/wrong" data-nav="wrong"><svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>오답</a>
   <a href="#/more" data-nav="more"><svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>더보기</a>
 </nav>
+<main id="main" class="wrap" tabindex="-1">
+  <p class="muted">불러오는 중…</p>
+</main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
