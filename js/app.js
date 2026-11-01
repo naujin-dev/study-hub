@@ -274,8 +274,7 @@ function viewHome() {
   main.innerHTML = `
   ${D.db().loadErrors.length ? `<div class="note" style="margin-bottom:12px"><b>자료를 일부 못 읽었다.</b><br>${D.db().loadErrors.slice(0, 5).map(esc).join('<br>')}</div>` : ''}
   <section class="card">
-    <p class="muted small" style="margin:0">${esc(ex.title || '2회고사')}</p>
-    <h1 style="font-size:2rem;margin:.1em 0 .2em" class="mono">${ex.first ? dLabel(ex.first) : '날짜 미정'}</h1>
+    <h1 style="font-size:2rem;margin:0 0 .2em" class="mono">${esc(ex.title || '2회고사')} ${ex.first ? dLabel(ex.first) : '날짜 미정'}</h1>
     <ul class="list">${dayRows || '<li class="item muted">data/exam.json 에 시험 날짜가 없다.</li>'}</ul>
     <div class="row" style="margin-top:8px"><a class="btn sm ghost" href="#/plan">과목별 날짜·범위 정하기</a></div>
   </section>
@@ -328,14 +327,14 @@ function viewHome() {
     ${SUBJECTS.map(s => {
       const o = st[s.id];
       const date = subjDate(s.id);
-      return `<a class="subj" href="#/study?s=${s.id}">${subjDot(s.id)}
+      return `<a class="subj tinted" style="--tint:var(--t-${s.id})" href="#/study?s=${s.id}">${subjDot(s.id)}
         <div class="grow">
           <div class="row between"><b>${s.name}</b><span class="small muted">${date ? `${S.fmtDate(date)} · ${dLabel(date)}` : '날짜 미정'}</span></div>
           <div class="bar" style="--c:${s.color};margin:6px 0 4px"><i style="width:${pct(o.tried, o.total)}%"></i></div>
           <div class="small muted">자료 ${o.packs}개${o.unread ? ` (안 읽음 ${o.unread})` : ''} · 문제 ${o.tried}/${o.total} · 정답률 ${o.n ? pct(o.ok, o.n) + '%' : '-'}${o.wrong ? ` · 오답 ${o.wrong}` : ''}</div>
         </div></a>`;
     }).join('')}
-    ${(() => { const mc = S.load('mclock', null); const td = S.getLog()[S.today()]?.fs?.math || 0; return `<a class="subj" href="#/math">${subjDot('math')}
+    ${(() => { const mc = S.load('mclock', null); const td = S.getLog()[S.today()]?.fs?.math || 0; return `<a class="subj tinted" style="--tint:var(--t-math)" href="#/math">${subjDot('math')}
         <div class="grow">
           <div class="row between"><b>수학</b><span class="small muted">시간만 잼</span></div>
           <div class="small muted" style="margin-top:6px">${mc ? `<span class="tag ok">${subjName(mc.sub || 'math')} 재는 중</span> ${S.fmtTime(mc.start)}부터 · ` : ''}오늘 ${S.fmtDur(td)} · 누적 ${S.fmtDur(mathTotal())}</div>
@@ -473,14 +472,14 @@ function viewStudy() {
     let qn = 0, tried = 0;
     for (const p of ps) { const st = packStats(p, prog, read); qn += st.qn; tried += st.tried; }
     const d = ex.subjects?.[s.id]?.date;
-    return `<a class="sbj${s.id === sel ? ' on' : ''}${ps.length ? '' : ' empty'}" href="#/study?s=${s.id}">${subjDot(s.id)}<span class="grow"><b>${s.name}</b><span class="small muted">${ps.length ? `자료 ${ps.length}` : '없음'}${d ? ` · ${dLabel(d)}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</a>`;
+    return `<a class="sbj${s.id === sel ? ' on' : ''}${ps.length ? '' : ' empty'}" style="--tint:var(--t-${s.id})" href="#/study?s=${s.id}">${subjDot(s.id)}<span class="grow"><b>${s.name}</b><span class="small muted">${ps.length ? `자료 ${ps.length}` : '없음'}${d ? ` · ${dLabel(d)}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</a>`;
   }).join('');
 
   const card = (p, label) => {
     const st = packStats(p, prog, read);
     const per = st.qn ? pct(st.tried, st.qn) : 0;
     const badges = [st.notes ? '정리' : '', st.texts ? `원문 ${st.texts}` : '', st.qn ? `문제 ${st.qn}` : '', st.cards ? `카드 ${st.cards}` : ''].filter(Boolean);
-    return `<a class="pcard" href="#/pack?id=${encodeURIComponent(p.id)}">
+    return `<a class="pcard" style="--tint:var(--t-${p.subject})" href="#/pack?id=${encodeURIComponent(p.id)}">
       ${label && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
       <div class="row between" style="gap:6px;align-items:flex-start"><b class="pc-t">${esc(p.title)}</b>${st.read ? '<span class="tag ok">읽음</span>' : ''}</div>
       <div class="pc-b small muted">${badges.map(esc).join(' · ')}<span class="pdfb" data-pdfb="${esc(p.id)}"></span></div>
