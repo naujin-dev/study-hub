@@ -63,7 +63,7 @@ export function fmtTime(t) {
 }
 export function fmtDur(sec) {
   sec = Math.round(sec || 0);
-  if (sec < 60) return `${sec}초`;
+  if (sec < 60) return sec ? `${sec}초` : '0분';
   const m = Math.round(sec / 60);
   if (m < 60) return `${m}분`;
   return `${Math.floor(m / 60)}시간${m % 60 ? ' ' + (m % 60) + '분' : ''}`;

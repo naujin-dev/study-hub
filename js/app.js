@@ -3134,7 +3134,14 @@ function viewMore() {
     ['#/settings', '설정', '기록 동기화, API 키, 자료 가져오기, 백업'],
     ['#/help', '사용법', '자료를 넣는 방법과 기능 설명'],
   ];
-  main.innerHTML = `<h1>더보기</h1><section class="card flat"><ul class="list">${links.map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span>›</a></li>`).join('')}</ul></section>`;
+  // 쓰임새대로 묶는다: 공부할 때 / 기록 보기 / 자료 관리
+  const groups = [
+    ['공부할 때', ['#/cards', '#/blank', '#/final', '#/math', '#/gen']],
+    ['기록과 계획', ['#/plan', '#/journal', '#/stats', '#/marks']],
+    ['자료와 설정', ['#/pdf', '#/check', '#/prompts', '#/settings', '#/help']],
+  ];
+  const byHref = Object.fromEntries(links.map(l => [l[0], l]));
+  main.innerHTML = `<h1>더보기</h1><div class="more-grid">${groups.map(([name, hs]) => `<section class="card flat"><h2>${name}</h2><ul class="list">${hs.map(h => byHref[h]).filter(Boolean).map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span><span class="go" aria-hidden="true">›</span></a></li>`).join('')}</ul></section>`).join('')}</div>`;
 }
 
 function viewHelp() {
