@@ -17,6 +17,8 @@ const REPO_URL = 'https://github.com/naujin-dev/study-hub';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 지문은 글자 그대로 보여 주되 <u>밑줄</u> 만 살린다 (영어 어법·어휘 문제)
 const ctxHtml = s => esc(s).replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, "<u>$1</u>");
+// 원문 한 줄: 밑줄(<u>)은 살리고, 줄을 넘어가 짝이 안 맞는 밑줄 표시는 지운다
+const srcLine = l => ctxHtml(l).replace(/&lt;\/?u&gt;/g, '');
 const $ = (sel, root = main) => root.querySelector(sel);
 const $$ = (sel, root = main) => [...root.querySelectorAll(sel)];
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -451,6 +453,8 @@ function unitKey(u) {
   return u.replace(/^(고등|공통)\s*\S+\s+/, '').trim() || u;
 }
 const unitOf = p => S.kvGet('punit', p.id)?.unit || unitKey(p.unit);
+// 화면에 보일 짧은 단원 이름: "2026 10월 고1 학평 · 현대시" → "10월 학평 · 현대시", "공통국어2 2회고사" → "2회고사"
+const shortUnit = u => String(u || '').replace(/^20\d\d\s*/, '').replace(/고1\s*/, '').replace(/^(공통국어\d|통합사회\d|한국사\d)\s+/, '').replace(/\s+/g, ' ').trim();
 // 내 분류 (과목마다): kv pcat[과목] = { cats: [{ id, name }] }, kv pcatof[자료 id] = { cat }
 const myCats = sub => S.kvGet('pcat', sub)?.cats || [];
 const saveCats = (sub, cats) => S.kvSet('pcat', sub, { cats });
@@ -546,7 +550,7 @@ function viewStudy() {
     const done = st.read && (!st.qn || st.tried >= st.qn) && !st.wrong;
     const doing = !done && (st.tried > 0 || st.read || S.readTimeOf(p.id) > 0);
     return `<a class="pcard${doing ? ' is-doing' : done ? ' is-done' : ''}" href="#/pack?id=${encodeURIComponent(p.id)}">
-      ${label && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
+      ${(label = shortUnit(label || unitOf(p))) && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
       <div class="row between" style="gap:6px;align-items:flex-start"><b class="pc-t">${esc(p.title)}</b>${done ? '<span class="tag ok">끝냄</span>' : doing ? '<span class="tag vio">하는 중</span>' : ''}</div>
       <div class="pc-b small muted">${badges.map(esc).join(' · ')}<span class="pdfb" data-pdfb="${esc(p.id)}"></span></div>
       ${st.qn ? `<div class="pc-p"><span class="mini-bar wide"><i style="width:${per}%"></i></span><span class="small mono muted">${st.tried}/${st.qn}${st.wrong ? ` · <span style="color:var(--bad)">오답 ${st.wrong}</span>` : ''}</span></div>` : ''}
@@ -588,7 +592,7 @@ function viewStudy() {
       let qn = 0, tried = 0;
       for (const p of g.packs) { const st = packStats(p, prog, read); qn += st.qn; tried += st.tried; }
       const gk = sel + '|' + mode + '|' + g.name;
-      return `<details class="pgroup"${closed[gk] ? '' : ' open'} data-gk="${esc(gk)}"><summary><span class="grow"><b>${esc(g.name)}</b> <span class="small muted">${g.packs.length}개${qn ? ` · 문제 ${tried}/${qn}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</summary>
+      return `<details class="pgroup"${closed[gk] ? '' : ' open'} data-gk="${esc(gk)}"><summary><span class="grow"><b>${esc(mode === "unit" ? shortUnit(g.name) : g.name)}</b> <span class="small muted">${g.packs.length}개${qn ? ` · 문제 ${tried}/${qn}` : ''}</span></span>${qn ? `<span class="mini-bar"><i style="width:${pct(tried, qn)}%"></i></span>` : ''}</summary>
         <div class="pgrid">${g.packs.map(p => card(p)).join('') || '<p class="small muted">비어 있다. 자료 화면의 "분류" 나 "분류 관리" 에서 넣는다.</p>'}</div></details>`;
     }).join('');
   }
@@ -725,7 +729,7 @@ function viewPack() {
     <div class="row between"><b>본문</b><span class="row">${cur ? `<label class="small"><input type="checkbox" id="lnOn"${lnOn ? ' checked' : ''}> 행 번호</label>` : ''}<details class="menu"><summary class="btn sm ghost">편집</summary><div class="menu-pop">${cur ? '<button type="button" class="mi" id="srcEdit">이 원문 고치기</button>' : ''}<button type="button" class="mi" id="srcAdd">원문 붙여넣기</button><button type="button" class="mi" data-file="srcImg">교과서 사진 넣기</button></div></details><input type="file" id="srcImg" accept="image/*" multiple hidden></span></div>
     ${texts.length > 1 ? `<div class="chips" style="margin:8px 0" role="group" aria-label="볼 원문">${texts.map(t => `<button type="button" class="chip${t.tid === curTid ? ' on' : ''}" aria-pressed="${t.tid === curTid}" data-tid="${esc(t.tid)}">${esc(t.title)}</button>`).join('')}</div>` : ''}
     ${cur ? `<p class="small muted" style="margin:6px 0">${esc(cur.title)}${cur.mine ? ' · 내가 넣거나 고친 본문' : ''}</p>
-      <div class="src-text${lnOn ? ' ln' : ''}" id="srcText">${cur.body.split('\n').map(line => line.trim() ? `<div class="l">${esc(line)}</div>` : '<div class="l e"></div>').join('')}</div>`
+      <div class="src-text${lnOn ? ' ln' : ''}" id="srcText">${cur.body.split('\n').map(line => line.trim() ? `<div class="l">${srcLine(line)}</div>` : '<div class="l e"></div>').join('')}</div>`
       : `<p class="small muted">아직 본문이 없다. "편집 → 원문 붙여넣기" 로 원문을 넣거나 "교과서 사진 넣기" 로 사진을 올린다. 공부 Claude 프롬프트로 받은 자료에는 본문이 같이 들어 있다.</p>`}
     <div id="srcImgs" class="src-imgs"></div>
   </section>`;
@@ -1450,7 +1454,7 @@ function drawQuestion0() {
   <section class="card qcard${q.context || citeSrc ? ' has-ctx' : ''}">
     <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag" title="난이도">난이도 ${q.difficulty}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
     <div class="q-split">
-    ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : citeSrc ? `<details class="q-ctx q-src"${S.load('qSrcOpen', true) ? ' open' : ''}><summary>원문 보기 · ${esc(citeSrc.map(t => t.title).join(', '))}</summary>${citeSrc.map(t => `<div class="src-text">${t.body.split('\n').map(l => l.trim() ? `<div class="l">${esc(l)}</div>` : '<div class="l e"></div>').join('')}</div>`).join('<hr>')}</details>` : ''}
+    ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : citeSrc ? `<details class="q-ctx q-src"${S.load('qSrcOpen', true) ? ' open' : ''}><summary>원문 보기 · ${esc(citeSrc.map(t => t.title).join(', '))}</summary>${citeSrc.map(t => `<div class="src-text">${t.body.split('\n').map(l => l.trim() ? `<div class="l">${srcLine(l)}</div>` : '<div class="l e"></div>').join('')}</div>`).join('<hr>')}</details>` : ''}
     <div class="q-main">
     ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}&srcedit=1">원문 넣으러 가기</a> 또는 <button type="button" class="btn sm" id="noSrcSkip">건너뛰기 <kbd>S</kbd></button> <span class="muted">(오답에 안 넣는다)</span></p>` : ''}
     <div class="q-text">${qHtml(q.question)}</div>
