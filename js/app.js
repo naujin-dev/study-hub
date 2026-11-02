@@ -212,7 +212,14 @@ function render() {
   main.innerHTML = '';
   fn();
   updateTop();
-  if (!render.keepScroll) window.scrollTo(0, 0);
+  // 화면 제목을 탭 제목에 쓰고, 다른 화면으로 옮겨 왔으면 키보드 초점을 그 화면 제목으로
+  const h1 = main.querySelector('h1');
+  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · 2회고사 공부방` : '2회고사 공부방';
+  if (!render.keepScroll) {
+    window.scrollTo(0, 0);
+    const a = document.activeElement;
+    if (h1 && (!a || a === document.body || a.closest('nav.bottom'))) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
+  }
   render.keepScroll = false;
 }
 window.addEventListener('hashchange', render);
@@ -837,7 +844,7 @@ function viewPack() {
   }));
 
   // 본문 같이 보기
-  $('#srcBtn').addEventListener('click', () => { S.save('srcOn', !srcOn); render.keepScroll = true; render(); });
+  $('#srcBtn').addEventListener('click', () => { S.save('srcOn', !srcOn); render.keepScroll = true; render(); $('#srcBtn')?.focus({ preventScroll: true }); });
   if (srcOn) bindSrcPane(p, texts, cur);
   $('#resumeBtn')?.addEventListener('click', () => scrollToRatio(notes, pos.r));
 
@@ -1412,6 +1419,7 @@ function drawQuestion() {
   const fsel = focusKey(document.activeElement);
   drawQuestion0();
   restoreFocus(fsel);
+  render.keepScroll = false; // render() 를 거치지 않았으므로 다음 화면 이동에 남지 않게
 }
 function drawQuestion0() {
   tickSpent();
@@ -1464,7 +1472,7 @@ function drawQuestion0() {
     ${q.type === 'mcq' && !res ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 보기 · Q/W/E 확신도 · Enter 채점 · ? 단축키 전체</p>` : ''}
     </div></div>
   </section>
-  <div class="row"><label class="chip${pr?.star ? ' on' : ''}" id="starBtn">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</label>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
+  <div class="row"><button type="button" class="chip${pr?.star ? ' on' : ''}" id="starBtn" aria-pressed="${!!pr?.star}">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</button>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
   `;
 
   $('.q-src')?.addEventListener('toggle', e => S.save('qSrcOpen', e.target.open));
@@ -1538,6 +1546,7 @@ function drawQuestion0() {
     session.results[session.i] = r;
     S.recordAnswer(key, 'wrong', '', null, session.spent[session.i], { skip: true, sess: session.id });
     render.keepScroll = true; drawQuestion();
+    announce('모르는 문제로 넘김');
   });
   bindResult(session.i);
   if (exam && !session.submitted) tickTimer();
@@ -1566,7 +1575,8 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   const d = document.createElement('dialog');
   d.className = 'dlg';
-  d.innerHTML = `<form method="dialog"><h2 style="margin-top:0">키보드 단축키</h2>
+  d.setAttribute('aria-labelledby', 'kbdTitle');
+  d.innerHTML = `<form method="dialog"><h2 id="kbdTitle" style="margin-top:0">키보드 단축키</h2>
     <table class="crit"><tr><td>문제 풀이</td><td>1~6 보기 고르기 · Q/W/E 확실·애매·찍음 · Enter 채점·다음 · D 모르겠다 · S 원문 없는 문제 건너뛰기</td></tr>
     <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
     <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다</td></tr>
@@ -1830,7 +1840,7 @@ function bindResult(i) {
         session.results[i] = { ...r, result: j.verdict === 'correct' ? 'ok' : r.result, ai: j.reason + (j.verdict === 'partial' ? ' (부분 정답)' : ''), chatDone: true, overridden: j.verdict === 'correct' };
       }
       toast('채점 결과를 넣었다.');
-      render.keepScroll = true; drawQuestion();
+      render.keepScroll = true; drawQuestion(); focusResult();
     } catch (err) { toast(err.message, 5000); }
   });
   $('#retryAi')?.addEventListener('click', async e => {
@@ -1911,9 +1921,11 @@ function viewSummary() {
   <section class="card flat"><ul class="list">${items.map((it, i) => {
     const r = res[i];
     const tag = r?.result === 'ok' ? '<span class="tag ok">맞음</span>' : r?.result === 'part' ? '<span class="tag warn">부분</span>' : r?.result === 'wrong' ? '<span class="tag bad">틀림</span>' : r?.selfGrade ? '<span class="tag vio">채점 필요</span>' : skipped[i] ? '<span class="tag">건너뜀</span>' : '<span class="tag">안 풂</span>';
-    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${subjName(it.pack.subject)} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeSelect(it.key) : ''}</li>`;
+    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${subjName(it.pack.subject)} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeSelect(it.key, i + 1) : ''}</li>`;
   }).join('')}</ul></section>`;
   scrollTo(0, 0);
+  const h = $('h1'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  announce($('.result-line')?.textContent || '');
   $$('[data-open]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     session.i = Number(a.dataset.open);
@@ -1984,7 +1996,7 @@ document.addEventListener('click', e => {
   b.closest('.chips').querySelectorAll('[data-cause]').forEach(x => { const on = x === b && causeOf(k) === b.dataset.cause; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); });
 });
 // 결과 화면은 칩 다섯 개 대신 고르기 하나로 (줄마다 버튼이 늘어서지 않게)
-const causeSelect = key => `<label class="cause-row small"><span class="muted">왜 틀렸나</span><select data-cause-sel="${esc(key)}"><option value="">고르기</option>${CAUSES.map(([v, l]) => `<option value="${v}"${causeOf(key) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+const causeSelect = (key, n) => `<label class="cause-row small"><span class="muted">왜 틀렸나</span><select data-cause-sel="${esc(key)}"${n ? ` aria-label="${n}번 왜 틀렸나"` : ''}><option value="">고르기</option>${CAUSES.map(([v, l]) => `<option value="${v}"${causeOf(key) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
 document.addEventListener('change', e => {
   const sel = e.target.closest?.('[data-cause-sel]');
   if (!sel) return;
