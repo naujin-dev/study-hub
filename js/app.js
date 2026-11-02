@@ -209,9 +209,10 @@ const routes = {
   '/help': viewHelp,
   '/math': viewMath,
   '/pdf': viewPdf,
+  '/speed': viewSpeed,
 };
 // 아래 메뉴에서 켜질 칸. 암기카드·계획·시간 재기는 더보기에 들어 있으므로 더보기가 켜진다.
-const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/speed': 'quiz', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
@@ -400,6 +401,7 @@ function viewHome() {
         ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
         <details class="menu"><summary class="btn">더 풀기</summary><div class="menu-pop" style="left:0;right:auto;transform-origin:top left">
           <a class="mi" href="#/quiz">문제 골라서 풀기</a>
+          <a class="mi" href="#/speed">스피드 퀴즈 <span class="muted">직접 쳐서 답하기</span></a>
           ${D.allQuestions().length ? '<button type="button" class="mi" id="mixBtn">섞어 풀기 <span class="muted">과목 번갈아 20문제</span></button>' : ''}
           <a class="mi" href="#/cards">암기카드${(() => { const t = S.today(); const n = D.allCards().filter(x => { const r = S.cp(x.key); return r && r.due && r.due <= t; }).length; return n ? ` <span class="muted">외울 때 된 ${n}장</span>` : ''; })()}</a>
         </div></details>
@@ -2083,6 +2085,129 @@ document.addEventListener('change', e => {
   announce(sel.value ? `${sel.selectedOptions[0].textContent} 으로 저장했다` : '원인을 지웠다');
 });
 
+// ================= 스피드 퀴즈 =================
+// 정말 아는지 확인하려고 짧은 시간 안에 답을 바로 쳐서 낸다. 단답형 문제와 답이 짧은 암기카드에서 뽑는다.
+let speed = null;
+const speedAnswers = back => {
+  const b = String(back || '').trim();
+  const out = new Set([b]);
+  const noParen = b.replace(/\s*\([^)]*\)/g, '').trim();
+  if (noParen) out.add(noParen);
+  for (const part of b.split(/\s*[\/]\s*|\s+또는\s+/)) if (part.trim()) out.add(part.trim());
+  return [...out];
+};
+function speedPool(c) {
+  const out = [];
+  if (c.src !== 'card') {
+    for (const x of D.allQuestions({ subject: c.subject, types: ['short'] })) {
+      // 긴 지문이 있어야 풀 수 있는 문제는 뺀다 (빨리 답하는 퀴즈라서)
+      if (x.q.context && x.q.context.length > 120) continue;
+      if (CITE_RE.test(x.q.question) || !(x.q.answers || []).length) continue;
+      out.push({ kind: 'q', key: x.key, pack: x.pack, prompt: x.q.question, answers: x.q.answers, show: x.q.answers[0] });
+    }
+  }
+  if (c.src !== 'q') {
+    for (const x of D.allCards({ subject: c.subject })) {
+      const back = String(x.c.back || '').trim();
+      if (!back || back.length > 16 || /\n/.test(back)) continue; // 문장으로 된 뒷면은 빨리 칠 수 없다
+      out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back), show: back });
+    }
+  }
+  return out;
+}
+function viewSpeedSetup() {
+  const last = { subject: [], src: 'both', n: '20', per: '12', ...S.load('speedPrefs', {}) };
+  const subs = SUBJECTS.filter(s => D.db().packs.some(p => p.subject === s.id));
+  main.innerHTML = `<div class="narrow"><h1>스피드 퀴즈</h1>
+  <p class="small muted">답을 보고 고르는 대신 직접 친다. 정말 아는지 확인하는 용도. 문제마다 정해진 시간 안에 쓰고 Enter. 모르면 빈칸으로 Enter.</p>
+  <form id="spf" class="card">
+    <h2 class="h3">과목</h2>${chipGroup('subject', subs.map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
+    <p class="small muted" style="margin:8px 0 0">안 고르면 모든 과목에서 낸다.</p>
+    <h2 class="h3" style="margin-top:14px">어디서</h2>${chipGroup('src', [{ value: 'both', label: '단답형 + 카드' }, { value: 'q', label: '단답형 문제만' }, { value: 'card', label: '암기카드만' }], [last.src], false)}
+    <h2 class="h3" style="margin-top:14px">문제 수</h2>${chipGroup('n', ['10', '20', '30'].map(v => ({ value: v, label: v + '문제' })), [String(last.n)], false)}
+    <h2 class="h3" style="margin-top:14px">한 문제에</h2>${chipGroup('per', ['8', '12', '20'].map(v => ({ value: v, label: v + '초' })), [String(last.per)], false)}
+    <p class="small muted" id="spCount"></p>
+    <button class="btn pri block">시작</button>
+  </form></div>`;
+  const collect = () => ({ subject: picked('subject'), src: picked('src')[0] || 'both', n: picked('n')[0] || '20', per: picked('per')[0] || '12' });
+  const cnt = () => { $('#spCount').textContent = `낼 수 있는 문제 ${speedPool(collect()).length}개`; };
+  $$('#spf input').forEach(i => i.addEventListener('change', cnt)); cnt();
+  $('#spf').addEventListener('submit', e => {
+    e.preventDefault();
+    const c = collect(); S.save('speedPrefs', c);
+    const pool = shuffle(speedPool(c)).slice(0, Number(c.n));
+    if (!pool.length) return toast('낼 문제가 없다. 과목이나 "어디서" 를 바꿔 본다.');
+    startSpeed(pool, Number(c.per));
+  });
+}
+function startSpeed(items, per) {
+  speed = { items, per, i: 0, res: [], t0: 0, timer: 0, lock: false };
+  if (location.hash === '#/speed?go=1') { render(); } else location.hash = '#/speed?go=1';
+}
+function viewSpeed() {
+  if (!params().q.get('go') || !speed) return viewSpeedSetup();
+  if (speed.i >= speed.items.length) return viewSpeedResult();
+  const it = speed.items[speed.i];
+  const ok = speed.res.filter(r => r.ok).length;
+  main.innerHTML = `<div class="narrow speed">
+    <h1 class="vh">스피드 퀴즈 ${speed.i + 1}번</h1>
+    <div class="row between small muted"><span>${speed.i + 1} / ${speed.items.length} · 맞음 ${ok}</span><button type="button" class="btn sm ghost" id="spQuit">그만 (Esc)</button></div>
+    <div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>
+    <section class="card sp-card">
+      <p class="small muted" style="margin:0 0 6px">${subjDot(it.pack.subject)} ${esc(it.pack.title)} · ${it.kind === 'c' ? '카드' : '단답형'}</p>
+      <p class="sp-q" id="spQ">${esc(it.prompt)}</p>
+      <form id="spForm" autocomplete="off"><input id="spIn" type="text" aria-labelledby="spQ" placeholder="답을 쓰고 Enter (모르면 빈칸으로 Enter)" enterkeyhint="done"></form>
+      <p class="sp-fb" id="spFb" aria-live="polite"></p>
+    </section></div>`;
+  const inp = $('#spIn');
+  inp.focus();
+  speed.lock = false;
+  speed.t0 = Date.now();
+  // 시간 막대: 다음 그림에서 0 으로 줄인다 (transform 만 움직인다)
+  requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
+  clearTimeout(speed.timer);
+  speed.timer = setTimeout(() => answerSpeed(inp.value, true), speed.per * 1000);
+  $('#spForm').addEventListener('submit', e => { e.preventDefault(); answerSpeed(inp.value, false); });
+  $('#spQuit').addEventListener('click', () => { clearTimeout(speed.timer); speed.items = speed.items.slice(0, speed.i); render(); });
+}
+function answerSpeed(val, timeout) {
+  if (!speed || speed.lock) return;
+  speed.lock = true;
+  clearTimeout(speed.timer);
+  const it = speed.items[speed.i];
+  const ms = Date.now() - speed.t0;
+  const a = String(val || '').trim();
+  const ok = !!a && shortOk(it.answers, a);
+  speed.res.push({ ok, a, ms, timeout });
+  if (it.kind === 'q') S.recordAnswer(it.key, ok ? 'ok' : 'wrong', a, null, ms, { speed: true });
+  else S.recordCard(it.key, ok, ms);
+  const fb = $('#spFb'), bar = document.getElementById('spBar');
+  if (bar) { bar.style.transitionDuration = '0s'; bar.style.transform = getComputedStyle(bar).transform; }
+  $('#spIn').disabled = true;
+  fb.className = 'sp-fb ' + (ok ? 'ok' : 'bad');
+  fb.textContent = ok ? '맞음' : `${timeout ? '시간 끝' : a ? '틀림' : '모름'} · 정답: ${it.show}`;
+  setTimeout(() => { if (!speed) return; speed.i++; render.keepScroll = true; render(); }, ok ? 700 : 1800);
+}
+function viewSpeedResult() {
+  const n = speed.res.length, ok = speed.res.filter(r => r.ok).length;
+  const avg = n ? speed.res.reduce((s, r) => s + r.ms, 0) / n / 1000 : 0;
+  const wrong = speed.items.map((it, i) => ({ it, r: speed.res[i] })).filter(x => x.r && !x.r.ok);
+  main.innerHTML = `<div class="narrow"><h1>스피드 퀴즈 결과</h1>
+    <p class="result-line"><b>${n}문제 중 ${ok}개</b> 바로 떠올렸다${n ? ` · 한 문제 평균 ${avg.toFixed(1)}초` : ''}</p>
+    <p class="small muted" style="margin-top:-4px">${wrong.length ? `못 떠올린 ${wrong.length}개는 오답노트와 카드 복습에 들어갔다.` : n ? '다 떠올렸다.' : ''}</p>
+    <div class="row" style="margin:12px 0 16px">${wrong.length ? '<button class="btn pri" id="spRetry">못 떠올린 것만 다시</button>' : ''}<a class="btn${wrong.length ? '' : ' pri'}" href="#/speed">다시 고르기</a><a class="btn ghost" href="#/">홈</a></div>
+    ${wrong.length ? `<section class="card flat"><h2 class="h3" style="margin-top:0">못 떠올린 것</h2><ul class="list">${wrong.map(({ it, r }) => `<li class="item" style="display:block"><b>${esc(it.prompt)}</b><br><span class="small">정답 <b>${esc(it.show)}</b> · 내 답 ${r.a ? esc(r.a) : '<span class="muted">안 씀</span>'}${r.timeout ? ' <span class="tag">시간 끝</span>' : ''}</span><br><span class="small muted">${esc(it.pack.title)}</span></li>`).join('')}</ul></section>` : ''}
+  </div>`;
+  const h = $('h1'); h.tabIndex = -1; h.focus({ preventScroll: true });
+  announce($('.result-line').textContent);
+  $('#spRetry')?.addEventListener('click', () => startSpeed(shuffle(wrong.map(x => x.it)), speed.per));
+}
+// 스피드 퀴즈 중 Esc 는 그만
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || params().path !== '/speed' || !speed || speed.i >= speed.items.length || !$('#spQuit')) return;
+  e.preventDefault(); $('#spQuit').click();
+});
+
 // ================= 암기카드 =================
 let flash = null;
 function viewCardsSetup() {
@@ -3564,6 +3689,7 @@ function viewMore() {
     ['#/check', '자료 점검', '공부자료에 표시 오류나 형식 문제가 있는지 찾기'],
     ['#/marks', '형광펜·메모 모아보기', '자료에 칠한 곳과 메모만 훑어보기'],
     ['#/cards', '암기카드', '용어, 단어, 연도를 카드로 외운다'],
+    ['#/speed', '스피드 퀴즈', '보기 없이 정해진 시간 안에 답을 직접 쳐서 정말 아는지 확인'],
     ['#/gen', 'AI 문제 만들기', '자료를 보고 새 문제를 만든다'],
     ['#/plan', '시험 일정과 계획', '과목별 날짜·범위, 할 일 목록'],
     ['#/stats', '공부 기록과 그래프', '잔디 달력, 누적 그래프, 정답률 변화, 쌓은 기록'],
@@ -3573,7 +3699,7 @@ function viewMore() {
   ];
   // 쓰임새대로 묶는다: 공부할 때 / 기록 보기 / 자료 관리
   const groups = [
-    ['공부할 때', ['#/cards', '#/blank', '#/final', '#/math', '#/gen']],
+    ['공부할 때', ['#/speed', '#/cards', '#/blank', '#/final', '#/math', '#/gen']],
     ['기록과 계획', ['#/plan', '#/journal', '#/stats', '#/marks']],
     ['자료와 설정', ['#/pdf', '#/check', '#/prompts', '#/settings', '#/help']],
   ];
@@ -3600,6 +3726,7 @@ function viewHelp() {
 - **백지 복습** (서울대생 백지 공부법, 파인만 기법): 자료 화면의 "백지 복습" 또는 더보기 → 백지 복습. 자료를 덮고 기억나는 것을 다 쓴 뒤 "자료와 비교" 를 누르면 핵심어(굵은 글씨, 형광 강조, 소제목, 카드)를 몇 % 떠올렸는지, 빠진 핵심어가 무엇인지 보여 준다. Claude 에게 잘못 쓴 설명까지 확인받을 수 있다.
 - **확신도 체크** (메타인지): 객관식·단답형에서 채점 전에 "확실 / 애매 / 찍음" 을 고른다. 찍어서 맞힌 문제는 아는 것으로 치지 않고 오답노트와 복습에 다시 나온다. 애매하게 맞힌 문제는 헷갈림 표시가 붙는다. 확실하다고 했는데 틀리면 따로 알려 준다.
 - **오답 원인**: 오답노트에서 개념 부족 / 암기 부족 / 실수 / 문제 잘못 읽음 / 시간 부족을 고른다. 원인별로 모아 보고, 기록 화면에서 비율을 본다.
+- **스피드 퀴즈**: 홈의 "더 풀기 → 스피드 퀴즈" 나 더보기. 단답형 문제와 답이 짧은 카드에서 뽑아, 문제마다 8·12·20초 안에 답을 직접 쳐서 Enter. 바로 정답이 뜨고, 못 떠올린 것은 오답노트와 카드 복습에 들어간다. Esc 로 그만.
 - **섞어 풀기** (인터리빙): 홈의 "더 풀기 → 섞어 풀기" 는 복습할 문제·오답·안 푼 문제 20개를 과목을 번갈아 섞어 낸다. 한 과목만 몰아 풀 때보다 시험에서 더 잘 떠오른다.
 - **시험 전 정리**: 더보기 → 시험 전 정리. 과목마다 내 단원 메모, 형광펜·메모, 오답, 헷갈린 문제, 찍어서 맞힌 문제, 모르는 카드를 한 장에 모은다. 시험 3일 전부터는 홈에 바로가기가 뜬다.
 - **자료 점검**: 더보기 → 자료 점검. 수식(LaTeX), 짝 안 맞는 굵게, 줄바꿈 기호가 글자로 남은 곳, 표 칸 수, 지문 없는 문제, 보기 번호 중복, 정답 표기 문제를 찾고 고칠 프롬프트를 복사해 준다.

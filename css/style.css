@@ -689,3 +689,14 @@ details.week>summary,.week summary{flex-wrap:wrap}
 .top-in{flex-wrap:wrap;row-gap:4px}
 .subj-table .nums{flex-wrap:wrap}
 .tbl-wrap{overflow-x:auto}
+
+/* 스피드 퀴즈 */
+.sp-bar{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;margin:10px 0 14px}
+.sp-bar i{display:block;height:100%;background:var(--acc);transform-origin:left;transform:scaleX(1);transition:transform linear}
+.sp-card{padding:22px}
+.sp-q{font-size:1.35rem;font-weight:600;line-height:1.5;margin:4px 0 16px;word-break:keep-all}
+#spIn{font-size:1.15rem;padding:12px 14px}
+.sp-fb{min-height:1.6em;margin:12px 0 0;font-weight:600}
+.sp-fb.ok{color:var(--ok)}
+.sp-fb.bad{color:var(--bad)}
+@media (prefers-reduced-motion:reduce){.sp-bar i{transition:none}}
