@@ -361,7 +361,8 @@ details.week.cur{border-color:color-mix(in srgb,var(--ok) 50%,var(--rule))}
 
 /* ---------- 확신도, 백지 복습 ---------- */
 .conf{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-bottom:4px}
-.conf .chip{padding:4px 11px}
+.conf .chip{padding:6px 14px;min-height:40px}
+@media (pointer:coarse){.conf .chip{min-height:44px}}
 mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var(--bad);text-underline-offset:3px}
 
 /* 영어: 책 문제 먼저 */
@@ -409,7 +410,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .pgroup[open]>summary::before{transform:rotate(90deg)}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:10px}
 .pcard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r);color:var(--ink);text-decoration:none;min-height:78px}
-.pcard:hover{border-color:var(--acc)}
+@media (hover:hover) and (pointer:fine){.pcard:hover{border-color:var(--acc)}}
 .pc-t{line-height:1.35}
 .pc-p{display:flex;align-items:center;gap:8px;margin-top:auto}
 @media (min-width:900px){
@@ -426,7 +427,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 .catrows input.grow{width:auto}
 
 /* 자료 카드: 과목은 왼쪽 목록이 이미 말해 주므로 카드는 무채색, 상태만 색으로 */
-.pcard:hover{border-color:var(--acc);box-shadow:var(--shadow)}
+@media (hover:hover) and (pointer:fine){.pcard:hover{border-color:var(--acc);box-shadow:var(--shadow)}}
 .pcard .mini-bar{background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .pcard.is-doing{border-color:color-mix(in srgb,var(--acc) 45%,var(--rule));background:color-mix(in srgb,var(--viow) 55%,var(--card))}
 .pcard.is-done{background:var(--paper)}
@@ -662,7 +663,7 @@ main h1:focus,main h1:focus-visible{outline:none}
 .q-ctxcol{white-space:normal}
 .q-ctxcol .q-box{white-space:pre-wrap;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
 .brand{gap:.28em}
-.toast.toast-top{bottom:auto;top:calc(72px + env(safe-area-inset-top))}
+@media (min-width:900px){.toast.toast-top{bottom:auto;top:calc(72px + env(safe-area-inset-top))}}
 button.chip.miss{font:inherit;font-size:.86rem;cursor:pointer}
 button.chip.miss:hover{background:var(--badw)}
 .menu-pop{max-width:calc(100vw - 32px)}
@@ -675,3 +676,8 @@ details.week>summary,.week summary{flex-wrap:wrap}
 :root{--backdrop:rgba(15,15,15,.35);--shadow-sm:0 1px 2px rgba(15,15,15,.08);--shadow-page:0 2px 10px -4px rgba(0,0,0,.35)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--backdrop:rgba(0,0,0,.6);--shadow-sm:0 1px 2px rgba(0,0,0,.5)}}
 :root[data-theme="dark"]{--backdrop:rgba(0,0,0,.6);--shadow-sm:0 1px 2px rgba(0,0,0,.5)}
+
+/* 휴대폰: 자료 화면 '관리' 는 점 세 개만 (이름은 aria-label 에 있다) */
+@media (max-width:600px){.menu>summary .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
+.blank-hit{background:color-mix(in srgb,var(--ok) 22%,transparent);border-radius:3px;padding:0 2px}
+.saved{margin-left:4px}

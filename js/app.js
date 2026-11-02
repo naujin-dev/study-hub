@@ -236,8 +236,9 @@ function render() {
   const fsel = render.keepScroll ? focusKey(document.activeElement) : null;
   const { path } = params();
   const fn = routes[path] || viewHome;
+  if (!routes[path] && path !== '/' && path) setTimeout(() => toast('없는 화면이라 홈을 보여 준다.'), 50);
   if (READ_ROUTES.has(path)) ensureReadFonts();
-  $$('.bottom a', document).forEach(a => a.classList.toggle('on', a.dataset.nav === (navOf[path] || 'more')));
+  $$('.bottom a', document).forEach(a => { const on = a.dataset.nav === (navOf[path] || 'more'); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   main.innerHTML = '';
   fn();
   updateTop();
@@ -393,7 +394,7 @@ function viewHome() {
     ${lastRead ? `<a class="resume" href="#/pack?id=${encodeURIComponent(lastRead.pack)}&resume=1" style="--tint:var(--t-${D.db().byId[lastRead.pack].subject})">${subjDot(D.db().byId[lastRead.pack].subject)}<span class="grow"><span class="small muted">이어 읽기 · ${S.fmtDate(S.dayOf(lastRead.t))}${pos && pos.r >= 0.05 ? ` · ${Math.round(pos.r * 100)}%까지 읽음` : ''}</span><br><b>${esc(D.db().byId[lastRead.pack].title)}</b></span><span class="go" aria-hidden="true">→</span></a>` : ''}
     <section class="card today">
       <div class="row between" style="align-items:baseline"><h2 style="margin:0">${plan.length ? '오늘 할 일' : upcoming ? `다음 할 일 · ${S.fmtDate(upcoming.d)}` : '오늘 할 일'}</h2>
-        <span class="small muted">${plan.length ? `${plan.filter(p => p.done).length}/${plan.length} 끝냄` : ''}${weekLeft ? `${plan.length ? ' · ' : ''}이번 주 날짜 없는 일 ${weekLeft}개` : ''}</span></div>
+        <span class="small muted">${plan.length ? `${plan.filter(p => p.done).length}/${plan.length} 끝냄` : ''}${weekLeft ? `${plan.length ? ' · ' : ''}<a href="#/plan">이번 주 아무 날에 할 일 ${weekLeft}개</a>` : ''}</span></div>
       <div class="row today-actions">
         ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제</a>` : ''}
         ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
@@ -437,7 +438,7 @@ function viewHome() {
   </div>
 
   <aside class="home-side">
-    ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}칸</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">범위 ${sm.rows}줄 × 회독 ${Math.round(sm.cells / Math.max(1, sm.rows))}번 · Notion 체크 기준 (${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))})</span></a>` : ''}
+    ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">범위 ${sm.rows}줄 × 회독 ${Math.round(sm.cells / Math.max(1, sm.rows))}번 · Notion 체크 기준 (${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))})</span></a>` : ''}
 
     <section class="card flat subj-table">
       <div class="row between"><h2 style="margin:0">과목</h2><span class="small muted">푼 문제 · 정답률 · 하루 목표</span></div>
@@ -568,15 +569,17 @@ function viewStudy() {
     for (const p of all) {
       const where = [];
       if ((p.title + ' ' + (p.unit || '')).toLowerCase().includes(low)) where.push('제목');
-      const ni = (p.notes || '').toLowerCase().indexOf(low);
-      if (ni >= 0) where.push('…' + p.notes.slice(Math.max(0, ni - 30), ni + 50).replace(/\s+/g, ' ') + '…');
+      // 찾은 곳 앞뒤 글: 굵게(**), <mark> 같은 표시는 빼고 글자만
+      const plain = String(p.notes || '').replace(/<[^>]+>/g, '').replace(/[*_`#>|]+/g, ' ').replace(/\s+/g, ' ');
+      const ni = plain.toLowerCase().indexOf(low);
+      if (ni >= 0) where.push({ snip: plain.slice(Math.max(0, ni - 30), ni + 50), at: Math.min(ni, 30) });
       const qc = [...(p.questions || []), ...(p.book || [])].filter(x => (x.question + ' ' + (x.context || '')).toLowerCase().includes(low)).length;
       if (qc) where.push(`문제 ${qc}개`);
       const cc = (p.cards || []).filter(c => (c.front + ' ' + c.back).toLowerCase().includes(low)).length;
       if (cc) where.push(`카드 ${cc}개`);
       if (where.length) hits.push({ p, where });
     }
-    results = `<section class="card flat"><div class="row between"><h2 style="margin:0">"${esc(term)}" 찾은 결과 ${hits.length}개</h2><a class="small" href="${link({})}">닫기</a></div><ul class="list">${hits.map(h => `<li><a class="item" href="#/pack?id=${encodeURIComponent(h.p.id)}&hl=${encodeURIComponent(term)}">${subjDot(h.p.subject)}<span class="grow"><b>${esc(h.p.title)}</b><br><span class="small muted">${h.where.map(esc).join(' · ')}</span></span></a></li>`).join('') || '<li class="item muted">없다.</li>'}</ul></section>`;
+    results = `<section class="card flat"><div class="row between"><h2 style="margin:0">"${esc(term)}" 찾은 결과 ${hits.length}개</h2><a class="small" href="${link({})}">닫기</a></div><ul class="list">${hits.map(h => `<li><a class="item" href="#/pack?id=${encodeURIComponent(h.p.id)}&hl=${encodeURIComponent(term)}">${subjDot(h.p.subject)}<span class="grow"><b>${esc(h.p.title)}</b><br><span class="small muted">${h.where.map(w => typeof w === 'string' ? esc(w) : `…${esc(w.snip.slice(0, w.at))}<mark>${esc(w.snip.slice(w.at, w.at + term.length))}</mark>${esc(w.snip.slice(w.at + term.length))}…`).join(' · ')}</span></span></a></li>`).join('') || '<li class="item muted">없다.</li>'}</ul></section>`;
   }
 
   // 왼쪽: 과목 목록
@@ -652,7 +655,7 @@ function viewStudy() {
     <nav class="study-side" aria-label="과목">${side}</nav>
     <section class="study-main">
       <div class="row between study-head"><h2 style="margin:0">${subjDot(sel)} ${SUBJ[sel].name}</h2>
-        ${packs.length && !editing ? `<span class="row"><span class="seg"><a class="${mode === 'mine' ? 'on' : ''}" href="${link({ g: 'mine' })}">내 분류</a><a class="${mode === 'unit' ? 'on' : ''}" href="${link({ g: 'unit' })}">단원별</a><a class="${mode === 'kind' ? 'on' : ''}" href="${link({ g: 'kind' })}">종류별</a></span>${mode === 'mine' ? `<a class="btn sm${catEdit ? ' pri' : ''}" href="${link(catEdit ? { g: 'mine' } : { g: 'mine', edit: '1' })}">${catEdit ? '다 했다' : '분류 관리'}</a>` : ''}${packs.length > 1 ? `<a class="btn sm ghost" href="${link({ order: sel })}">순서</a>` : ''}</span>` : ''}</div>
+        ${packs.length && !editing ? `<span class="row"><span class="seg"><a class="${mode === 'mine' ? 'on' : ''}"${mode === 'mine' ? ' aria-current="true"' : ''} href="${link({ g: 'mine' })}">내 분류</a><a class="${mode === 'unit' ? 'on' : ''}"${mode === 'unit' ? ' aria-current="true"' : ''} href="${link({ g: 'unit' })}">단원별</a><a class="${mode === 'kind' ? 'on' : ''}"${mode === 'kind' ? ' aria-current="true"' : ''} href="${link({ g: 'kind' })}">종류별</a></span>${mode === 'mine' ? `<a class="btn sm${catEdit ? ' pri' : ''}" href="${link(catEdit ? { g: 'mine' } : { g: 'mine', edit: '1' })}">${catEdit ? '다 했다' : '분류 관리'}</a>` : ''}${packs.length > 1 ? `<a class="btn sm ghost" href="${link({ order: sel })}">순서</a>` : ''}</span>` : ''}</div>
       ${!editing && mode === 'unit' && units.size < 2 && packs.length > 3 ? '<p class="small muted" style="margin:6px 0 0">단원이 하나라 다 같이 보인다. 자료 화면 제목 옆 "단원 정하기" 로 단원을 나누거나, "종류별" 로 본다.</p>' : ''}
       ${body}
     </section>
@@ -1084,7 +1087,7 @@ document.addEventListener('keydown', e => {
 // 자료 관리 메뉴: 이름 바꾸기·분류·합치기처럼 가끔 쓰는 일은 공부 버튼 옆에 늘어놓지 않고 여기 모은다
 function packMenu(p, extra = '') {
   const cat = catOf(p) ? myCats(p.subject).find(c => c.id === catOf(p))?.name || '' : '';
-  return `<details class="menu noprint"><summary class="btn ghost" aria-label="자료 관리 메뉴"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>관리</summary>
+  return `<details class="menu noprint"><summary class="btn ghost" aria-label="자료 관리 메뉴"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span class="lbl">관리</span></summary>
     <div class="menu-pop">${extra}
       <button type="button" class="mi" data-rename="${esc(p.id)}">이름 바꾸기</button>
       <button type="button" class="mi" data-catopen="${esc(p.id)}">분류${cat ? `<span class="muted">${esc(cat)}</span>` : ''}</button>
@@ -1554,6 +1557,8 @@ function drawQuestion0() {
   $('#quit').addEventListener('click', () => {
     if (session.viewing) { toSummary(); return; }
     if (exam && !session.submitted) { if (!confirm('실전을 그만두면 쓴 답은 채점하지 않는다. 그만둘까?')) return; session = null; location.hash = '#/quiz'; return; }
+    const left = session.items.length - Object.keys(session.results).length;
+    if (left > 0 && Object.keys(session.results).length && !confirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`)) return;
     if (session.mode !== 'exam' && Object.keys(session.results).length) { session.viewing = false; session.i = session.items.length; render(); return; }
     session = null; location.hash = '#/quiz';
   });
@@ -1635,7 +1640,7 @@ document.addEventListener('keydown', e => {
   d.innerHTML = `<form method="dialog"><h2 id="kbdTitle" style="margin-top:0">키보드 단축키</h2>
     <table class="crit"><tr><td>문제 풀이</td><td>1~6 보기 고르기 · Q/W/E 확실·애매·찍음 · Enter 채점·다음 · D 모르겠다 · S 원문 없는 문제 건너뛰기</td></tr>
     <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
-    <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다</td></tr>
+    <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다 · Esc 그만</td></tr>
     <tr><td>채점 방법 탭</td><td>← → 탭 옮기기</td></tr>
     <tr><td>메뉴·형광펜 띠</td><td>Esc 닫기 (문제 풀이에서는 '그만' 버튼으로)</td></tr></table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn pri">닫기</button></div></form>`;
@@ -1951,6 +1956,9 @@ function viewSummary() {
   const count = k => items.filter((_, i) => res[i]?.result === k).length;
   const skipped = session.skipped || {};
   const nSkip = items.filter((_, i) => skipped[i] && !res[i]).length;
+  // 그만으로 끝냈을 때 안 푼 문제는 틀린 것으로 세지 않는다
+  const firstLeft = items.findIndex((_, i) => !res[i] && !skipped[i]);
+  const nLeft = items.filter((_, i) => !res[i] && !skipped[i]).length;
   const essayIdx = items.map((it, i) => i).filter(i => items[i].q.type === 'essay' && res[i]?.fb);
   const eScore = essayIdx.reduce((s, i) => s + res[i].fb.score, 0);
   const eMax = essayIdx.reduce((s, i) => s + res[i].fb.max, 0);
@@ -1967,10 +1975,11 @@ function viewSummary() {
   main.innerHTML = `
   <h1>결과</h1>
   ${bookMsg}
-  <p class="result-line"><b>${items.length - nSkip}문제 중 ${count('ok')}개 맞음</b>${nSkip ? ` · 원문 없어서 건너뜀 ${nSkip}` : ''}${count('part') ? ` · 부분 점수 ${count('part')}` : ''}${count('wrong') ? ` · 틀림 ${count('wrong')}` : ''}${eMax ? ` · 서술형 ${eScore}/${eMax}점` : ''}${session.usedMs ? ` · ${Math.round(session.usedMs / 60000)}분` : ''}</p>
+  <p class="result-line"><b>${items.length - nSkip - nLeft}문제 풀어서 ${count('ok')}개 맞음</b>${nLeft ? ` · 안 푼 문제 ${nLeft}` : ''}${nSkip ? ` · 원문 없어서 건너뜀 ${nSkip}` : ''}${count('part') ? ` · 부분 점수 ${count('part')}` : ''}${count('wrong') ? ` · 틀림 ${count('wrong')}` : ''}${eMax ? ` · 서술형 ${eScore}/${eMax}점` : ''}${session.usedMs ? ` · ${Math.round(session.usedMs / 60000)}분` : ''}</p>
   <p class="small muted" style="margin-top:-4px">${count('wrong') + count('part') ? `틀리거나 부분 점수인 ${count('wrong') + count('part')}문제는 오답노트에 넣었다. ` : '다 맞혔다. '}오늘 푼 문제는 모두 ${(S.getLog()[S.today()] || {}).q || 0}개다.</p>
   <div class="row" style="margin:12px 0 16px">
-    ${count('wrong') + count('part') ? '<button class="btn pri" id="retryWrong">틀린 것만 다시</button>' : ''}
+    ${nLeft && session.mode !== 'exam' ? '<button class="btn pri" id="resume">이어 풀기</button>' : ''}
+    ${count('wrong') + count('part') ? `<button class="btn${nLeft ? '' : ' pri'}" id="retryWrong">틀린 것만 다시</button>` : ''}
     <a class="btn" href="#/quiz">다른 문제</a>
     <a class="btn ghost" href="#/">홈</a>
   </div>
@@ -1978,7 +1987,7 @@ function viewSummary() {
   <section class="card flat"><ul class="list">${items.map((it, i) => {
     const r = res[i];
     const tag = r?.result === 'ok' ? '<span class="tag ok">맞음</span>' : r?.result === 'part' ? '<span class="tag warn">부분</span>' : r?.result === 'wrong' ? '<span class="tag bad">틀림</span>' : r?.selfGrade ? '<span class="tag vio">채점 필요</span>' : skipped[i] ? '<span class="tag">건너뜀</span>' : '<span class="tag">안 풂</span>';
-    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${subjName(it.pack.subject)} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeSelect(it.key, i + 1) : ''}</li>`;
+    return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${esc(packsOfKey(it.key).map(p => p.title).join(' · ') || subjName(it.pack.subject))} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeSelect(it.key, i + 1) : ''}</li>`;
   }).join('')}</ul></section>`;
   scrollTo(0, 0);
   const h = $('h1'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
@@ -1990,6 +1999,7 @@ function viewSummary() {
     if (session.mode === 'practice') session.mode = 'review';
     drawQuestion();
   }));
+  $('#resume')?.addEventListener('click', () => { session.viewing = false; session.i = firstLeft; render(); focusQuestion(); });
   $('#retryWrong')?.addEventListener('click', () => {
     const again = items.filter((_, i) => res[i]?.result === 'wrong' || res[i]?.result === 'part');
     startSession(again, 'practice');
@@ -2025,7 +2035,7 @@ function viewWrong() {
     if (qq.type === 'essay') right = esc(qq.model_answer);
     let mine = r.ans;
     if (qq.type === 'mcq' && Array.isArray(mine)) mine = mine.map(n => `${'①②③④⑤⑥'[n - 1]} ${qq.choices[n - 1] || ''}`).join('\n');
-    return `<details class="card flat"><summary style="color:var(--ink)"><span class="q-head" style="display:inline-flex;margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n}</span>${r.star ? '<span class="tag warn">헷갈림</span>' : ''}<span class="small muted">${esc(x.pack.title)}</span></span><br>${esc(qq.question)}</summary>
+    return `<details class="card flat"><summary style="color:var(--ink)"><span class="q-head" style="display:inline-flex;margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n}</span>${r.star ? '<span class="tag warn">헷갈림</span>' : ''}<span class="small muted">${esc(packsOfKey(x.key).map(p => p.title).join(' · '))}</span></span><br>${esc(qq.question)}</summary>
       ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
       ${qq.type === 'mcq' ? `<ul class="small plain">${qq.choices.map((c, i) => `<li>${'①②③④⑤⑥'[i] || i + 1} ${esc(c)}</li>`).join('')}</ul>` : ''}
       <p><b>내 답</b> <span style="white-space:pre-wrap">${esc(mine || '(안 씀)')}</span></p>
@@ -2044,6 +2054,11 @@ function viewWrong() {
   $$('[data-done]').forEach(b => b.addEventListener('click', () => { S.setFlag(b.dataset.done, 'wrong', false); toast('오답노트에서 뺐다.'); render.keepScroll = true; render(); }));
 }
 
+// 한 문제가 들어 있는 자료들 (작품을 나눈 자료는 같이 묻는 문제를 둘 다 가진다)
+function packsOfKey(key) {
+  const out = D.db().packs.filter(p => [...(p.questions || []), ...(p.book || [])].some(q => D.qkey(p, q) === key));
+  return out.length ? out : [];
+}
 // 오답 원인 칩 (오답노트, 결과 화면 공통)
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-cause]');
@@ -2058,6 +2073,11 @@ document.addEventListener('change', e => {
   const sel = e.target.closest?.('[data-cause-sel]');
   if (!sel) return;
   if (sel.value) S.kvSet('wcause', sel.dataset.causeSel, { cause: sel.value }); else S.kvDel('wcause', sel.dataset.causeSel);
+  // 저장됐다는 표시
+  let m = sel.parentElement.querySelector('.saved');
+  if (!m) { m = document.createElement('span'); m.className = 'saved small muted'; sel.after(m); }
+  m.textContent = sel.value ? '저장됨' : '';
+  announce(sel.value ? `${sel.selectedOptions[0].textContent} 으로 저장했다` : '원인을 지웠다');
 });
 
 // ================= 암기카드 =================
@@ -2145,7 +2165,9 @@ function viewFlash() {
 }
 // 카드: 1 = 몰랐다, 2 = 알았다 (뒤집은 뒤에만)
 document.addEventListener('keydown', e => {
-  if (params().path !== '/flash' || !flash || !flash.back || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (params().path !== '/flash' || !flash || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Escape') { e.preventDefault(); location.hash = '#/cards'; return; } // Esc: 카드 그만
+  if (!flash.back) return;
   if (['input', 'textarea', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
   if (e.key === '1') { e.preventDefault(); flash.next?.(false); }
   if (e.key === '2') { e.preventDefault(); flash.next?.(true); }
@@ -3101,7 +3123,12 @@ function viewBlank() {
     return `<section class="card flat"><h2>빠진 핵심어 ${blank.miss.length}개</h2>${first.join('')}${rest.length ? `<details class="fold"><summary class="small">나머지 ${blank.miss.length - shown}개 더 보기</summary>${rest.join('')}</details>` : ''}<p class="small muted" style="margin-top:8px">다른 말로 썼는데 빠졌다고 나온 핵심어는 눌러서 맞힌 것으로 바꾼다. 자료에서 빨간 밑줄로 표시했다. 이것만 다시 읽고 내일 한 번 더 백지 복습을 한다.</p></section>`;
   })() : '<p class="note info">핵심어를 다 떠올렸다.</p>'}
   <div class="grid2">
-    <section class="card"><h2>내가 쓴 것</h2><p style="white-space:pre-wrap">${esc(blank.text)}</p></section>
+    <section class="card"><h2>내가 쓴 것</h2><p style="white-space:pre-wrap">${(() => {
+      // 떠올린 핵심어를 초록으로 (그대로 쓴 것만 칠한다)
+      let h = esc(blank.text);
+      for (const k of [...blank.hit].sort((a, b) => b.length - a.length)) { const e = esc(k); if (e.length >= 2 && h.includes(e)) h = h.split(e).join(`<mark class="blank-hit">${e}</mark>`); }
+      return h;
+    })()}</p></section>
     <section class="card notes" id="bNotes">${notesHtml}</section>
   </div>
   <section class="card"><h2>설명이 맞는지 Claude 에게 확인 (파인만 기법)</h2>
