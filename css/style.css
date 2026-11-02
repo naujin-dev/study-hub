@@ -313,7 +313,7 @@ pre.prompt{white-space:pre-wrap;word-break:break-word;font:.84rem/1.6 var(--sans
 .mcal-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px;margin-top:6px}
 .mcal-h{font-weight:600;margin-bottom:6px}
 .mcal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.mcal-g span{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font:500 .78rem var(--sans);color:var(--ink2)}
+.mcal-g span,.mcal-g a{aspect-ratio:1;text-decoration:none;display:flex;align-items:center;justify-content:center;border-radius:6px;font:500 .78rem var(--sans);color:var(--ink2)}
 .mcal-g .wd{aspect-ratio:auto;font:500 .72rem var(--sans);color:var(--ink3);padding-bottom:2px}
 .mcal-g .wd.sun{color:var(--bad)}
 .mcal-g .d{cursor:pointer;background:var(--sunk);border:1px solid var(--rule)}
@@ -681,3 +681,11 @@ details.week>summary,.week summary{flex-wrap:wrap}
 @media (max-width:600px){.menu>summary .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 .blank-hit{background:color-mix(in srgb,var(--ok) 22%,transparent);border-radius:3px;padding:0 2px}
 .saved{margin-left:4px}
+
+/* 달력 옅은 칸(1·2단계) 숫자는 진한 글자로 (대비) */
+.mcal-g .lv1,.mcal-g .lv2{color:var(--ink)}
+.chart .cross,.chart .cross-dot{pointer-events:none}
+/* 글자를 크게 키운 휴대폰에서 머리띠·표가 넘치지 않게 */
+.top-in{flex-wrap:wrap;row-gap:4px}
+.subj-table .nums{flex-wrap:wrap}
+.tbl-wrap{overflow-x:auto}

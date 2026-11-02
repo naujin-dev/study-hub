@@ -64,7 +64,9 @@ export function monthCalendar(days, { marks = [], today = '' } = {}) {
       const d = byDate[date];
       const lv = d ? level(d.value) : 0;
       const cls = ['d', d ? `lv${lv}` : 'out', d && d.future ? 'fut' : '', marks.includes(date) ? 'exam' : '', date === today ? 'today' : ''].filter(Boolean).join(' ');
-      s += `<span class="${cls}"${d ? ` data-tip="${esc(d.label)}" data-date="${date}"` : ''}>${dd}</span>`;
+      // 지난 날과 오늘은 그날 공부 일지로 가는 링크 (키보드·화면 낭독기로도 닿게, 이름에 그날 공부량)
+      if (d && !d.future) s += `<a class="${cls}" href="#/journal?d=${date}" data-tip="${esc(d.label)}" data-date="${date}" aria-label="${esc(d.label.replace(/\n/g, ' '))}">${dd}</a>`;
+      else s += `<span class="${cls}"${d ? ` data-tip="${esc(d.label)}" data-date="${date}"` : ''}>${dd}</span>`;
     }
     s += '</div></div>';
   }
@@ -132,6 +134,7 @@ let tipEl = null, pinned = false;
 export function hideTip() {
   pinned = false;
   if (tipEl) tipEl.style.display = 'none';
+  document.querySelectorAll('.chart .cross,.chart .cross-dot').forEach(e => (e.style.display = 'none'));
 }
 if (typeof document !== 'undefined') document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
 export function bindTips(root) {
@@ -169,8 +172,12 @@ export function bindTips(root) {
     // 손가락으로 누르면 값이 떠 있게 (다른 곳을 누르거나 스크롤하면 닫힘)
     el.addEventListener('pointerdown', e => { pinned = e.pointerType === 'touch'; show(el, e.clientX, e.clientY); e.stopPropagation(); });
   });
-  document.addEventListener('pointerdown', e => { if (pinned && !e.target.closest?.('[data-tip]')) { pinned = false; hide(); } });
-  document.addEventListener('scroll', () => { pinned = false; hide(); }, { passive: true, once: true });
+  if (!bindTips.once) {
+    // 문서 전체 듣기는 한 번만 붙인다
+    bindTips.once = true;
+    document.addEventListener('pointerdown', e => { if (pinned && !e.target.closest?.('[data-tip]')) hideTip(); });
+    document.addEventListener('scroll', () => { if (tipEl && tipEl.style.display !== 'none') hideTip(); }, { passive: true });
+  }
 }
 
 // ---------- 데이터 만들기 ----------

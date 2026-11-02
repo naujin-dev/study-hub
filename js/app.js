@@ -1465,7 +1465,10 @@ function restoreFocus(sel) {
   if (!sel) return;
   // 서술형은 채점 뒤 '채점 안 하고 다음' 대신 채점 칸으로
   const after = $('#selfForm input') || $('#next');
-  const el = $(sel) || ((sel === '#checkBtn' || sel === '#skipBtn') ? after : null);
+  let el = $(sel) || ((sel === '#checkBtn' || sel === '#skipBtn') ? after : null);
+  // 접힌 칸 안으로 옮겨 가 보이지 않으면 그 접힌 칸의 제목으로
+  const closed = el?.closest('details:not([open])');
+  if (closed) el = closed.querySelector('summary');
   el?.focus({ preventScroll: true });
 }
 function drawQuestion() {
@@ -2153,7 +2156,7 @@ function viewFlash() {
   </section>
   ${flash.back ? `<div class="row flash-acts"><button class="btn bad" id="no">몰랐다 <kbd>1</kbd></button><button class="btn ok" id="yes">알았다 <kbd>2</kbd></button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
   if (!flash.shownAt || flash.shownFor !== flash.i) { flash.shownAt = Date.now(); flash.shownFor = flash.i; }
-  const flip = () => { flash.back = !flash.back; viewFlash(); };
+  const flip = () => { flash.back = !flash.back; viewFlash(); announce(`${(flash.flip === 'back' ? !flash.back : flash.back) ? '뒷면' : '앞면'}: ${(flash.flip === 'back' ? !flash.back : flash.back) ? x.c.back : x.c.front}`); };
   $('#fc').addEventListener('click', flip);
   $('#fc').addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
   const next = knew => { S.recordCard(x.key, knew, Date.now() - flash.shownAt); flash.shownAt = 0; if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash(); };
@@ -2455,9 +2458,9 @@ function viewStats() {
 
   <section class="card">
     <h2>과목별</h2>
-    <table class="crit"><tr><td class="small muted">과목</td><td class="pt small muted">공부 시간</td><td class="pt small muted">푼 문제</td><td class="pt small muted">정답률</td></tr>
+    <div class="tbl-wrap"><table class="crit"><tr><td class="small muted">과목</td><td class="pt small muted">공부 시간</td><td class="pt small muted">푼 문제</td><td class="pt small muted">정답률</td></tr>
     ${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}
-    <tr><td>${subjDot('math')} <a href="#/math">수학</a></td><td class="pt">${S.fmtDur(stime.math || 0)}</td><td class="pt">-</td><td class="pt">-</td></tr></table>
+    <tr><td>${subjDot('math')} <a href="#/math">수학</a></td><td class="pt">${S.fmtDur(stime.math || 0)}</td><td class="pt">-</td><td class="pt">-</td></tr></table></div>
   </section>
 
   ${(() => {
@@ -2492,7 +2495,7 @@ function viewStats() {
   };
   $$('[data-chart]').forEach(el => { el.innerHTML = charts[el.dataset.chart](el.clientWidth); });
   CH.bindTips(main);
-  $$('.mcal .d[data-date]').forEach(el => el.addEventListener('click', () => { if (el.dataset.date <= S.today()) location.hash = '#/journal?d=' + el.dataset.date; }));
+
 }
 function startTimerLoop() {
   clearInterval(startTimerLoop._t);
@@ -3493,6 +3496,7 @@ async function viewPdf() {
   ${groups || `<p class="muted" style="margin-top:14px">${all.length ? '이 과목 PDF 가 없다.' : '아직 넣은 PDF 가 없다.'}</p>`}
   <p class="small muted" style="margin-top:14px">PDF 보기는 <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> (Apache 2.0) 를 쓴다.</p>`;
   syncTitle();
+  { const a = document.activeElement, h = $("h1"); if (h && (!a || a === document.body || a.closest("nav.bottom"))) { h.tabIndex = -1; h.focus({ preventScroll: true }); } }
   $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/pdf' + (r.value ? '?s=' + r.value : ''); }));
   $('#pdfIn').addEventListener('change', async e => {
     const files = [...e.target.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
