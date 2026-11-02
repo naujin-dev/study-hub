@@ -271,7 +271,7 @@ mark.flash-hl{outline:2px solid var(--acc);outline-offset:2px}
 .hl-btn{border:1px solid var(--rule);border-radius:8px;min-height:38px;min-width:52px;font:500 .85rem var(--sans);color:var(--ink);cursor:pointer}
 @media (min-width:900px){.selbar{bottom:20px;left:calc(50% + 42px)}}
 dialog.dlg{border:1px solid var(--rule);border-radius:14px;background:var(--card);color:var(--ink);width:min(520px,calc(100% - 32px));padding:18px}
-dialog.dlg::backdrop{background:rgba(0,0,0,.35)}
+dialog.dlg::backdrop{background:var(--backdrop)}
 
 /* ---------- 그래프 ---------- */
 .chart{width:100%;height:auto;display:block;overflow:visible}
@@ -379,7 +379,7 @@ mark.miss{background:transparent;color:inherit;text-decoration:underline 2px var
 @media (max-width:480px){.top-in:has(.clockpill:not([hidden])) .dday{display:none}}
 /* PDF 원본 */
 .pdf-box{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:12px;overflow-x:auto}
-.pdf-page{background:#fff;box-shadow:0 2px 10px -4px rgba(0,0,0,.35);max-width:none;flex:none}
+.pdf-page{background:#fff;box-shadow:var(--shadow-page);max-width:none;flex:none}
 .pdf-page canvas{width:100%;height:auto;display:block}
 .pdf-bar{position:sticky;top:56px;z-index:5;background:var(--paper);padding:6px 0;gap:8px;flex-wrap:wrap}
 .pdf-item{align-items:flex-start;flex-wrap:wrap}
@@ -564,7 +564,7 @@ details>summary{padding-block:5px;cursor:pointer}
 /* 서술형 채점 방법 탭 */
 .gtabs{display:inline-flex;border:1px solid var(--rule2);border-radius:8px;padding:2px;gap:2px;margin:4px 0 10px;background:var(--sunk)}
 .gtab{border:0;background:transparent;color:var(--ink2);font:500 .88rem var(--sans);padding:7px 12px;border-radius:6px;min-height:36px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
-.gtab[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(15,15,15,.08)}
+.gtab[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow-sm)}
 @media (pointer:coarse){.gtab{min-height:44px}}
 
 /* 숫자는 고정폭 글꼴 대신 Pretendard 의 같은 너비 숫자로 (고정폭은 코드에만) */
@@ -662,6 +662,16 @@ main h1:focus,main h1:focus-visible{outline:none}
 .q-ctxcol{white-space:normal}
 .q-ctxcol .q-box{white-space:pre-wrap;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
 .brand{gap:.28em}
-.toast.top{bottom:auto;top:calc(72px + env(safe-area-inset-top))}
+.toast.toast-top{bottom:auto;top:calc(72px + env(safe-area-inset-top))}
 button.chip.miss{font:inherit;font-size:.86rem;cursor:pointer}
 button.chip.miss:hover{background:var(--badw)}
+.menu-pop{max-width:calc(100vw - 32px)}
+/* 좁은 화면에서 계획 머리줄과 범위 표가 넘치지 않게 */
+.scope-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+details.week>summary,.week summary{flex-wrap:wrap}
+@media (pointer:coarse){.cause-row select,.plan-go{min-height:44px}}
+
+/* 그림자·덮개 토큰 */
+:root{--backdrop:rgba(15,15,15,.35);--shadow-sm:0 1px 2px rgba(15,15,15,.08);--shadow-page:0 2px 10px -4px rgba(0,0,0,.35)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--backdrop:rgba(0,0,0,.6);--shadow-sm:0 1px 2px rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--backdrop:rgba(0,0,0,.6);--shadow-sm:0 1px 2px rgba(0,0,0,.5)}

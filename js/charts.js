@@ -82,7 +82,10 @@ export function line(pts, { fmt = v => String(v), area = true, height = 170, yMa
   const top = yMax ?? niceStep(Math.max(...ys, 1) / 4) * 4;
   const X = i => L + (i / (pts.length - 1)) * (W - L - R);
   const Y = v => T + (1 - v / top) * (H - T - B);
-  let s = `<svg class="chart line" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">`;
+  // 화면 낭독기용: 그래프 이름 + 마지막 값 + 가장 높은 값
+  const lastP = [...pts].reverse().find(p => p.y != null), maxP = pts.filter(p => p.y != null).reduce((a, b) => (b.y > a.y ? b : a), lastP);
+  const said = p => (p.tip || '').replace(/\n/g, ' ');
+  let s = `<svg class="chart line" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}. 마지막: ${esc(said(lastP))}. 가장 높은 날: ${esc(said(maxP))}">`;
   // 가로 눈금 4개
   for (let k = 0; k <= 4; k++) {
     const v = (top * k) / 4, y = Y(v);
@@ -124,7 +127,13 @@ function niceStep(v) {
 }
 
 // ---------- 툴팁 (모든 그래프 공통) ----------
-let tipEl = null;
+let tipEl = null, pinned = false;
+// 화면을 옮기거나 Esc 를 누르면 닫는다 (app.js 의 render 가 부른다)
+export function hideTip() {
+  pinned = false;
+  if (tipEl) tipEl.style.display = 'none';
+}
+if (typeof document !== 'undefined') document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
 export function bindTips(root) {
   if (!tipEl) {
     tipEl = document.createElement('div');
@@ -156,10 +165,12 @@ export function bindTips(root) {
   root.querySelectorAll('[data-tip]').forEach(el => {
     el.addEventListener('pointerenter', e => show(el, e.clientX, e.clientY));
     el.addEventListener('pointermove', e => show(el, e.clientX, e.clientY));
-    el.addEventListener('pointerleave', hide);
-    el.addEventListener('pointerdown', e => show(el, e.clientX, e.clientY));
+    el.addEventListener('pointerleave', () => { if (!pinned) hide(); });
+    // 손가락으로 누르면 값이 떠 있게 (다른 곳을 누르거나 스크롤하면 닫힘)
+    el.addEventListener('pointerdown', e => { pinned = e.pointerType === 'touch'; show(el, e.clientX, e.clientY); e.stopPropagation(); });
   });
-  document.addEventListener('scroll', hide, { passive: true, once: true });
+  document.addEventListener('pointerdown', e => { if (pinned && !e.target.closest?.('[data-tip]')) { pinned = false; hide(); } });
+  document.addEventListener('scroll', () => { pinned = false; hide(); }, { passive: true, once: true });
 }
 
 // ---------- 데이터 만들기 ----------

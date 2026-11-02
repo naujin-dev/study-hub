@@ -35,7 +35,7 @@ function toast(msg, ms = 2200, action = null) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.toggle('act', !!action);
-  t.classList.toggle('top', params().path === '/run'); // 문제 풀이에서는 아래 '다음' 버튼을 가리지 않게 위에
+  t.classList.toggle('toast-top', params().path === '/run'); // 문제 풀이에서는 아래 '다음' 버튼을 가리지 않게 위에
   if (action) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
@@ -169,6 +169,12 @@ function applyTheme() {
   const t = S.load('theme', 'auto');
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
+  // 브라우저 위쪽 띠 색도 고른 화면 모드에 맞춘다
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    if (!m.dataset.media) m.dataset.media = m.media;
+    m.media = t === 'auto' ? m.dataset.media : 'all';
+    m.content = t === 'auto' ? (m.dataset.media.includes('dark') ? '#191919' : '#FFFFFF') : (t === 'dark' ? '#191919' : '#FFFFFF');
+  });
   themeBtn.textContent = '화면: ' + ({ auto: '자동', light: '밝게', dark: '어둡게' }[t] || '자동');
 }
 themeBtn.addEventListener('click', () => {
@@ -208,23 +214,42 @@ const routes = {
 const navOf = { '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
+// 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
+function syncTitle() {
+  const h1 = main.querySelector('h1');
+  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · 2회고사 공부방` : '2회고사 공부방';
+}
+// 명조(원문)와 한자 글꼴 목록은 크다. 원문·문제를 보여 주는 화면에 처음 갈 때만 붙인다
+const READ_ROUTES = new Set(['/pack', '/run', '/blank', '/final', '/q', '/wrong', '/flash', '/marks', '/check', '/journal']);
+function ensureReadFonts() {
+  if (ensureReadFonts.done) return;
+  ensureReadFonts.done = true;
+  for (const href of ['css/fonts/noto-serif-kr/noto-serif-kr.css', 'css/fonts/hanja/hanja.css']) {
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l);
+  }
+}
 function render() {
   if (onLeave) { const f = onLeave; onLeave = null; try { f(); } catch (e) { console.warn(e); } }
   hideSelBar();
+  CH.hideTip();
+  // 같은 화면을 다시 그릴 때(체크, 다 읽음 등)는 누르던 칸에 키보드 초점을 그대로 둔다
+  const fsel = render.keepScroll ? focusKey(document.activeElement) : null;
   const { path } = params();
   const fn = routes[path] || viewHome;
+  if (READ_ROUTES.has(path)) ensureReadFonts();
   $$('.bottom a', document).forEach(a => a.classList.toggle('on', a.dataset.nav === (navOf[path] || 'more')));
   main.innerHTML = '';
   fn();
   updateTop();
   // 화면 제목을 탭 제목에 쓰고, 다른 화면으로 옮겨 왔으면 키보드 초점을 그 화면 제목으로
   const h1 = main.querySelector('h1');
-  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · 2회고사 공부방` : '2회고사 공부방';
+  syncTitle();
   if (!render.keepScroll) {
     window.scrollTo(0, 0);
     const a = document.activeElement;
     if (h1 && (!a || a === document.body || a.closest('nav.bottom'))) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
   }
+  if (fsel) restoreFocus(fsel);
   render.keepScroll = false;
 }
 window.addEventListener('hashchange', render);
@@ -447,6 +472,7 @@ function viewHome() {
   $$('[data-plan]').forEach(cb => cb.addEventListener('change', () => {
     setPlan(cb.dataset.plan, { done: cb.checked, doneAt: cb.checked ? Date.now() : null });
     render.keepScroll = true; render();
+    announce(cb.checked ? '끝냄으로 표시했다' : '끝냄을 풀었다');
   }));
 }
 
@@ -1035,6 +1061,16 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-file]');
   if (b) document.getElementById(b.dataset.file)?.click();
 });
+// 메뉴가 화면 밖으로 나가면 반대쪽으로 붙인다 (휴대폰에서 버튼이 줄 앞에 있을 때)
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (!d.matches?.('details.menu') || !d.open) return;
+  const pop = d.querySelector('.menu-pop');
+  pop.style.left = ''; pop.style.right = '';
+  const r = pop.getBoundingClientRect(), dl = d.getBoundingClientRect().left;
+  if (r.left < 8) { pop.style.right = 'auto'; pop.style.left = (8 - dl) + 'px'; }
+  else if (r.right > innerWidth - 8) { pop.style.right = 'auto'; pop.style.left = (innerWidth - 8 - r.width - dl) + 'px'; }
+}, true);
 // 펼친 메뉴는 바깥을 누르거나, 메뉴 안의 항목을 누르거나, Esc 를 누르면 닫는다
 document.addEventListener('click', e => {
   document.querySelectorAll('details.menu[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('.mi')) d.open = false; });
@@ -1366,12 +1402,12 @@ function viewRun() {
       if (items.length) { session = null; startSession(items, 'practice', 30, { bookPack: bp.id }); return; }
     }
     else items = D.allQuestions({ packs: [q.get('pack')], book: false });
-    if (!items.length) { main.innerHTML = '<p class="muted">풀 문제가 없다. <a href="#/">홈으로</a></p>'; return; }
+    if (!items.length) { main.innerHTML = '<h1>문제 풀기</h1><p class="muted">지금 풀 문제가 없다. <a href="#/">홈으로</a></p>'; return; }
     session = null;
     startSession(items, 'practice');
     return;
   }
-  if (!session) { main.innerHTML = '<p class="muted">진행 중인 문제가 없다. <a href="#/quiz">문제 고르기</a></p>'; return; }
+  if (!session) { main.innerHTML = '<h1>문제 풀기</h1><p class="muted">진행 중인 문제가 없다. <a href="#/quiz">문제 고르기</a></p>'; return; }
   if (session.viewing) return drawQuestion();
   if (session.mode === 'exam' && session.submitted) return viewSummary();
   if (session.mode !== 'exam' && session.i >= session.items.length) return viewSummary();
@@ -1398,7 +1434,7 @@ function tickSpent() {
 // 다시 그려도 키보드 초점이 있던 자리를 잃지 않게: 같은 버튼이 있으면 거기, 채점 뒤면 '다음'으로
 function focusKey(el) {
   if (!el || el === document.body || !main.contains(el)) return null;
-  for (const a of ['data-ch', 'data-conf', 'data-go', 'data-gtab']) if (el.hasAttribute(a)) return `[${a}="${el.getAttribute(a)}"]`;
+  for (const a of ['data-ch', 'data-conf', 'data-go', 'data-gtab', 'data-plan', 'data-pc', 'data-pd', 'data-tid', 'data-cause-sel', 'data-kw']) if (el.hasAttribute(a)) return `[${a}="${el.getAttribute(a)}"]`;
   return el.id ? '#' + el.id : null;
 }
 // 화면 낭독기에게만 들리는 알림 (채점 결과 등)
@@ -2079,7 +2115,7 @@ function viewFlash() {
     flash = { list: shuffle(list), i: 0, back: false, knew: 0, flip: 'front' };
     history.replaceState(null, '', '#/flash');
   }
-  if (!flash || !flash.list.length) { main.innerHTML = '<p class="muted">카드가 없다. <a href="#/cards">카드 고르기</a></p>'; return; }
+  if (!flash || !flash.list.length) { main.innerHTML = '<h1>암기카드</h1><p class="muted">지금 보고 있는 카드가 없다. <a href="#/cards">카드 고르기</a></p>'; return; }
   if (flash.i >= flash.list.length) {
     main.innerHTML = `<h1>다 봤다</h1><p>${flash.list.length}장 중 ${flash.knew}장을 알았다.</p><div class="row"><a class="btn pri" href="#/cards">다시 고르기</a><a class="btn" href="#/">홈</a></div>`;
     return;
@@ -2303,7 +2339,7 @@ function viewPlan() {
     S.kvSet('plan', id, { id, date: f.date.value, subject: f.subject.value, text: f.text.value.trim(), done: false, c: Date.now() });
     render.keepScroll = true; render();
   });
-  $$('[data-pc]').forEach(cb => cb.addEventListener('change', () => { setPlan(cb.dataset.pc, { done: cb.checked, doneAt: cb.checked ? Date.now() : null }); render.keepScroll = true; render(); }));
+  $$('[data-pc]').forEach(cb => cb.addEventListener('change', () => { setPlan(cb.dataset.pc, { done: cb.checked, doneAt: cb.checked ? Date.now() : null }); render.keepScroll = true; render(); announce(cb.checked ? '끝냄으로 표시했다' : '끝냄을 풀었다'); }));
   $$('[data-pd]').forEach(b => b.addEventListener('click', () => { S.kvDel('plan', b.dataset.pd); render.keepScroll = true; render(); }));
   $('#clearDone')?.addEventListener('click', () => { if (!confirm('끝낸 계획을 목록에서 지울까? 공부 일지에는 남는다.')) return; for (const p of planList()) if (p.done) setPlan(p.id, { hidden: true }); render.keepScroll = true; render(); });
 }
@@ -3429,6 +3465,7 @@ async function viewPdf() {
   ${all.length ? chipGroup('s', [{ value: '', label: '전체' }, ...SUBJECTS.filter(s => all.some(x => x.subject === s.id)).map(s => ({ value: s.id, label: s.name, dot: true }))], [sel], false) : ''}
   ${groups || `<p class="muted" style="margin-top:14px">${all.length ? '이 과목 PDF 가 없다.' : '아직 넣은 PDF 가 없다.'}</p>`}
   <p class="small muted" style="margin-top:14px">PDF 보기는 <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> (Apache 2.0) 를 쓴다.</p>`;
+  syncTitle();
   $$('input[name="s"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/pdf' + (r.value ? '?s=' + r.value : ''); }));
   $('#pdfIn').addEventListener('change', async e => {
     const files = [...e.target.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
