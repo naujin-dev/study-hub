@@ -2645,6 +2645,9 @@ function viewSettings() {
       <p class="small" id="syncState">${syncText(st)}</p>
       <label class="row small"><input type="checkbox" id="syncAuto"${sc.auto ? ' checked' : ''}> 자동 동기화 (기록이 생기면 15초 뒤, 앱을 다시 열 때, 화면이 켜져 있으면 1분마다)</label>
       <div class="row" style="margin-top:8px"><button class="btn pri" id="syncNow">지금 동기화</button><button class="btn ghost bad" id="syncOff">연결 끊기</button></div>
+      <details class="fold" style="margin-top:10px"><summary class="small">다른 기기에 넣을 토큰 꺼내기</summary>
+        <p class="small muted">이 기기에 저장된 GitHub 토큰을 복사한다. GitHub 에서는 만든 뒤 다시 볼 수 없어서, 새 기기를 연결할 때 여기서 꺼낸다. 남에게 보내지 않는다.</p>
+        <button class="btn sm" id="ghCopy">토큰 복사</button></details>
     ` : `
       <details${sc.gistId ? ' open' : ''}><summary>토큰 만드는 법</summary><ol class="small">
         <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> 를 연다 (Fine-grained token).</li>
@@ -2852,6 +2855,11 @@ function viewSettings() {
     b.disabled = false; b.textContent = '지금 동기화';
   });
   $('#syncAuto')?.addEventListener('change', e => SYNC.setAuto(e.target.checked));
+  $('#ghCopy')?.addEventListener('click', async () => {
+    const t = SYNC.conf().token;
+    try { await navigator.clipboard.writeText(t); toast('토큰을 복사했다. 다른 기기의 설정 → 동기화에 붙여넣는다.', 4000); }
+    catch (e) { prompt('자동 복사가 막혔다. 아래 글을 길게 눌러 복사한다.', t); }
+  });
   $('#syncOff')?.addEventListener('click', () => {
     if (!confirm('이 기기에서 동기화를 끊을까? 이 기기와 Gist 의 기록은 그대로 남는다.')) return;
     SYNC.disconnect(); render();
