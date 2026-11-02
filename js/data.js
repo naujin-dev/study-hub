@@ -212,9 +212,16 @@ export async function loadAll() {
   // 사이트에서 정한 과목별 자료 순서(kv 'porder'). 목록에 없는 자료는 그 뒤에 원래 순서로
   const rank = {};
   for (const o of Object.values(kvAll('porder'))) (o.ids || []).forEach((id, i) => { rank[id] = i; });
+  // 작품을 나눠 새로 생긴 자료(kor-15b-…)는 원래 자료(kor-15-…) 바로 뒤에 둔다
+  const rankOf = p => {
+    if (rank[p.id] != null) return rank[p.id];
+    const m = p.id.match(/^([a-z]{3}-\d+)b-/);
+    if (m) { const base = Object.keys(rank).find(id => id.startsWith(m[1] + '-')); if (base) return rank[base] + 0.5; }
+    return 1e9;
+  };
   const packs = Object.values(byId).filter(p => !alias[p.id]).sort((a, b) => {
     if (a.subject === b.subject) {
-      const ra = rank[a.id] ?? 1e9, rb = rank[b.id] ?? 1e9;
+      const ra = rankOf(a), rb = rankOf(b);
       if (ra !== rb) return ra - rb;
     }
     return packOrder(a, b);
@@ -230,7 +237,8 @@ function packOrder(a, b) {
   if (sa !== sb) return sa - sb;
   const oa = a.order ?? 999, ob = b.order ?? 999;
   if (oa !== ob) return oa - ob;
-  return String(a.title).localeCompare(String(b.title), 'ko');
+  // 순서가 같으면 id 순서 (나눈 자료 kor-15 → kor-15b 처럼 원래 순서대로)
+  return String(a.id).localeCompare(String(b.id));
 }
 
 // 저장소의 시험 정보 위에 내가 이 기기에서 고친 날짜/범위를 덮어쓴다.
@@ -308,27 +316,31 @@ export const ckey = (pack, c, i) => c._key || `${pack.id}::${c.id ?? i}`;
 
 export function allQuestions(filter = {}) {
   const out = [];
+  // 작품을 나눈 자료는 두 작품을 같이 묻는 문제를 양쪽에 둔다 (_key 가 같다). 한 번만 센다.
+  const seen = new Set();
+  const push = x => { if (seen.has(x.key)) return; seen.add(x.key); out.push(x); };
   for (const p of state.packs) {
     if (filter.subject && filter.subject.length && !filter.subject.includes(p.subject)) continue;
     if (filter.packs && filter.packs.length && !filter.packs.includes(p.id)) continue;
     for (const q of p.questions || []) {
       if (filter.types && filter.types.length && !filter.types.includes(q.type)) continue;
-      out.push({ pack: p, q, key: qkey(p, q) });
+      push({ pack: p, q, key: qkey(p, q) });
     }
     if (filter.book === false) continue;
     for (const q of p.book || []) {
       if (filter.types && filter.types.length && !filter.types.includes(q.type)) continue;
-      out.push({ pack: p, q, key: qkey(p, q), book: true });
+      push({ pack: p, q, key: qkey(p, q), book: true });
     }
   }
   return out;
 }
 export function allCards(filter = {}) {
   const out = [];
+  const seen = new Set(); // 나눈 자료가 함께 가진 카드는 한 번만
   for (const p of state.packs) {
     if (filter.subject && filter.subject.length && !filter.subject.includes(p.subject)) continue;
     if (filter.packs && filter.packs.length && !filter.packs.includes(p.id)) continue;
-    (p.cards || []).forEach((c, i) => out.push({ pack: p, c, key: ckey(p, c, i) }));
+    (p.cards || []).forEach((c, i) => { const key = ckey(p, c, i); if (!seen.has(key)) { seen.add(key); out.push({ pack: p, c, key }); } });
   }
   return out;
 }

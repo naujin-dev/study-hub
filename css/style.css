@@ -453,7 +453,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box
 .plan-item{align-items:flex-start !important;cursor:pointer}
 .plan-item input{margin-top:5px;width:18px;height:18px;accent-color:var(--acc);flex:none}
 .plan-item .done{text-decoration:line-through;color:var(--ink3)}
-.today-actions{margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)}
+.today-actions{margin:12px 0 4px;padding-bottom:12px;border-bottom:1px solid var(--rule)}
 .resume{display:flex;align-items:center;gap:12px;padding:14px 18px;margin:0 0 14px;border-radius:var(--r);background:var(--tint,var(--sunk));color:var(--ink);text-decoration:none;border:1px solid color-mix(in srgb,var(--tint,var(--rule)) 60%,var(--rule))}
 .resume b{font-size:1.02rem}
 .resume .go{font-size:1.2rem;color:var(--ink2);transition:transform .2s cubic-bezier(.23,1,.32,1)}
@@ -630,9 +630,9 @@ details.card.flat[open]>summary::before{transform:rotate(90deg)}
 .result-line{font-size:1.15rem;margin:4px 0 8px}
 
 /* 과목 색 (점, 진도 막대). 다크에서는 밝게 */
-:root{--s-kor:#C2410C;--s-eng:#1D4ED8;--s-soc:#047857;--s-sci:#7C3AED;--s-his:#B45309;--s-lab:#0E7490;--s-jpn:#BE185D;--s-math:#4D7C0F;}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--s-kor:#FB923C;--s-eng:#60A5FA;--s-soc:#34D399;--s-sci:#A78BFA;--s-his:#FBBF24;--s-lab:#22D3EE;--s-jpn:#F472B6;--s-math:#A3E635;}}
-:root[data-theme="dark"]{--s-kor:#FB923C;--s-eng:#60A5FA;--s-soc:#34D399;--s-sci:#A78BFA;--s-his:#FBBF24;--s-lab:#22D3EE;--s-jpn:#F472B6;--s-math:#A3E635;}
+:root{--s-kor:#C2410C;--s-eng:#1D4ED8;--s-soc:#047857;--s-sci:#7C3AED;--s-his:#8A6A00;--s-lab:#0E7490;--s-jpn:#BE185D;--s-math:#4D7C0F;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--s-kor:#FB923C;--s-eng:#60A5FA;--s-soc:#34D399;--s-sci:#A78BFA;--s-his:#E3C341;--s-lab:#22D3EE;--s-jpn:#F472B6;--s-math:#A3E635;}}
+:root[data-theme="dark"]{--s-kor:#FB923C;--s-eng:#60A5FA;--s-soc:#34D399;--s-sci:#A78BFA;--s-his:#E3C341;--s-lab:#22D3EE;--s-jpn:#F472B6;--s-math:#A3E635;}
 @media (max-width:600px){.selbar [data-x]{position:sticky;right:0;background:var(--card);box-shadow:-8px 0 8px var(--card)}}
 .toast.show.act{pointer-events:auto}
 .toast-act{margin-left:10px;border:0;background:transparent;color:inherit;font:600 .9rem var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px 4px;min-height:32px}
@@ -658,3 +658,10 @@ main h1:focus,main h1:focus-visible{outline:none}
   .qnav button{width:44px;height:44px}
   .brand{display:inline-flex;align-items:center;min-height:44px}
 }
+/* 지문 칸 + 원문 같이 */
+.q-ctxcol{white-space:normal}
+.q-ctxcol .q-box{white-space:pre-wrap;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--rule)}
+.brand{gap:.28em}
+.toast.top{bottom:auto;top:calc(72px + env(safe-area-inset-top))}
+button.chip.miss{font:inherit;font-size:.86rem;cursor:pointer}
+button.chip.miss:hover{background:var(--badw)}

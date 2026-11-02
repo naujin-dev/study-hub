@@ -35,6 +35,7 @@ function toast(msg, ms = 2200, action = null) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.toggle('act', !!action);
+  t.classList.toggle('top', params().path === '/run'); // 문제 풀이에서는 아래 '다음' 버튼을 가리지 않게 위에
   if (action) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
@@ -89,13 +90,13 @@ const picked = name => $$(`input[name="${name}"]:checked`).map(i => i.value);
 // ---------- 기록 헬퍼 ----------
 const readMarks = () => S.kvAll('readmark');
 // Notion 주간 계획(data/plan.json)의 할 일. 체크 상태는 kv 'plan' 에 같은 id 로 덮어쓴다.
-const stripDate = t => t.replace(/^(\S+\s)?\d{1,2}\/\d{1,2}(\([월화수목금토일]\))?(~\d{1,2})?\s*/, (m, pre) => pre && !/\d/.test(pre) ? pre : '').replace(/:\s*·\s*/, ': ');
+const stripDate = t => t.replace(/^(\S+\s)?\d{1,2}\/\d{1,2}(\([월화수목금토일]\))?(\\?~\d{1,2}(\/\d{1,2})?(\([월화수목금토일]\))?)?\s*/, (m, pre) => pre && !/\d/.test(pre) ? pre : '').replace(/:\s*·\s*/, ': ');
 function notionItems() {
   const p = D.db().plan;
   if (!p || !Array.isArray(p.weeks)) return [];
   const out = [];
   for (const w of p.weeks) for (const g of w.groups || []) for (const it of g.items || []) {
-    out.push({ id: it.id, date: it.date || null, subject: g.subject || '', label: g.label || '', text: it.self && !it.date ? it.text : stripDate(it.text), raw: it.text, group: it.self ? '' : g.title, week: w.id, done: !!it.done, notion: true });
+    out.push({ id: it.id, date: it.date || null, subject: g.subject || (/^(대수|수학)/.test(g.label || g.title || '') ? 'math' : ''), label: g.label || '', text: it.self && !it.date ? it.text : stripDate(it.text), raw: it.text, group: it.self ? '' : g.title, week: w.id, done: !!it.done, notion: true });
   }
   return out;
 }
@@ -113,7 +114,11 @@ function setPlan(id, patch) {
   const { u, ...rest } = cur;
   S.kvSet('plan', id, rest.notion ? { id, notion: true, done: rest.done, ...patch } : { ...rest, ...patch });
 }
-const planText = t => String(t || '').replace(/\s*\(study-hub [a-z]{3}-\d+[a-z0-9-]*\)/g, '');
+// 계획 글의 자료 id(kor-02-sokmiingok, (eng-03) 등)는 '자료 →' 버튼이 대신하므로 글에서 뺀다
+const PID = '[a-z]{3}-(?:n)?\\d+[a-z]?(?:-[a-z0-9]+)*';
+const planText = t => String(t || '')
+  .replace(new RegExp(`\\s*\\((?:study-hub\\s+)?${PID}(?:\\s*[,·]\\s*${PID})*\\)`, 'g'), '')
+  .replace(new RegExp(`(^|\\s)${PID}(?=\\s|$)`, 'g'), '$1').replace(/\s{2,}/g, ' ').trim();
 const planLine = p => `${p.subject ? subjDot(p.subject) + ' ' : p.label ? `<span class="tag">${esc(p.label)}</span> ` : ''}${esc(planText(p.text))}${p.group ? `<br><span class="small muted">${esc(p.group.length > 60 ? p.group.slice(0, 60) + '…' : p.group)}</span>` : ''}`;
 
 // 계획 한 줄이 가리키는 자료를 찾는다. 「작품」 이름이나 자료 제목이 줄에 들어 있으면 그 자료.
@@ -137,7 +142,7 @@ function planPack(p) {
 }
 const planGo = p => {
   const k = planPack(p);
-  if (!k && /^(수학|대수|기하|미적|확통|수[ⅠⅡ12])/.test(String(p.text || '').trim())) return `<a class="plan-go" href="#/math" aria-label="시간 재기: 수학">시간 재기<span aria-hidden="true"> →</span></a>`;
+  if (!k && (p.subject === 'math' || /^(수학|대수|기하|미적|확통|수[ⅠⅡ12])/.test(String(p.text || '').trim()))) return `<a class="plan-go" href="#/math" aria-label="시간 재기: 수학">시간 재기<span aria-hidden="true"> →</span></a>`;
   return k ? `<a class="plan-go" href="#/pack?id=${encodeURIComponent(k.id)}" aria-label="자료 열기: ${esc(k.title)}">자료<span aria-hidden="true"> →</span></a>` : ''; };
 
 // ---------- 시험 날짜 ----------
@@ -239,12 +244,15 @@ function subjectStats() {
   const out = {};
   for (const s of SUBJECTS) out[s.id] = { total: 0, tried: 0, n: 0, ok: 0, wrong: 0, due: 0, packs: 0, unread: 0 };
   const read = readMarks();
+  const seenQ = new Set(); // 나눈 자료가 함께 가진 문제는 한 번만
   for (const p of D.db().packs) {
     const o = out[p.subject];
     if (!o) continue;
     o.packs++;
     if (!read[p.id] && p.notes) o.unread++;
     for (const q of p.questions || []) {
+      if (seenQ.has(D.qkey(p, q))) continue;
+      seenQ.add(D.qkey(p, q));
       const r = prog[D.qkey(p, q)];
       o.total++;
       if (r && r.n) {
@@ -361,9 +369,6 @@ function viewHome() {
     <section class="card today">
       <div class="row between" style="align-items:baseline"><h2 style="margin:0">${plan.length ? '오늘 할 일' : upcoming ? `다음 할 일 · ${S.fmtDate(upcoming.d)}` : '오늘 할 일'}</h2>
         <span class="small muted">${plan.length ? `${plan.filter(p => p.done).length}/${plan.length} 끝냄` : ''}${weekLeft ? `${plan.length ? ' · ' : ''}이번 주 날짜 없는 일 ${weekLeft}개` : ''}</span></div>
-      ${plan.length ? `<ul class="list plan-list">${plan.map(planRow).join('')}</ul>`
-        : upcoming ? `<p class="small muted" style="margin:4px 0 2px">오늘은 계획이 없다. 미리 보기:</p><ul class="list plan-list">${upcoming.items.slice(0, 6).map(planRow).join('')}</ul>${upcoming.items.length > 6 ? `<p class="small"><a href="#/plan">${upcoming.items.length - 6}개 더 보기</a></p>` : ''}`
-        : '<p class="muted small">계획이 없다. <a href="#/plan">계획 화면</a> 에서 할 일을 더하거나 Notion 자동 업데이트를 켠다.</p>'}
       <div class="row today-actions">
         ${due.length ? `<a class="btn pri" href="#/run?src=due">복습 ${due.length}문제</a>` : ''}
         ${wrong.length ? `<a class="btn" href="#/run?src=wrong">오답 ${wrong.length}문제 다시</a>` : ''}
@@ -373,6 +378,15 @@ function viewHome() {
           <a class="mi" href="#/cards">암기카드${(() => { const t = S.today(); const n = D.allCards().filter(x => { const r = S.cp(x.key); return r && r.due && r.due <= t; }).length; return n ? ` <span class="muted">외울 때 된 ${n}장</span>` : ''; })()}</a>
         </div></details>
       </div>
+      ${plan.length ? (() => {
+        // 할 일이 많으면 안 끝낸 것 위주로 4개만 펼치고 나머지는 접는다
+        const todo = [...plan.filter(p => !p.done), ...plan.filter(p => p.done)];
+        const head = todo.slice(0, plan.length > 5 ? 4 : 5), rest = todo.slice(head.length);
+        return `<ul class="list plan-list">${head.map(planRow).join('')}</ul>${rest.length ? `<details class="fold"><summary class="small">나머지 ${rest.length}개 (끝낸 것 ${rest.filter(p => p.done).length})</summary><ul class="list plan-list">${rest.map(planRow).join('')}</ul></details>` : ''}`;
+      })()
+        : upcoming ? `<p class="small muted" style="margin:4px 0 2px">오늘은 계획이 없다. 미리 보기:</p><ul class="list plan-list">${upcoming.items.slice(0, 6).map(planRow).join('')}</ul>${upcoming.items.length > 6 ? `<p class="small"><a href="#/plan">${upcoming.items.length - 6}개 더 보기</a></p>` : ''}`
+        : '<p class="muted small">계획이 없다. <a href="#/plan">계획 화면</a> 에서 할 일을 더하거나 Notion 자동 업데이트를 켠다.</p>'}
+
     </section>
 
     ${(() => {
@@ -500,7 +514,7 @@ function packStats(p, prog, read) {
   const qs = [...(p.questions || []), ...(p.book || [])];
   const tried = qs.filter(x => prog[D.qkey(p, x)]?.n).length;
   const wrong = qs.filter(x => prog[D.qkey(p, x)]?.wrong).length;
-  return { qn: qs.length, tried, wrong, cards: (p.cards || []).length, notes: String(p.notes || '').trim().length > 0, read: !!read[p.id], texts: (p.texts || []).length };
+  return { qn: qs.length, tried, wrong, cards: (p.cards || []).length, notes: String(p.notes || '').trim().length > 0, read: !!read[p.id], texts: SRC.textsOf(p).filter(t => t.body).length };
 }
 
 function viewStudy() {
@@ -557,7 +571,7 @@ function viewStudy() {
     const done = st.read && (!st.qn || st.tried >= st.qn) && !st.wrong;
     const doing = !done && (st.tried > 0 || st.read || S.readTimeOf(p.id) > 0);
     return `<a class="pcard${doing ? ' is-doing' : done ? ' is-done' : ''}" href="#/pack?id=${encodeURIComponent(p.id)}">
-      ${(label = shortUnit(label || unitOf(p))) && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
+      ${label !== false && (label = shortUnit(label || unitOf(p))) && !p.title.includes(label) ? `<span class="pc-u small">${esc(label)}</span>` : ''}
       <div class="row between" style="gap:6px;align-items:flex-start"><b class="pc-t">${esc(p.title)}</b>${done ? '<span class="tag ok">끝냄</span>' : doing ? '<span class="tag vio">하는 중</span>' : ''}</div>
       <div class="pc-b small muted">${badges.map(esc).join(' · ')}<span class="pdfb" data-pdfb="${esc(p.id)}"></span></div>
       ${st.qn ? `<div class="pc-p"><span class="mini-bar wide"><i style="width:${per}%"></i></span><span class="small mono muted">${st.tried}/${st.qn}${st.wrong ? ` · <span style="color:var(--bad)">오답 ${st.wrong}</span>` : ''}</span></div>` : ''}
@@ -591,7 +605,7 @@ function viewStudy() {
     // 자료가 하나뿐인 묶음이 이어지면 머리줄 없이 한 칸에 모은다 (카드 위에 단원 이름)
     const parts = [];
     for (const g of groups) {
-      if (mode !== 'mine' && g.packs.length === 1 && groups.length > 2) { const last = parts[parts.length - 1]; if (last && last.singles) last.items.push(g); else parts.push({ singles: true, items: [g] }); }
+      if (mode === 'kind' && g.packs.length === 1 && groups.length > 2) { const last = parts[parts.length - 1]; if (last && last.singles) last.items.push(g); else parts.push({ singles: true, items: [g] }); }
       else parts.push(g);
     }
     body = parts.map(g => {
@@ -1432,7 +1446,7 @@ function drawQuestion0() {
   const locked = !!res || (exam && session.submitted);
 
   // 지문 없이 (가)·(나)·㉠·윗글을 가리키는 문제는 자료의 원문을 옆에 펼쳐 준다
-  const citeAll = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body) : [];
+  const citeAll = CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body) : [];
   const citeSrc = citeAll.length ? citeAll : null;
   const citeMissing = !q.context && !citeSrc && CITE_RE.test(q.question);
   let body = '';
@@ -1462,7 +1476,13 @@ function drawQuestion0() {
   <section class="card qcard${q.context || citeSrc ? ' has-ctx' : ''}">
     <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag" title="난이도">난이도 ${q.difficulty}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
     <div class="q-split">
-    ${q.context ? `<div class="q-ctx">${ctxHtml(q.context)}</div>` : citeSrc ? `<details class="q-ctx q-src"${S.load('qSrcOpen', true) ? ' open' : ''}><summary>원문 보기 · ${esc(citeSrc.map(t => t.title).join(', '))}</summary>${citeSrc.map(t => `<div class="src-text">${t.body.split('\n').map(l => l.trim() ? `<div class="l">${srcLine(l)}</div>` : '<div class="l e"></div>').join('')}</div>`).join('<hr>')}</details>` : ''}
+    ${(() => {
+      // <보기> 같은 지문 칸이 있어도 (가)·(나) 를 가리키면 자료 원문을 아래에 같이 펼친다
+      const src = citeSrc ? `<details class="q-src"${S.load('qSrcOpen', true) ? ' open' : ''}><summary>원문 보기 · ${esc(citeSrc.map(t => t.title).join(', '))}</summary>${citeSrc.map(t => `<div class="src-text">${t.body.split('\n').map(l => l.trim() ? `<div class="l">${srcLine(l)}</div>` : '<div class="l e"></div>').join('')}</div>`).join('<hr>')}</details>` : '';
+      if (q.context && src) return `<div class="q-ctx q-ctxcol"><div class="q-box">${ctxHtml(q.context)}</div>${src}</div>`;
+      if (q.context) return `<div class="q-ctx">${ctxHtml(q.context)}</div>`;
+      return src ? src.replace('class="q-src"', 'class="q-ctx q-src"') : '';
+    })()}
     <div class="q-main">
     ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}&srcedit=1">원문 넣으러 가기</a> 또는 <button type="button" class="btn sm" id="noSrcSkip">건너뛰기 <kbd>S</kbd></button> <span class="muted">(오답에 안 넣는다)</span></p>` : ''}
     <div class="q-text">${qHtml(q.question)}</div>
@@ -1581,7 +1601,7 @@ document.addEventListener('keydown', e => {
     <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
     <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다</td></tr>
     <tr><td>채점 방법 탭</td><td>← → 탭 옮기기</td></tr>
-    <tr><td>메뉴·형광펜 띠</td><td>Esc 닫기</td></tr></table>
+    <tr><td>메뉴·형광펜 띠</td><td>Esc 닫기 (문제 풀이에서는 '그만' 버튼으로)</td></tr></table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn pri">닫기</button></div></form>`;
   document.body.append(d);
   d.addEventListener('close', () => d.remove());
@@ -1598,6 +1618,7 @@ document.addEventListener('keydown', e => {
   const conf = { q: 'sure', w: 'unsure', e: 'guess' }[e.key.toLowerCase()];
   if (/^[1-6]$/.test(e.key)) { const b = main.querySelector(`[data-ch="${e.key}"]:not([disabled])`); if (b) { e.preventDefault(); b.click(); } }
   else if (conf) { const b = main.querySelector(`[data-conf="${conf}"]`); if (b) { e.preventDefault(); b.click(); } }
+  else if (e.key === 'Escape' && $('#quit')) { e.preventDefault(); $('#quit').focus(); toast('그만두려면 Enter. 계속 풀려면 Tab.'); }
   else if (e.key.toLowerCase() === 's' && $('#noSrcSkip')) { e.preventDefault(); $('#noSrcSkip').click(); }
   else if (e.key.toLowerCase() === 'd' && $('#skipBtn')) { e.preventDefault(); $('#skipBtn').click(); }
   else if (e.key === 'Enter') {
@@ -3016,7 +3037,8 @@ function viewBlank() {
       blank.cov = kws.length ? Math.round(hit.length / kws.length * 100) : 0;
       blank.phase = 'compare';
       const t = Date.now();
-      S.kvSet('blank', 'b' + t.toString(36), { pack: p.id, text: blank.text, cov: blank.cov, miss: blank.miss.slice(0, 40), t, sec: Math.round((t - blank.start) / 1000) });
+      blank.recId = 'b' + t.toString(36); blank.t = t;
+      S.kvSet('blank', blank.recId, { pack: p.id, text: blank.text, cov: blank.cov, miss: blank.miss.slice(0, 40), t, sec: Math.round((t - blank.start) / 1000) });
       S.recordRead(p.id, Math.min(1800, (t - blank.start) / 1000));
       viewBlank();
     });
@@ -3033,14 +3055,14 @@ function viewBlank() {
     const groups = {};
     for (const k of blank.miss) (groups[secOf[k] || '기타'] = groups[secOf[k] || '기타'] || []).push(k);
     let shown = 0;
-    const chip = k => `<span class="chip miss">${esc(k)}</span>`;
+    const chip = k => `<button type="button" class="chip miss" data-kw="${esc(k)}" title="다른 말로 썼으면 눌러서 맞힌 것으로">${esc(k)}</button>`;
     const first = [], rest = [];
     for (const [g, ks] of Object.entries(groups)) {
       const a = ks.slice(0, Math.max(0, 10 - shown)); shown += a.length;
       if (a.length) first.push(`<div class="kw-g"><span class="small muted">${esc(g)}</span><div class="chips">${a.map(chip).join('')}</div></div>`);
       if (ks.length > a.length) rest.push(`<div class="kw-g"><span class="small muted">${esc(g)}</span><div class="chips">${ks.slice(a.length).map(chip).join('')}</div></div>`);
     }
-    return `<section class="card flat"><h2>빠진 핵심어 ${blank.miss.length}개</h2>${first.join('')}${rest.length ? `<details class="fold"><summary class="small">나머지 ${blank.miss.length - shown}개 더 보기</summary>${rest.join('')}</details>` : ''}<p class="small muted" style="margin-top:8px">자료에서 빨간 밑줄로 표시했다. 이것만 다시 읽고 내일 한 번 더 백지 복습을 한다.</p></section>`;
+    return `<section class="card flat"><h2>빠진 핵심어 ${blank.miss.length}개</h2>${first.join('')}${rest.length ? `<details class="fold"><summary class="small">나머지 ${blank.miss.length - shown}개 더 보기</summary>${rest.join('')}</details>` : ''}<p class="small muted" style="margin-top:8px">다른 말로 썼는데 빠졌다고 나온 핵심어는 눌러서 맞힌 것으로 바꾼다. 자료에서 빨간 밑줄로 표시했다. 이것만 다시 읽고 내일 한 번 더 백지 복습을 한다.</p></section>`;
   })() : '<p class="note info">핵심어를 다 떠올렸다.</p>'}
   <div class="grid2">
     <section class="card"><h2>내가 쓴 것</h2><p style="white-space:pre-wrap">${esc(blank.text)}</p></section>
@@ -3051,6 +3073,15 @@ function viewBlank() {
     <div class="row">${AI.hasKey() ? '<button class="btn pri" id="bAi">AI 피드백 받기</button>' : ''}<button class="btn${AI.hasKey() ? '' : ' pri'}" id="bCopy">채팅용 요청 복사 (무료)</button><a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a></div>
     <pre class="prompt" id="bPre" hidden></pre><div id="bFb" class="notes"></div></section>
   <div class="row"><button class="btn" id="bAgain">다시 쓰기</button><a class="btn ghost" href="#/blank">다른 자료</a></div>`;
+  // 빠진 핵심어를 누르면 맞힌 것으로 (같은 뜻을 다른 말로 쓴 경우)
+  $$('[data-kw]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.kw;
+    blank.miss = blank.miss.filter(x => x !== k); blank.hit = [...blank.hit, k];
+    blank.cov = kws.length ? Math.round(blank.hit.length / kws.length * 100) : 0;
+    if (blank.recId) { const r = S.kvGet('blank', blank.recId); if (r) { const { u, ...rest } = r; S.kvSet('blank', blank.recId, { ...rest, cov: blank.cov, miss: blank.miss.slice(0, 40) }); } }
+    render.keepScroll = true; viewBlank();
+    announce(`${k} 를 맞힌 것으로 바꿨다. ${blank.cov}%`);
+  }));
   const root = $('#bNotes');
   for (const k of blank.miss) {
     const full = root.textContent; const i = full.indexOf(k);
