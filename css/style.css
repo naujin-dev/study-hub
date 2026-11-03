@@ -7,7 +7,7 @@
   --ink:#37352F; --ink2:#5D5B54; --ink3:#64625C;
   --rule:#E5E3DF; --rule2:#C8C4BE;
   --acc:#5645D4; --acc-press:#4534B3; --accw:#EFEDFB; --on-acc:#FFFFFF; --on-ok:#FFFFFF;
-  --link:#0075DE;
+  --link:#0068C7;
   --ok:#166B2E; --okw:#DBF2E1;
   --bad:#C92A2A; --badw:#FDE6E6;
   --warn:#A84E00; --warnw:#FDEBD9;
@@ -70,7 +70,7 @@ code,kbd,pre{font-family:var(--mono)}
 
 /* 머리띠 */
 .top{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:1px solid var(--rule)}
-.top-in{display:flex;align-items:center;gap:10px;height:52px}
+.top-in{display:flex;align-items:center;gap:10px;min-height:52px}
 .brand{font-weight:600;color:var(--ink);text-decoration:none;font-size:1.05rem}
 .brand span{color:var(--ink3);font-weight:400}
 .dday{margin-left:auto;font-weight:600;font-size:.85rem;font-variant-numeric:tabular-nums;color:var(--ink2)}
@@ -708,3 +708,10 @@ details.week>summary,.week summary{flex-wrap:wrap}
 
 /* 휴대폰 오답노트: 머리 줄(과목·유형·자료)을 문제 위로 */
 @media (max-width:600px){details.card.flat>summary .q-head{display:flex !important;flex-wrap:wrap;width:100%}}
+
+/* 자리표시 글자 색 (다크에서도 대비) */
+::placeholder{color:var(--ink3);opacity:1}
+/* 움직임 줄이기: 시간 막대 대신 남은 초 글자만 */
+@media (prefers-reduced-motion:reduce){.sp-bar{display:none}}
+.selbar,.quickpill{box-shadow:var(--shadow)}
+@media (max-width:600px){.plan-li .plan-go{white-space:normal}.subj-table .nums{flex-wrap:wrap;justify-content:flex-end}}

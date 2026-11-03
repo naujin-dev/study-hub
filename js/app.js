@@ -16,6 +16,9 @@ const REPO_URL = 'https://github.com/naujin-dev/study-hub';
 // ---------- 작은 도구 ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 지문은 글자 그대로 보여 주되 <u>밑줄</u> 만 살린다 (영어 어법·어휘 문제)
+// 일본어(가나)나 영어 글이면 lang 을 붙여 화면 낭독기가 그 말로 읽게 한다
+const langOf = t => { const x = String(t || ''); if (/[\u3040-\u30ff]/.test(x)) return 'ja'; const letters = x.replace(/[^A-Za-z\uac00-\ud7a3]/g, ''); return letters && (x.match(/[A-Za-z]/g) || []).length / letters.length > 0.6 ? 'en' : ''; };
+const langAttr = t => { const l = langOf(t); return l ? ` lang="${l}"` : ''; };
 const ctxHtml = s => esc(s).replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, "<u>$1</u>");
 // 원문 한 줄: 밑줄(<u>)은 살리고, 줄을 넘어가 짝이 안 맞는 밑줄 표시는 지운다
 const srcLine = l => ctxHtml(l).replace(/&lt;\/?u&gt;/g, '');
@@ -217,6 +220,15 @@ const routes = {
 const navOf = { '/speed': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
+// 칩 묶음에 바로 앞 제목을 이름으로 붙인다 (화면 낭독기가 '8초' 가 무엇인지 알게)
+function labelChipGroups(root = main) {
+  root.querySelectorAll('div.chips:not([role])').forEach((g, i) => {
+    let h = g.previousElementSibling;
+    while (h && !/^H[2-4]$/.test(h.tagName)) h = h.previousElementSibling;
+    g.setAttribute('role', 'group');
+    if (h) { if (!h.id) h.id = 'cg' + Date.now().toString(36) + i; g.setAttribute('aria-labelledby', h.id); }
+  });
+}
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
 function syncTitle() {
   const h1 = main.querySelector('h1');
@@ -253,6 +265,7 @@ function render() {
     const a = document.activeElement;
     if (h1 && (!a || a === document.body || a.closest('nav.bottom'))) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
   }
+  labelChipGroups();
   if (fsel) restoreFocus(fsel);
   render.keepScroll = false;
 }
@@ -1517,7 +1530,7 @@ function drawQuestion0() {
       const n = i + 1;
       let cls = sel.includes(n) ? 'sel' : '';
       if (res) cls = right.includes(n) ? 'right' : (sel.includes(n) ? 'wrong' : '');
-      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span>${esc(c)}</span></button></li>`;
+      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span${langAttr(c)}>${esc(c)}</span></button></li>`;
     }).join('')}</ul>`;
   } else if (q.type === 'short') {
     body = `<input type="text" id="ansIn" aria-label="답" placeholder="답을 쓴다" value="${esc(ans || '')}"${locked ? ' disabled' : ''} autocomplete="off" style="margin-top:12px">`;
@@ -1544,7 +1557,7 @@ function drawQuestion0() {
     })()}
     <div class="q-main">
     ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}&srcedit=1">원문 넣으러 가기</a> 또는 <button type="button" class="btn sm" id="noSrcSkip">건너뛰기 <kbd>S</kbd></button> <span class="muted">(오답에 안 넣는다)</span></p>` : ''}
-    <div class="q-text">${qHtml(q.question)}</div>
+    <div class="q-text"${langAttr(q.question)}>${qHtml(q.question)}</div>
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
@@ -2146,8 +2159,8 @@ function viewSpeedSetup() {
     <div id="spPacks"></div>
     <h2 class="h3" style="margin-top:14px">어디서</h2>${chipGroup('src', [{ value: 'both', label: '단답형 + 카드' }, { value: 'q', label: '단답형 문제만' }, { value: 'card', label: '암기카드만' }], [last.src], false)}
     <h2 class="h3" style="margin-top:14px">문제 수</h2>${chipGroup('n', ['10', '20', '30'].map(v => ({ value: v, label: v + '문제' })), [String(last.n)], false)}
-    <h2 class="h3" style="margin-top:14px">한 문제에</h2>${chipGroup('per', ['8', '12', '20'].map(v => ({ value: v, label: v + '초' })), [String(last.per)], false)}
-    <p class="small muted" id="spCount"></p>
+    <h2 class="h3" style="margin-top:14px">한 문제에</h2>${chipGroup('per', [...['8', '12', '20'].map(v => ({ value: v, label: v + '초' })), { value: '0', label: '시간 없이' }], [String(last.per)], false)}
+    <p class="small muted" id="spCount" aria-live="polite"></p>
     <button class="btn pri block">시작</button>
   </form></div>`;
   const collect = () => ({ subject: picked('subject'), packs: picked('packs'), src: picked('src')[0] || 'both', n: picked('n')[0] || '20', per: picked('per')[0] || '12' });
@@ -2186,7 +2199,7 @@ function viewSpeed() {
     <div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>
     <section class="card sp-card">
       <p class="small muted" style="margin:0 0 6px">${subjDot(it.pack.subject)} ${esc(it.pack.title)} · ${it.kind === 'c' ? '카드' : '단답형'}</p>
-      <p class="sp-q" id="spQ">${esc(it.prompt)}</p>
+      <p class="sp-q" id="spQ"${langAttr(it.prompt)}>${esc(it.prompt)}</p>
       ${it.ctx ? `<div class="q-ctx sp-ctx">${ctxHtml(it.ctx)}</div>` : ''}
       <form id="spForm" autocomplete="off" class="sp-form"><input id="spIn" type="text" aria-labelledby="spQ" placeholder="답 쓰고 Enter" enterkeyhint="done"><button type="button" class="btn ghost" id="spPass">모름</button></form>
       <p class="sp-fb" id="spFb" aria-live="polite"></p>
@@ -2196,17 +2209,18 @@ function viewSpeed() {
   speed.lock = false;
   speed.t0 = Date.now();
   // 긴 문제는 읽는 시간만큼 더 준다 (15자에 1초)
-  const per = speed.per + Math.round(String(it.prompt).length / 15) + (it.ctx ? Math.round(it.ctx.length / 20) : 0);
+  const untimed = !speed.per; // '시간 없이' 를 고른 경우
+  const per = untimed ? 0 : speed.per + Math.round(String(it.prompt).length / 15) + (it.ctx ? Math.round(it.ctx.length / 20) : 0);
   const bar0 = document.getElementById('spBar'); if (bar0) bar0.style.transitionDuration = per + 's';
   const secEl = $('#spSec');
-  const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음`; };
+  const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = untimed ? '시간 없이' : `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음`; };
   clearInterval(speed.secT); tickSec(); speed.secT = setInterval(tickSec, 500);
   // 다른 화면으로 가면 시간을 멈춘다 (기록되지 않게). 돌아오면 그 문제부터 다시
   onLeave = () => { clearTimeout(speed?.timer); clearInterval(speed?.secT); };
   // 시간 막대: 다음 그림에서 0 으로 줄인다 (transform 만 움직인다)
-  requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
+  if (!untimed) requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
   clearTimeout(speed.timer);
-  speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
+  if (!untimed) speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
   $('#spForm').addEventListener('submit', e => { e.preventDefault(); answerSpeed(inp.value, false); });
   $('#spPass').addEventListener('click', () => answerSpeed('', false));
   $('#spQuit').addEventListener('click', () => {
@@ -2227,10 +2241,10 @@ function answerSpeed(val, timeout) {
   else S.recordCard(it.key, ok, ms);
   const fb = $('#spFb'), bar = document.getElementById('spBar');
   if (bar) { bar.style.transitionDuration = '0s'; bar.style.transform = getComputedStyle(bar).transform; }
-  $('#spIn').disabled = true;
+  $('#spIn').readOnly = true; $('#spIn').setAttribute('aria-readonly', 'true');
   fb.className = 'sp-fb ' + (ok ? 'ok' : 'bad');
   fb.textContent = ok ? '맞음' : `${timeout ? '시간 끝' : a ? '틀림' : '모름'} · 정답: ${it.show}`;
-  setTimeout(() => { if (!speed) return; speed.i++; render.keepScroll = true; render(); }, ok ? 700 : 1800);
+  setTimeout(() => { if (!speed) return; speed.i++; document.activeElement?.blur?.(); render.keepScroll = true; render(); }, ok ? 700 : 1800);
 }
 function viewSpeedResult() {
   const n = speed.res.length, ok = speed.res.filter(r => r.ok).length;
@@ -2327,7 +2341,7 @@ function viewFlash() {
   <h1 class="vh">암기카드</h1>
   <section class="card flash ${showBack ? 'back' : ''}" id="fc" role="button" tabindex="0">
     <span class="side" id="fcHint">${showBack ? '뒷면' : '앞면'} · 눌러서 뒤집기 (스페이스)</span>
-    <div>${esc(showBack ? x.c.back : x.c.front)}</div>
+    <div${langAttr(showBack ? x.c.back : x.c.front)}>${esc(showBack ? x.c.back : x.c.front)}</div>
     ${showBack && x.c.note ? `<p class="small muted" style="margin-top:10px">${esc(x.c.note)}</p>` : ''}
   </section>
   ${flash.back ? `<div class="row flash-acts"><button class="btn bad" id="no">몰랐다 <kbd>1</kbd></button><button class="btn ok" id="yes">알았다 <kbd>2</kbd></button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
