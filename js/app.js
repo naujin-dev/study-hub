@@ -275,7 +275,7 @@ window.addEventListener('hashchange', () => { const t = document.getElementById(
 
 function updateTop() {
   const ex = examInfo();
-  document.getElementById('topDday').textContent = ex.first ? `${ex.title || '2회고사'} ${dLabel(ex.first)}` : '';
+  document.getElementById('topDday').textContent = ex.first && params().path !== '/' ? `${ex.title || '2회고사'} ${dLabel(ex.first)}` : '';
   // 일주일 안으로 들어오면 빨강, 그 전에는 차분한 색
   document.getElementById('topDday').classList.toggle('near', !!ex.first && S.daysBetween(S.today(), ex.first) <= 7);
 }
@@ -628,13 +628,13 @@ function viewStudy() {
   if (!packs.length) body = `<p class="muted" style="margin-top:16px">${SUBJ[sel].name} 자료가 아직 없다. <a href="#/settings">설정 → 자료 가져오기</a></p>`;
   else if (editing) body = `<div class="sec-title"><h2>순서 바꾸기</h2><span class="row"><button class="btn sm ghost" data-ord-reset="${sel}">원래 순서로</button><button class="btn sm pri" data-ord-done>다 했다</button></span></div>
     <section class="card flat"><ul class="list ordlist">${packs.map((p, i) => `<li class="item"><span class="mono small muted" style="width:2em">${i + 1}</span><span class="grow"><b>${esc(p.title)}</b></span>
-      <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < packs.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button></li>`).join('')}</ul></section>`;
+      <button class="btn sm" data-mv="${esc(p.id)}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button><button class="btn sm" data-mv="${esc(p.id)}" data-d="1" ${i < packs.length - 1 ? '' : 'disabled'} aria-label="아래로"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 10 6 6 6-6"/></svg></button></li>`).join('')}</ul></section>`;
   else if (catEdit) {
     const cats = myCats(sel);
     body = `<section class="card" style="margin-top:12px"><h3 style="margin-top:0">분류 만들기</h3>
       <p class="small muted">${SUBJ[sel].name} 자료를 나눌 분류 이름을 만든다. 순서는 ↑↓ 로, 이름은 칸을 고치면 바로 바뀐다. 분류를 지워도 자료는 지워지지 않고 "분류 안 됨" 으로 간다.</p>
       <ul class="list catrows">${cats.map((c, i) => `<li class="item"><input type="text" class="grow" data-cname="${c.id}" value="${esc(c.name)}" aria-label="분류 이름"><span class="small muted">${packs.filter(p => catOf(p) === c.id).length}개</span>
-        <button class="btn sm" data-cmv="${c.id}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="btn sm" data-cmv="${c.id}" data-d="1" ${i < cats.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button><button class="btn sm ghost bad" data-cdel="${c.id}">지우기</button></li>`).join('') || '<li class="item muted small">아직 분류가 없다.</li>'}</ul>
+        <button class="btn sm" data-cmv="${c.id}" data-d="-1" ${i ? '' : 'disabled'} aria-label="위로"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button><button class="btn sm" data-cmv="${c.id}" data-d="1" ${i < cats.length - 1 ? '' : 'disabled'} aria-label="아래로"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 10 6 6 6-6"/></svg></button><button class="btn sm ghost bad" data-cdel="${c.id}">지우기</button></li>`).join('') || '<li class="item muted small">아직 분류가 없다.</li>'}</ul>
       <form id="cAdd" class="row" style="margin-top:8px"><input type="text" name="n" placeholder="새 분류 이름 (예: 학평, 교과서, 시험 직전)" style="flex:1"><button class="btn pri">추가</button></form>
     </section>
     <section class="card"><h3 style="margin-top:0">자료 나누기</h3>
@@ -665,7 +665,7 @@ function viewStudy() {
   }
 
   main.innerHTML = `
-  <div class="row between" style="align-items:center"><h1 style="margin:0">공부자료</h1><a class="small" href="#/pdf?s=${sel}">PDF 원본 <span id="pdfCount"></span> ›</a></div>
+  <div class="row between" style="align-items:center"><h1 style="margin:0">공부자료</h1><a class="small" href="#/pdf?s=${sel}">PDF 원본 <span id="pdfCount"></span></a></div>
   <form id="sf" class="row" style="margin:10px 0"><input type="search" name="q" aria-label="자료 찾기" placeholder="모든 자료, 문제, 카드에서 찾기" value="${esc(term)}" style="flex:1"><button class="btn">찾기</button></form>
   ${results}
   <div class="study-wrap">
@@ -795,7 +795,7 @@ function viewPack() {
   const srcPane = `<section class="card src-pane" id="srcPane">
     <div class="row between"><b>본문</b><span class="row">${cur ? `<label class="small"><input type="checkbox" id="lnOn"${lnOn ? ' checked' : ''}> 행 번호</label>` : ''}<details class="menu"><summary class="btn sm ghost">편집</summary><div class="menu-pop">${cur ? '<button type="button" class="mi" id="srcEdit">이 원문 고치기</button>' : ''}<button type="button" class="mi" id="srcAdd">원문 붙여넣기</button><button type="button" class="mi" data-file="srcImg">교과서 사진 넣기</button></div></details><input type="file" id="srcImg" accept="image/*" multiple hidden></span></div>
     ${texts.length > 1 ? `<div class="chips" style="margin:8px 0" role="group" aria-label="볼 원문">${texts.map(t => `<button type="button" class="chip${t.tid === curTid ? ' on' : ''}" aria-pressed="${t.tid === curTid}" data-tid="${esc(t.tid)}">${esc(t.title)}</button>`).join('')}</div>` : ''}
-    ${cur ? `<p class="small muted" style="margin:6px 0">${esc(cur.title)}${cur.mine ? ' · 내가 넣거나 고친 본문' : ''}</p>
+    ${cur ? `<p class="small muted" style="margin:6px 0">${texts.length > 1 ? '' : esc(cur.title)}${cur.mine ? `${texts.length > 1 ? '' : ' · '}내가 넣거나 고친 본문` : ''}</p>
       <div class="src-text${lnOn ? ' ln' : ''}" id="srcText">${cur.body.split('\n').map(line => line.trim() ? `<div class="l">${srcLine(line)}</div>` : '<div class="l e"></div>').join('')}</div>`
       : `<p class="small muted">아직 본문이 없다. "편집 → 원문 붙여넣기" 로 원문을 넣거나 "교과서 사진 넣기" 로 사진을 올린다. 공부 Claude 프롬프트로 받은 자료에는 본문이 같이 들어 있다.</p>`}
     <div id="srcImgs" class="src-imgs"></div>
@@ -833,7 +833,7 @@ function viewPack() {
     ${(p.cards || []).length ? `<a class="btn" href="#/flash?pack=${encodeURIComponent(p.id)}">암기카드 ${p.cards.length}장</a>` : ''}
     ${p.notes ? `<a class="btn" href="#/blank?pack=${encodeURIComponent(p.id)}" title="자료를 안 보고 기억나는 것을 다 써 본 뒤 비교한다">백지 복습</a>` : ''}
     <button class="btn" id="srcBtn" aria-pressed="${srcOn}">본문 같이 보기${texts.length > 1 ? ` <span class="small">원문 ${texts.length}개</span>` : ''}</button>
-    <button class="btn ghost" id="readBtn" aria-pressed="${!!read[p.id]}">${read[p.id] ? '다 읽음 ✓' : '다 읽음 표시'}</button>
+    <button class="btn ghost" id="readBtn" aria-pressed="${!!read[p.id]}">${read[p.id] ? '다 읽음' : '다 읽음 표시'}</button>
     ${packMenu(p, `<a class="mi" href="#/gen?pack=${encodeURIComponent(p.id)}">AI 문제 더 만들기</a><button type="button" class="mi" id="printBtn">인쇄</button>`)}
   </div>
   <p class="small muted">읽은 시간 <b id="readNow">${S.fmtDur(S.readTimeOf(p.id))}</b> (${readEvents.length}번)${readEvents.length ? ` · 마지막 ${S.fmtDate(S.dayOf(readEvents[readEvents.length - 1].t))}` : ''}${qs.length ? ` · 객관식 ${cnt('mcq')} · 단답형 ${cnt('short')} · 서술형 ${cnt('essay')} · 푼 문제 ${tried}/${qs.length} · 정답률 ${n ? pct(ok, n) + '%' : '-'}` : ''}</p>
@@ -1335,7 +1335,8 @@ function viewQuizSetup() {
     </div>
     <p id="qcount" class="small muted"></p>
     <button class="btn pri block" style="margin-top:6px">시작</button>
-  </form></div>`;
+  </form>
+  <p class="small" style="margin-top:12px">보기 없이 답을 직접 쳐 보려면 <a href="#/speed">스피드 퀴즈</a></p></div>`;
 
   const drawPacks = () => {
     const subs = picked('subject');
@@ -2119,12 +2120,16 @@ let speed = null;
 // 스피드 퀴즈에서 뺄 문제: 화면에 없는 <보기>·표·그림을 가리키는 것
 const SPEED_SKIP = /<보기>|\[보기\]|[ⓐ-ⓩ]|다음\s*(표|글|그림|자료|대화)|아래\s*(표|글|그림|자료)/;
 const OLD_HANGUL = /[\u1100-\u11FF\uA960-\uA97F\uD7B0-\uD7FF\u3164-\u318E]/;
+// 카드 뒷면에서 맞는 답으로 받아 줄 것들: 그대로, 괄호 뺀 것, 괄호 안, [ ] 앞과 안 (pyo [표]),
+// 쉼표·/·또는 으로 나열한 말은 하나만 써도 맞음 (추천, 권유 → 추천)
 const speedAnswers = back => {
   const b = String(back || '').trim();
   const out = new Set([b]);
-  const noParen = b.replace(/\s*\([^)]*\)/g, '').trim();
-  if (noParen) out.add(noParen);
-  for (const part of b.split(/\s*[\/]\s*|\s+또는\s+/)) if (part.trim()) out.add(part.trim());
+  const add = x => { x = String(x || '').trim(); if (x) out.add(x); };
+  add(b.replace(/\s*\([^)]*\)/g, ''));
+  add(b.replace(/\s*\[[^\]]*\]/g, ''));
+  for (const m of b.matchAll(/[(\[]([^)\]]+)[)\]]/g)) add(m[1]);
+  for (const part of b.replace(/\s*[(\[][^)\]]*[)\]]/g, '').split(/\s*[,，、\/]\s*|\s+또는\s+/)) add(part);
   return [...out];
 };
 function speedPool(c) {
@@ -2144,6 +2149,9 @@ function speedPool(c) {
       const back = String(x.c.back || '').trim();
       if (!back || back.length > 16 || /\n/.test(back) || OLD_HANGUL.test(back)) continue; // 문장이나 옛한글 뒷면은 빨리 칠 수 없다
       if (SPEED_SKIP.test(x.c.front)) continue;
+      // 뜻풀이·문장으로 된 카드는 뺀다 (세 낱말 넘는 뒷면, '~다.' 로 끝나는 뒷면, 문장인 앞면)
+      if (back.replace(/\s*[(\[][^)\]]*[)\]]/g, '').split(/\s+/).length > 3 || /(다|요)\.?$/.test(back)) continue;
+      if (/[。.]\s*$|です|ます/.test(String(x.c.front).trim())) continue;
       out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back), show: back });
     }
   }
@@ -2213,7 +2221,7 @@ function viewSpeed() {
   const per = untimed ? 0 : speed.per + Math.round(String(it.prompt).length / 15) + (it.ctx ? Math.round(it.ctx.length / 20) : 0);
   const bar0 = document.getElementById('spBar'); if (bar0) bar0.style.transitionDuration = per + 's';
   const secEl = $('#spSec');
-  const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = untimed ? '시간 없이' : `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음`; };
+  const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = untimed ? '시간 없이' : `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음${per > speed.per ? ` (읽기 +${per - speed.per}초)` : ''}`; };
   clearInterval(speed.secT); tickSec(); speed.secT = setInterval(tickSec, 500);
   // 다른 화면으로 가면 시간을 멈춘다 (기록되지 않게). 돌아오면 그 문제부터 다시
   onLeave = () => { clearTimeout(speed?.timer); clearInterval(speed?.secT); };
@@ -2224,8 +2232,11 @@ function viewSpeed() {
   $('#spForm').addEventListener('submit', e => { e.preventDefault(); answerSpeed(inp.value, false); });
   $('#spPass').addEventListener('click', () => answerSpeed('', false));
   $('#spQuit').addEventListener('click', () => {
-    if (speed.items.length - speed.i > 1 && !confirm(`아직 ${speed.items.length - speed.i}문제 남았다. 그만하고 결과를 볼까?`)) return;
-    clearTimeout(speed.timer); clearInterval(speed.secT); speed.items = speed.items.slice(0, speed.i); render();
+    const done = speed.i + (speed.lock ? 1 : 0); // 정답을 보여 주는 중이면 그 문제까지 푼 것
+    const left = speed.items.length - done;
+    if (left > 0 && !confirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`)) return;
+    clearTimeout(speed.timer); clearTimeout(speed.adv); clearInterval(speed.secT);
+    speed.items = speed.items.slice(0, done); speed.i = done; render();
   });
 }
 function answerSpeed(val, timeout) {
@@ -2244,7 +2255,7 @@ function answerSpeed(val, timeout) {
   $('#spIn').readOnly = true; $('#spIn').setAttribute('aria-readonly', 'true');
   fb.className = 'sp-fb ' + (ok ? 'ok' : 'bad');
   fb.textContent = ok ? '맞음' : `${timeout ? '시간 끝' : a ? '틀림' : '모름'} · 정답: ${it.show}`;
-  setTimeout(() => { if (!speed) return; speed.i++; document.activeElement?.blur?.(); render.keepScroll = true; render(); }, ok ? 700 : 1800);
+  speed.adv = setTimeout(() => { if (!speed) return; speed.i++; document.activeElement?.blur?.(); render.keepScroll = true; render(); }, ok ? 700 : 2400);
 }
 function viewSpeedResult() {
   const n = speed.res.length, ok = speed.res.filter(r => r.ok).length;
@@ -2254,7 +2265,7 @@ function viewSpeedResult() {
     <p class="result-line"><b>${n}문제 중 ${ok}개</b> 바로 떠올렸다${n ? ` · 한 문제 평균 ${avg.toFixed(1)}초` : ''}</p>
     <p class="small muted" style="margin-top:-4px">${wrong.length ? `못 떠올린 ${wrong.length}개는 오답노트와 카드 복습에 들어갔다.` : n ? '다 떠올렸다.' : ''}</p>
     <div class="row" style="margin:12px 0 16px">${wrong.length ? '<button class="btn pri" id="spRetry">못 떠올린 것만 다시</button>' : ''}<a class="btn${wrong.length ? '' : ' pri'}" href="#/speed">다시 고르기</a><a class="btn ghost" href="#/">홈</a></div>
-    ${wrong.length ? `<section class="card flat"><h2 class="h3" style="margin-top:0">못 떠올린 것</h2><ul class="list">${wrong.map(({ it, r }) => `<li class="item" style="display:block"><b>${esc(it.prompt)}</b><br><span class="small">정답 <b>${esc(it.show)}</b> · 내 답 ${r.a ? esc(r.a) : '<span class="muted">안 씀</span>'}${r.timeout ? ' <span class="tag">시간 끝</span>' : ''}</span><br><span class="small muted">${esc(it.pack.title)}</span>${r.a ? `<br><button type="button" class="btn sm" data-spfix="${speed.items.indexOf(it)}">내 답도 맞다 (맞음으로 고치기)</button>` : ''}</li>`).join('')}</ul></section>` : ''}
+    ${wrong.length ? `<section class="card flat"><h2 class="h3" style="margin-top:0">못 떠올린 것</h2><ul class="list">${wrong.map(({ it, r }) => `<li class="item" style="display:block"><b>${esc(it.prompt)}</b><br><span class="small">정답 <b>${esc(it.show)}</b> · 내 답 ${r.a ? esc(r.a) : '<span class="muted">안 씀</span>'}${r.timeout ? ' <span class="tag">시간 끝</span>' : ''}</span><br><span class="small muted">${esc(it.pack.title)}</span><br><button type="button" class="btn sm${r.a ? '' : ' ghost'}" data-spfix="${speed.items.indexOf(it)}">${r.a ? '내 답도 맞다 (맞음으로 고치기)' : '알았는데 못 쳤다 (맞음으로)'}</button></li>`).join('')}</ul></section>` : ''}
   </div>`;
   const h = $('h1'); h.tabIndex = -1; h.focus({ preventScroll: true });
   announce($('.result-line').textContent);
@@ -3769,7 +3780,7 @@ function viewMore() {
     ['자료와 설정', ['#/pdf', '#/check', '#/prompts', '#/settings', '#/help']],
   ];
   const byHref = Object.fromEntries(links.map(l => [l[0], l]));
-  main.innerHTML = `<h1>더보기</h1><div class="more-grid">${groups.map(([name, hs]) => `<section class="card flat"><h2>${name}</h2><ul class="list">${hs.map(h => byHref[h]).filter(Boolean).map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span><span class="go" aria-hidden="true">›</span></a></li>`).join('')}</ul></section>`).join('')}</div>`;
+  main.innerHTML = `<h1>더보기</h1><div class="more-grid">${groups.map(([name, hs]) => `<section class="card flat"><h2>${name}</h2><ul class="list">${hs.map(h => byHref[h]).filter(Boolean).map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span><span class="go" aria-hidden="true"></span></a></li>`).join('')}</ul></section>`).join('')}</div>`;
 }
 
 function viewHelp() {

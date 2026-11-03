@@ -715,3 +715,13 @@ details.week>summary,.week summary{flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){.sp-bar{display:none}}
 .selbar,.quickpill{box-shadow:var(--shadow)}
 @media (max-width:600px){.plan-li .plan-go{white-space:normal}.subj-table .nums{flex-wrap:wrap;justify-content:flex-end}}
+
+/* 더보기 줄 끝 꺾쇠 (글자 › 대신) */
+.more-grid .go{width:.8em;height:.8em;background:var(--ink3);-webkit-mask:var(--ic-chev) center/contain no-repeat;mask:var(--ic-chev) center/contain no-repeat}
+/* 문제 옆 '원문 보기' 펼침 표시도 꺾쇠로 */
+.q-src>summary{list-style:none}
+.q-src>summary::-webkit-details-marker{display:none}
+.q-src>summary::before{content:'';display:inline-block;width:.75em;height:.75em;margin-right:6px;background:var(--ink3);-webkit-mask:var(--ic-chev) center/contain no-repeat;mask:var(--ic-chev) center/contain no-repeat;transition:transform .15s var(--ease-out)}
+.q-src[open]>summary::before{transform:rotate(90deg)}
+@media (pointer:coarse){.home-head a,.today .small a{display:inline-flex;align-items:center;min-height:44px}}
+@media (max-width:600px){.sec-title{flex-direction:column;align-items:flex-start;gap:2px}}
