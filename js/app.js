@@ -220,6 +220,28 @@ const routes = {
 const navOf = { '/speed': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
+// 화면의 글에서 일본어(가나·한자 덩어리)는 lang="ja" 로 감싸고, 영어가 대부분인 문단은 lang="en" 으로.
+// 화면 낭독기가 한국어 목소리로 일본어·영어를 읽지 않게 한다. 그릴 때마다 한 번 돈다.
+const KANA = /[\u3040-\u30ff]/;
+function markLang(root = main) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => n.nodeValue.trim() && !n.parentElement.closest('[lang]:not(html),script,style,textarea,input') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = [];
+  while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const t = n.nodeValue;
+    if (KANA.test(t)) {
+      // 가나가 든 덩어리(가나·한자·장음·띄어쓰기)만 span 으로 감싼다
+      const parts = t.split(/([\u3040-\u30ff\u4e00-\u9fff\u3000-\u303f\uff01-\uff5e\u30fc]+(?:[\s\u3000]*[\u3040-\u30ff\u4e00-\u9fff\u30fc\u3000-\u303f]+)*)/);
+      if (parts.length < 2) continue;
+      const f = document.createDocumentFragment();
+      parts.forEach((x, i) => { if (!x) return; if (i % 2 && KANA.test(x)) { const sp = document.createElement('span'); sp.lang = 'ja'; sp.textContent = x; f.append(sp); } else f.append(x); });
+      n.replaceWith(f);
+    } else {
+      const latin = (t.match(/[A-Za-z]/g) || []).length, hangul = (t.match(/[\uac00-\ud7a3]/g) || []).length;
+      if (latin >= 12 && latin > hangul * 3) { const el = n.parentElement; if (el && el !== root && !el.closest('nav,header')) el.lang = 'en'; }
+    }
+  }
+}
 // 칩 묶음에 바로 앞 제목을 이름으로 붙인다 (화면 낭독기가 '8초' 가 무엇인지 알게)
 function labelChipGroups(root = main) {
   root.querySelectorAll('div.chips:not([role])').forEach((g, i) => {
@@ -266,6 +288,7 @@ function render() {
     if (h1 && (!a || a === document.body || a.closest('nav.bottom'))) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); }
   }
   labelChipGroups();
+  markLang();
   if (fsel) restoreFocus(fsel);
   render.keepScroll = false;
 }
@@ -1081,6 +1104,12 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-file]');
   if (b) document.getElementById(b.dataset.file)?.click();
 });
+// 좁은 화면에서 키보드로 옮겨 간 칸이 아래 메뉴에 가리면 가운데로 올린다
+document.addEventListener('focusin', e => {
+  if (innerWidth >= 900 || !main.contains(e.target)) return;
+  const r = e.target.getBoundingClientRect(), nav = document.querySelector('nav.bottom')?.getBoundingClientRect();
+  if (nav && r.bottom > nav.top - 8) e.target.scrollIntoView({ block: 'center' });
+});
 // 메뉴가 화면 밖으로 나가면 반대쪽으로 붙인다 (휴대폰에서 버튼이 줄 앞에 있을 때)
 document.addEventListener('toggle', e => {
   const d = e.target;
@@ -1505,6 +1534,7 @@ function restoreFocus(sel) {
 function drawQuestion() {
   const fsel = focusKey(document.activeElement);
   drawQuestion0();
+  markLang();
   restoreFocus(fsel);
   render.keepScroll = false; // render() 를 거치지 않았으므로 다음 화면 이동에 남지 않게
 }
@@ -2204,7 +2234,7 @@ function viewSpeed() {
   main.innerHTML = `<div class="narrow speed">
     <h1 class="vh">스피드 퀴즈 ${speed.i + 1}번</h1>
     <div class="row between small muted"><span>${speed.i + 1} / ${speed.items.length} · 맞음 ${ok} · <span id="spSec" class="num"></span></span><button type="button" class="btn sm ghost" id="spQuit">그만<span class="kbd-only"> (Esc)</span></button></div>
-    <div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>
+    ${speed.per ? `<div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>` : '<div class="sp-bar-gap"></div>'}
     <section class="card sp-card">
       <p class="small muted" style="margin:0 0 6px">${subjDot(it.pack.subject)} ${esc(it.pack.title)} · ${it.kind === 'c' ? '카드' : '단답형'}</p>
       <p class="sp-q" id="spQ"${langAttr(it.prompt)}>${esc(it.prompt)}</p>
@@ -2229,7 +2259,11 @@ function viewSpeed() {
   if (!untimed) requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
   clearTimeout(speed.timer);
   if (!untimed) speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
-  $('#spForm').addEventListener('submit', e => { e.preventDefault(); answerSpeed(inp.value, false); });
+  $('#spForm').addEventListener('submit', e => {
+    e.preventDefault();
+    if (speed.lock && !speed.per) return nextSpeed(); // 시간 없이: 정답을 본 뒤 Enter 로 다음
+    answerSpeed(inp.value, false);
+  });
   $('#spPass').addEventListener('click', () => answerSpeed('', false));
   $('#spQuit').addEventListener('click', () => {
     const done = speed.i + (speed.lock ? 1 : 0); // 정답을 보여 주는 중이면 그 문제까지 푼 것
@@ -2238,6 +2272,11 @@ function viewSpeed() {
     clearTimeout(speed.timer); clearTimeout(speed.adv); clearInterval(speed.secT);
     speed.items = speed.items.slice(0, done); speed.i = done; render();
   });
+}
+function nextSpeed() {
+  if (!speed) return;
+  clearTimeout(speed.adv);
+  speed.i++; document.activeElement?.blur?.(); render.keepScroll = true; render();
 }
 function answerSpeed(val, timeout) {
   if (!speed || speed.lock || !document.getElementById('spIn')) return; // 화면을 떠났으면 기록하지 않는다
@@ -2255,7 +2294,8 @@ function answerSpeed(val, timeout) {
   $('#spIn').readOnly = true; $('#spIn').setAttribute('aria-readonly', 'true');
   fb.className = 'sp-fb ' + (ok ? 'ok' : 'bad');
   fb.textContent = ok ? '맞음' : `${timeout ? '시간 끝' : a ? '틀림' : '모름'} · 정답: ${it.show}`;
-  speed.adv = setTimeout(() => { if (!speed) return; speed.i++; document.activeElement?.blur?.(); render.keepScroll = true; render(); }, ok ? 700 : 2400);
+  if (!speed.per) { fb.textContent += ' · Enter 로 다음'; $('#spPass').textContent = '다음'; $('#spPass').onclick = nextSpeed; return; } // 시간 없이: 직접 넘긴다
+  speed.adv = setTimeout(nextSpeed, ok ? 700 : 2400);
 }
 function viewSpeedResult() {
   const n = speed.res.length, ok = speed.res.filter(r => r.ok).length;

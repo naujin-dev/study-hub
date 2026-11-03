@@ -687,7 +687,6 @@ details.week>summary,.week summary{flex-wrap:wrap}
 .chart .cross,.chart .cross-dot{pointer-events:none}
 /* 글자를 크게 키운 휴대폰에서 머리띠·표가 넘치지 않게 */
 .top-in{flex-wrap:wrap;row-gap:4px}
-.subj-table .nums{flex-wrap:wrap}
 .tbl-wrap{overflow-x:auto}
 
 /* 스피드 퀴즈 */
@@ -714,7 +713,7 @@ details.week>summary,.week summary{flex-wrap:wrap}
 /* 움직임 줄이기: 시간 막대 대신 남은 초 글자만 */
 @media (prefers-reduced-motion:reduce){.sp-bar{display:none}}
 .selbar,.quickpill{box-shadow:var(--shadow)}
-@media (max-width:600px){.plan-li .plan-go{white-space:normal}.subj-table .nums{flex-wrap:wrap;justify-content:flex-end}}
+@media (max-width:600px){.plan-li .plan-go{white-space:normal}}
 
 /* 더보기 줄 끝 꺾쇠 (글자 › 대신) */
 .more-grid .go{width:.8em;height:.8em;background:var(--ink3);-webkit-mask:var(--ic-chev) center/contain no-repeat;mask:var(--ic-chev) center/contain no-repeat}
@@ -725,3 +724,8 @@ details.week>summary,.week summary{flex-wrap:wrap}
 .q-src[open]>summary::before{transform:rotate(90deg)}
 @media (pointer:coarse){.home-head a,.today .small a{display:inline-flex;align-items:center;min-height:44px}}
 @media (max-width:600px){.sec-title{flex-direction:column;align-items:flex-start;gap:2px}}
+
+/* 과목 표 숫자: 좁거나 글자가 크면 이름 아래로 내려가게 (고정 em 칸 대신) */
+.subj-table .srow{flex-wrap:wrap;row-gap:4px}
+.subj-table .nums{grid-template-columns:repeat(3,minmax(3em,auto));column-gap:.9em;margin-left:auto}
+.sp-bar-gap{height:6px;margin:10px 0 14px}
