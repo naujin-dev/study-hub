@@ -116,6 +116,8 @@ function setPlan(id, patch) {
 }
 // 계획 글의 자료 id(kor-02-sokmiingok, (eng-03) 등)는 '자료 →' 버튼이 대신하므로 글에서 뺀다
 const PID = '[a-z]{3}-(?:n)?\\d+[a-z]?(?:-[a-z0-9]+)*';
+// Notion 과목 이름 → 사이트 과목 (Notion 은 그대로 두고 보여 줄 때만 바꾼다)
+const NOTION_SUBJ = { 국어: 'kor', 영어: 'eng', 사회: 'soc', 통합사회: 'soc', 과학: 'sci', 통합과학: 'sci', 한국사: 'his', 과탐실: 'lab', 과학탐구실험: 'lab', 일본어: 'jpn', 대수: 'math', 수학: 'math' };
 const planText = t => String(t || '')
   .replace(new RegExp(`\\s*\\((?:study-hub\\s+)?${PID}(?:\\s*[,·]\\s*${PID})*\\)`, 'g'), '')
   .replace(new RegExp(`(^|\\s)${PID}(?=\\s|$)`, 'g'), '$1').replace(/\s{2,}/g, ' ').trim();
@@ -212,7 +214,7 @@ const routes = {
   '/speed': viewSpeed,
 };
 // 아래 메뉴에서 켜질 칸. 암기카드·계획·시간 재기는 더보기에 들어 있으므로 더보기가 켜진다.
-const navOf = { '/speed': 'quiz', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/speed': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
@@ -808,7 +810,7 @@ function viewPack() {
   <p class="small"><a href="#/study?s=${p.subject}">← ${subjName(p.subject)}</a></p>
   <h1 class="ptitle">${esc(p.title)}</h1>${p._title ? `<p class="small muted" style="margin-top:-6px">원래 이름: ${esc(p._title)}</p>` : ''}
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
-  <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
+  <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' && D.db().packs.some(x => x._src === 'repo') ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
   <p class="small noprint" id="packPdfs" hidden></p>
   ${(p._mergedFrom || []).length ? `<p class="small muted noprint">합친 자료: ${p._mergedFrom.map(m => `${esc(m.title)}${m.auto ? ' (같은 단원이라 저절로)' : ''} <button class="btn sm ghost" data-unmerge="${esc(m.id)}">따로 보기</button>`).join(' · ')}</p>` : ''}
@@ -1076,6 +1078,19 @@ document.addEventListener('toggle', e => {
   if (r.left < 8) { pop.style.right = 'auto'; pop.style.left = (8 - dl) + 'px'; }
   else if (r.right > innerWidth - 8) { pop.style.right = 'auto'; pop.style.left = (innerWidth - 8 - r.width - dl) + 'px'; }
 }, true);
+// 펼친 메뉴 안에서는 ↑ ↓ 로 항목을 옮겨 다닌다
+document.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const d = e.target.closest?.('details.menu');
+  if (!d) return;
+  if (!d.open) { if (e.key === 'ArrowDown' && e.target.tagName === 'SUMMARY') { e.preventDefault(); d.open = true; requestAnimationFrame(() => d.querySelector('.mi')?.focus()); } return; }
+  const items = [...d.querySelectorAll('.mi')];
+  if (!items.length) return;
+  e.preventDefault();
+  const i = items.indexOf(document.activeElement);
+  const n = e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+  items[n].focus();
+});
 // 펼친 메뉴는 바깥을 누르거나, 메뉴 안의 항목을 누르거나, Esc 를 누르면 닫는다
 document.addEventListener('click', e => {
   document.querySelectorAll('details.menu[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('.mi')) d.open = false; });
@@ -2088,6 +2103,9 @@ document.addEventListener('change', e => {
 // ================= 스피드 퀴즈 =================
 // 정말 아는지 확인하려고 짧은 시간 안에 답을 바로 쳐서 낸다. 단답형 문제와 답이 짧은 암기카드에서 뽑는다.
 let speed = null;
+// 스피드 퀴즈에서 뺄 문제: 화면에 없는 <보기>·표·그림을 가리키는 것
+const SPEED_SKIP = /<보기>|\[보기\]|[ⓐ-ⓩ]|다음\s*(표|글|그림|자료|대화)|아래\s*(표|글|그림|자료)/;
+const OLD_HANGUL = /[\u1100-\u11FF\uA960-\uA97F\uD7B0-\uD7FF\u3164-\u318E]/;
 const speedAnswers = back => {
   const b = String(back || '').trim();
   const out = new Set([b]);
@@ -2098,18 +2116,21 @@ const speedAnswers = back => {
 };
 function speedPool(c) {
   const out = [];
+  const inPacks = x => !c.packs || !c.packs.length || c.packs.includes(x.pack.id);
   if (c.src !== 'card') {
-    for (const x of D.allQuestions({ subject: c.subject, types: ['short'] })) {
+    for (const x of D.allQuestions({ subject: c.subject, types: ['short'] }).filter(inPacks)) {
       // 긴 지문이 있어야 풀 수 있는 문제는 뺀다 (빨리 답하는 퀴즈라서)
       if (x.q.context && x.q.context.length > 120) continue;
-      if (CITE_RE.test(x.q.question) || !(x.q.answers || []).length) continue;
-      out.push({ kind: 'q', key: x.key, pack: x.pack, prompt: x.q.question, answers: x.q.answers, show: x.q.answers[0] });
+      if (CITE_RE.test(x.q.question) || SPEED_SKIP.test(x.q.question) || !(x.q.answers || []).length) continue;
+      if (x.q.answers.some(a => OLD_HANGUL.test(a))) continue; // 옛한글 답은 태블릿 자판으로 칠 수 없다
+      out.push({ kind: 'q', key: x.key, pack: x.pack, prompt: x.q.question, ctx: x.q.context || '', answers: x.q.answers, show: x.q.answers[0] });
     }
   }
   if (c.src !== 'q') {
-    for (const x of D.allCards({ subject: c.subject })) {
+    for (const x of D.allCards({ subject: c.subject }).filter(inPacks)) {
       const back = String(x.c.back || '').trim();
-      if (!back || back.length > 16 || /\n/.test(back)) continue; // 문장으로 된 뒷면은 빨리 칠 수 없다
+      if (!back || back.length > 16 || /\n/.test(back) || OLD_HANGUL.test(back)) continue; // 문장이나 옛한글 뒷면은 빨리 칠 수 없다
+      if (SPEED_SKIP.test(x.c.front)) continue;
       out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back), show: back });
     }
   }
@@ -2122,16 +2143,26 @@ function viewSpeedSetup() {
   <p class="small muted">답을 보고 고르는 대신 직접 친다. 정말 아는지 확인하는 용도. 문제마다 정해진 시간 안에 쓰고 Enter. 모르면 빈칸으로 Enter.</p>
   <form id="spf" class="card">
     <h2 class="h3">과목</h2>${chipGroup('subject', subs.map(s => ({ value: s.id, label: s.name, dot: true })), last.subject)}
-    <p class="small muted" style="margin:8px 0 0">안 고르면 모든 과목에서 낸다.</p>
+    <div id="spPacks"></div>
     <h2 class="h3" style="margin-top:14px">어디서</h2>${chipGroup('src', [{ value: 'both', label: '단답형 + 카드' }, { value: 'q', label: '단답형 문제만' }, { value: 'card', label: '암기카드만' }], [last.src], false)}
     <h2 class="h3" style="margin-top:14px">문제 수</h2>${chipGroup('n', ['10', '20', '30'].map(v => ({ value: v, label: v + '문제' })), [String(last.n)], false)}
     <h2 class="h3" style="margin-top:14px">한 문제에</h2>${chipGroup('per', ['8', '12', '20'].map(v => ({ value: v, label: v + '초' })), [String(last.per)], false)}
     <p class="small muted" id="spCount"></p>
     <button class="btn pri block">시작</button>
   </form></div>`;
-  const collect = () => ({ subject: picked('subject'), src: picked('src')[0] || 'both', n: picked('n')[0] || '20', per: picked('per')[0] || '12' });
+  const collect = () => ({ subject: picked('subject'), packs: picked('packs'), src: picked('src')[0] || 'both', n: picked('n')[0] || '20', per: picked('per')[0] || '12' });
   const cnt = () => { $('#spCount').textContent = `낼 수 있는 문제 ${speedPool(collect()).length}개`; };
-  $$('#spf input').forEach(i => i.addEventListener('change', cnt)); cnt();
+  // 과목을 고르면 단원(자료)도 고를 수 있다 (문제 풀기·암기카드와 같게)
+  const drawPacks = () => {
+    const ss = picked('subject');
+    $('#spPacks').innerHTML = ss.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + SUBJECTS.filter(x => ss.includes(x.id)).map(x => `${ss.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', D.db().packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs || [])}`).join('')
+      : '<p class="small muted" style="margin:8px 0 0">안 고르면 모든 과목에서 낸다. 과목을 고르면 단원도 고를 수 있다.</p>';
+    $$('#spPacks input').forEach(i => i.addEventListener('change', cnt));
+    cnt();
+  };
+  $$('#spf input:not([name="subject"])').forEach(i => i.addEventListener('change', cnt));
+  $$('#spf input[name="subject"]').forEach(i => i.addEventListener('change', drawPacks));
+  drawPacks();
   $('#spf').addEventListener('submit', e => {
     e.preventDefault();
     const c = collect(); S.save('speedPrefs', c);
@@ -2151,29 +2182,42 @@ function viewSpeed() {
   const ok = speed.res.filter(r => r.ok).length;
   main.innerHTML = `<div class="narrow speed">
     <h1 class="vh">스피드 퀴즈 ${speed.i + 1}번</h1>
-    <div class="row between small muted"><span>${speed.i + 1} / ${speed.items.length} · 맞음 ${ok}</span><button type="button" class="btn sm ghost" id="spQuit">그만 (Esc)</button></div>
+    <div class="row between small muted"><span>${speed.i + 1} / ${speed.items.length} · 맞음 ${ok} · <span id="spSec" class="num"></span></span><button type="button" class="btn sm ghost" id="spQuit">그만<span class="kbd-only"> (Esc)</span></button></div>
     <div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>
     <section class="card sp-card">
       <p class="small muted" style="margin:0 0 6px">${subjDot(it.pack.subject)} ${esc(it.pack.title)} · ${it.kind === 'c' ? '카드' : '단답형'}</p>
       <p class="sp-q" id="spQ">${esc(it.prompt)}</p>
-      <form id="spForm" autocomplete="off"><input id="spIn" type="text" aria-labelledby="spQ" placeholder="답을 쓰고 Enter (모르면 빈칸으로 Enter)" enterkeyhint="done"></form>
+      ${it.ctx ? `<div class="q-ctx sp-ctx">${ctxHtml(it.ctx)}</div>` : ''}
+      <form id="spForm" autocomplete="off" class="sp-form"><input id="spIn" type="text" aria-labelledby="spQ" placeholder="답 쓰고 Enter" enterkeyhint="done"><button type="button" class="btn ghost" id="spPass">모름</button></form>
       <p class="sp-fb" id="spFb" aria-live="polite"></p>
     </section></div>`;
   const inp = $('#spIn');
   inp.focus();
   speed.lock = false;
   speed.t0 = Date.now();
+  // 긴 문제는 읽는 시간만큼 더 준다 (15자에 1초)
+  const per = speed.per + Math.round(String(it.prompt).length / 15) + (it.ctx ? Math.round(it.ctx.length / 20) : 0);
+  const bar0 = document.getElementById('spBar'); if (bar0) bar0.style.transitionDuration = per + 's';
+  const secEl = $('#spSec');
+  const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음`; };
+  clearInterval(speed.secT); tickSec(); speed.secT = setInterval(tickSec, 500);
+  // 다른 화면으로 가면 시간을 멈춘다 (기록되지 않게). 돌아오면 그 문제부터 다시
+  onLeave = () => { clearTimeout(speed?.timer); clearInterval(speed?.secT); };
   // 시간 막대: 다음 그림에서 0 으로 줄인다 (transform 만 움직인다)
   requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
   clearTimeout(speed.timer);
-  speed.timer = setTimeout(() => answerSpeed(inp.value, true), speed.per * 1000);
+  speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
   $('#spForm').addEventListener('submit', e => { e.preventDefault(); answerSpeed(inp.value, false); });
-  $('#spQuit').addEventListener('click', () => { clearTimeout(speed.timer); speed.items = speed.items.slice(0, speed.i); render(); });
+  $('#spPass').addEventListener('click', () => answerSpeed('', false));
+  $('#spQuit').addEventListener('click', () => {
+    if (speed.items.length - speed.i > 1 && !confirm(`아직 ${speed.items.length - speed.i}문제 남았다. 그만하고 결과를 볼까?`)) return;
+    clearTimeout(speed.timer); clearInterval(speed.secT); speed.items = speed.items.slice(0, speed.i); render();
+  });
 }
 function answerSpeed(val, timeout) {
-  if (!speed || speed.lock) return;
+  if (!speed || speed.lock || !document.getElementById('spIn')) return; // 화면을 떠났으면 기록하지 않는다
   speed.lock = true;
-  clearTimeout(speed.timer);
+  clearTimeout(speed.timer); clearInterval(speed.secT);
   const it = speed.items[speed.i];
   const ms = Date.now() - speed.t0;
   const a = String(val || '').trim();
@@ -2196,11 +2240,18 @@ function viewSpeedResult() {
     <p class="result-line"><b>${n}문제 중 ${ok}개</b> 바로 떠올렸다${n ? ` · 한 문제 평균 ${avg.toFixed(1)}초` : ''}</p>
     <p class="small muted" style="margin-top:-4px">${wrong.length ? `못 떠올린 ${wrong.length}개는 오답노트와 카드 복습에 들어갔다.` : n ? '다 떠올렸다.' : ''}</p>
     <div class="row" style="margin:12px 0 16px">${wrong.length ? '<button class="btn pri" id="spRetry">못 떠올린 것만 다시</button>' : ''}<a class="btn${wrong.length ? '' : ' pri'}" href="#/speed">다시 고르기</a><a class="btn ghost" href="#/">홈</a></div>
-    ${wrong.length ? `<section class="card flat"><h2 class="h3" style="margin-top:0">못 떠올린 것</h2><ul class="list">${wrong.map(({ it, r }) => `<li class="item" style="display:block"><b>${esc(it.prompt)}</b><br><span class="small">정답 <b>${esc(it.show)}</b> · 내 답 ${r.a ? esc(r.a) : '<span class="muted">안 씀</span>'}${r.timeout ? ' <span class="tag">시간 끝</span>' : ''}</span><br><span class="small muted">${esc(it.pack.title)}</span></li>`).join('')}</ul></section>` : ''}
+    ${wrong.length ? `<section class="card flat"><h2 class="h3" style="margin-top:0">못 떠올린 것</h2><ul class="list">${wrong.map(({ it, r }) => `<li class="item" style="display:block"><b>${esc(it.prompt)}</b><br><span class="small">정답 <b>${esc(it.show)}</b> · 내 답 ${r.a ? esc(r.a) : '<span class="muted">안 씀</span>'}${r.timeout ? ' <span class="tag">시간 끝</span>' : ''}</span><br><span class="small muted">${esc(it.pack.title)}</span>${r.a ? `<br><button type="button" class="btn sm" data-spfix="${speed.items.indexOf(it)}">내 답도 맞다 (맞음으로 고치기)</button>` : ''}</li>`).join('')}</ul></section>` : ''}
   </div>`;
   const h = $('h1'); h.tabIndex = -1; h.focus({ preventScroll: true });
   announce($('.result-line').textContent);
   $('#spRetry')?.addEventListener('click', () => startSpeed(shuffle(wrong.map(x => x.it)), speed.per));
+  // 오타나 다른 표기로 틀린 것은 맞음으로 고친다 (문제는 오답노트에서 빠지고, 카드는 안다로 다시 기록)
+  $$('[data-spfix]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.spfix), it = speed.items[i];
+    if (it.kind === 'q') S.overrideOk(it.key); else S.recordCard(it.key, true, 0);
+    speed.res[i] = { ...speed.res[i], ok: true };
+    toast('맞음으로 고쳤다.'); render.keepScroll = true; render();
+  }));
 }
 // 스피드 퀴즈 중 Esc 는 그만
 document.addEventListener('keydown', e => {
@@ -2410,7 +2461,7 @@ function viewPlan() {
     const done = items.filter(i => i.done).length;
     const isCur = w === openWeek;
     return `<details class="card flat week${isCur ? ' cur' : ''}"${isCur ? ' open' : ''}>
-      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ` <span class="tag ok">${w.start > t ? '다음 주' : '이번 주'}</span>` : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
+      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ` <span class="tag vio">${w.start > t ? '다음 주' : '이번 주'}</span>` : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
         <div class="bar" style="margin-top:6px"><i style="width:${pct(done, items.length)}%"></i></div></summary>
       ${w.note ? `<p class="small muted" style="white-space:pre-wrap">${esc(w.note)}</p>` : ''}
       ${w.groups.map(g => {
@@ -2432,7 +2483,7 @@ function viewPlan() {
     return `<div class="sec-title"><h2>시험 범위 현황</h2><span class="small muted">Notion Exam Scope · ${esc(String(nst.generated || '').replace('T', ' ').slice(0, 16))} 업데이트</span></div>
     <section class="card flat">
       <p class="small">회독 칸 <b>${sm.done}/${sm.cells}</b> (${sm.pct}%) · 과목을 누르면 범위가 펼쳐진다</p><div class="bar" style="margin:4px 0 6px"><i style="width:${sm.pct}%"></i></div>
-      ${Object.entries(bySub).map(([sub, rows]) => { const d = rows.reduce((a, r) => a + (r.r1 ? 1 : 0) + (r.r2 ? 1 : 0) + (r.r3 ? 1 : 0), 0); return `<details class="scope-sub"><summary><span class="grow"><b>${esc(sub)}</b> <span class="small muted">범위 ${rows.length}개</span></span><span class="mini-bar"><i style="width:${pct(d, rows.length * 3)}%"></i></span><span class="small mono muted">${d}/${rows.length * 3}</span></summary>
+      ${Object.entries(bySub).map(([sub, rows]) => { const d = rows.reduce((a, r) => a + (r.r1 ? 1 : 0) + (r.r2 ? 1 : 0) + (r.r3 ? 1 : 0), 0); return `<details class="scope-sub"><summary><span class="grow">${NOTION_SUBJ[sub] ? subjDot(NOTION_SUBJ[sub]) + ' ' : ''}<b>${esc(NOTION_SUBJ[sub] ? subjName(NOTION_SUBJ[sub]) : sub)}</b> <span class="small muted">범위 ${rows.length}개</span></span><span class="mini-bar"><i style="width:${pct(d, rows.length * 3)}%"></i></span><span class="small mono muted">${d}/${rows.length * 3}</span></summary>
         <div style="overflow-x:auto"><table class="crit scope-t"><tr><td class="small muted">범위</td><td class="pt small muted">1회독</td><td class="pt small muted">2회독</td><td class="pt small muted">3회독</td><td class="pt small muted">문제</td><td class="small muted">메모</td></tr>
         ${rows.map(r => `<tr><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.range)}</a>` : esc(r.range)}</td><td class="pt">${ck(r.r1)}</td><td class="pt">${ck(r.r2)}</td><td class="pt">${ck(r.r3)}</td><td class="pt">${ck(r.solve)}</td><td class="small">${esc(r.memo || '')}</td></tr>`).join('')}
         </table></div></details>`; }).join('')}
@@ -2467,7 +2518,7 @@ function viewPlan() {
       <button class="btn pri" style="grid-column:1/-1">추가</button>
     </form>
     ${Object.keys(byDate).length ? Object.entries(byDate).map(([d, list]) => `
-      <h3 style="margin-top:16px">${S.fmtDate(d)} ${d === t ? '<span class="tag ok">오늘</span>' : d < t ? '<span class="tag">지남</span>' : ''}</h3>
+      <h3 style="margin-top:16px">${S.fmtDate(d)} ${d === t ? '<span class="tag vio">오늘</span>' : d < t ? '<span class="tag">지남</span>' : ''}</h3>
       <ul class="list">${list.map(p => `<li class="item"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${p.subject ? subjDot(p.subject) + ' ' : ''}${esc(p.text)}</span></label><button class="btn sm ghost" data-pd="${p.id}" aria-label="지우기">✕</button></li>`).join('')}</ul>`).join('') : '<p class="muted small">계획이 없다.</p>'}
     ${plan.some(p => p.done) ? '<button class="btn sm ghost" id="clearDone" style="margin-top:10px">끝낸 계획 지우기</button>' : ''}
    </section>
@@ -2584,7 +2635,7 @@ function viewStats() {
   <section class="card">
     <h2>과목별</h2>
     <div class="tbl-wrap"><table class="crit"><tr><td class="small muted">과목</td><td class="pt small muted">공부 시간</td><td class="pt small muted">푼 문제</td><td class="pt small muted">정답률</td></tr>
-    ${SUBJECTS.map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}
+    ${SUBJECTS.filter(s => st[s.id].packs || stime[s.id]).map(s => { const o = st[s.id]; return `<tr><td>${subjDot(s.id)} ${s.name}</td><td class="pt">${S.fmtDur(stime[s.id] || 0)}</td><td class="pt">${o.tried}/${o.total}</td><td class="pt">${o.n ? pct(o.ok, o.n) + '%' : '-'}</td></tr>`; }).join('')}
     <tr><td>${subjDot('math')} <a href="#/math">수학</a></td><td class="pt">${S.fmtDur(stime.math || 0)}</td><td class="pt">-</td><td class="pt">-</td></tr></table></div>
   </section>
 
@@ -2748,7 +2799,7 @@ function viewJournal() {
     const diary = S.kvGet('diary', d);
     const exD = examInfo().days.includes(d);
     return `<section class="card j-day">
-      <div class="row between"><h2 style="margin:0">${S.fmtDate(d)} ${d === S.today() ? '<span class="tag ok">오늘</span>' : ''}${exD ? '<span class="tag bad">시험일</span>' : ''}</h2><span class="small muted">${dLabel(examInfo().first) && d <= examInfo().first ? `시험 ${S.daysBetween(d, examInfo().first)}일 전` : ''}</span></div>
+      <div class="row between"><h2 style="margin:0">${S.fmtDate(d)} ${d === S.today() ? '<span class="tag vio">오늘</span>' : ''}${exD ? '<span class="tag bad">시험일</span>' : ''}</h2><span class="small muted">${dLabel(examInfo().first) && d <= examInfo().first ? `시험 ${S.daysBetween(d, examInfo().first)}일 전` : ''}</span></div>
       <div class="j-sum small">
         <span><b>${S.fmtDur(S.studySec(l))}</b> 공부</span>
         <span><b>${l.q || 0}</b> 문제 ${l.q ? `(${pct(l.ok, l.q)}%)` : ''}</span>
@@ -2792,7 +2843,7 @@ function viewMarks() {
   <h1>형광펜·메모 모아보기</h1>
   <p class="small muted">시험 직전에 내가 칠한 곳과 메모만 훑어본다.</p>
   <form id="mf" class="row" style="margin:8px 0"><input type="search" name="q" aria-label="형광펜·메모 찾기" placeholder="형광펜·메모에서 찾기" value="${esc(q.get('q') || '')}" style="flex:1"><button class="btn">찾기</button></form>
-  <div class="chips" style="margin-bottom:6px"><a class="chip${!fs ? ' on' : ''}" href="${link({ s: '' })}">전체</a>${SUBJECTS.map(s => `<a class="chip${fs === s.id ? ' on' : ''}" href="${link({ s: s.id })}">${subjDot(s.id)}${s.name}</a>`).join('')}</div>
+  <div class="chips" style="margin-bottom:6px"><a class="chip${!fs ? ' on' : ''}" href="${link({ s: '' })}">전체</a>${SUBJECTS.filter(s => D.db().packs.some(p => p.subject === s.id)).map(s => `<a class="chip${fs === s.id ? ' on' : ''}" href="${link({ s: s.id })}">${subjDot(s.id)}${s.name}</a>`).join('')}</div>
   <div class="chips" style="margin-bottom:12px"><a class="chip${!fc ? ' on' : ''}" href="${link({ c: '' })}">모든 색</a>${HL.COLORS.map(c => `<a class="chip${fc === c.id ? ' on' : ''}" href="${link({ c: c.id })}"><span class="hl-sw hl-${c.id}"></span>${c.name}</a>`).join('')}<a class="chip${q.get('memo') ? ' on' : ''}" href="${link({ memo: q.get('memo') ? '' : '1' })}">메모 있는 것만</a>${fp ? `<a class="chip on" href="${link({ pack: '' })}">${esc(D.db().byId[fp]?.title || fp)} ✕</a>` : ''}</div>
   ${notes.length && !fc && !term ? `<section class="card flat"><h2>단원 메모</h2>${notes.map(n => `<p><a href="#/pack?id=${encodeURIComponent(n.pack)}"><b>${esc(D.db().byId[n.pack]?.title || n.pack)}</b></a><br><span style="white-space:pre-wrap">${esc(n.text)}</span></p>`).join('')}</section>` : ''}
   ${packs.map(pk => {
@@ -2850,7 +2901,7 @@ function viewSettings() {
     <div id="impOut"></div>
   </section>
 
-  ${localList.length ? `<details class="card fold"><summary><h2 style="display:inline;margin:0">이 기기에 가져온 자료 ${localList.length}개</h2></summary><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm ghost bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
+  ${localList.length ? `<details class="card fold"><summary><h2 style="display:inline;margin:0">이 기기에 가져온 자료 ${localList.length}개${localList.length > D.db().packs.length ? ` (합친 것 포함, 목록에는 ${D.db().packs.length}개)` : ''}</h2></summary><ul class="list">${localList.map(p => `<li class="item">${subjDot(p.subject)}<span class="grow">${esc(p.title)}<br><span class="small muted">${esc(p.id)} · 문제 ${(p.questions || []).length} · 카드 ${(p.cards || []).length}</span></span><button class="btn sm ghost" data-copy="${esc(p.id)}">JSON 복사</button><button class="btn sm ghost bad" data-del="${esc(p.id)}">지우기</button></li>`).join('')}</ul>
   <p class="small muted">"JSON 복사" 한 내용을 저장소 data/packs/과목/ 에 파일로 올리면 모든 기기에서 보인다.</p></details>` : ''}
 
   <section class="card" id="notionSync">

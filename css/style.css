@@ -353,7 +353,7 @@ dialog.dlg.wide{width:min(900px,calc(100% - 32px))}
 details.week{margin-bottom:10px}
 details.week>summary{list-style:none;color:var(--ink)}
 details.week>summary::-webkit-details-marker{display:none}
-details.week.cur{border-color:color-mix(in srgb,var(--ok) 50%,var(--rule))}
+details.week.cur{border-color:color-mix(in srgb,var(--acc) 45%,var(--rule))}
 .wgroup{margin-top:12px}
 .wg-h{display:flex;gap:6px;align-items:center;font-size:.92rem}
 .pdate{min-width:3.6em;color:var(--ink3);padding-top:2px}
@@ -700,3 +700,11 @@ details.week>summary,.week summary{flex-wrap:wrap}
 .sp-fb.ok{color:var(--ok)}
 .sp-fb.bad{color:var(--bad)}
 @media (prefers-reduced-motion:reduce){.sp-bar i{transition:none}}
+
+.sp-form{display:flex;gap:8px}
+.sp-form input{flex:1;min-width:0}
+.sp-ctx{margin:-6px 0 14px;font-size:.95rem}
+@media (hover:none){.kbd-only{display:none}}
+
+/* 휴대폰 오답노트: 머리 줄(과목·유형·자료)을 문제 위로 */
+@media (max-width:600px){details.card.flat>summary .q-head{display:flex !important;flex-wrap:wrap;width:100%}}
