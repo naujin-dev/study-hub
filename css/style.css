@@ -762,3 +762,6 @@ details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 .q-foot{margin-top:14px}
 /* 문장 속 링크: 줄 간격은 그대로 두고 누르는 칸만 키운다 */
 @media (pointer:coarse){main p a:not(.btn):not(.chip),main li>a:not(.btn):not(.item):not(.chip){padding-block:10px}}
+
+.dlg-in{width:100%;margin:4px 0 12px}
+@media (pointer:coarse){.plan-row{min-height:44px}}

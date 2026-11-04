@@ -260,7 +260,10 @@ function askConfirm(msg, yes = '그래', no = '아니') {
     d.className = 'dlg'; d.setAttribute('aria-labelledby', id);
     d.innerHTML = `<form method="dialog"><p id="${id}" class="dlg-msg">${esc(msg)}</p><div class="row dlg-acts"><button class="btn ghost" value="no">${esc(no)}</button><button class="btn pri" value="yes">${esc(yes)}</button></div></form>`;
     document.body.append(d);
+    const off = () => { if (d.open) d.close(); };
+    addEventListener('hashchange', off); // 뒤로 가기 등으로 화면이 바뀌면 창도 닫는다
     d.addEventListener('close', () => {
+      removeEventListener('hashchange', off);
       const ok = d.returnValue === 'yes';
       d.remove();
       // 아니면 누르던 버튼으로 초점을 돌려준다 (화면이 바뀌면 render 가 제목으로 옮긴다)
@@ -282,6 +285,40 @@ function unitChips(subs, packs, sel) {
   }).join('');
 }
 askConfirm.n = 0;
+// 브라우저 기본 prompt 대신 쓰는 글 입력 창. 쓴 글 또는 null (취소). copy 면 읽기 전용으로 보여 주기만
+function askText(msg, value = '', { ok = '확인', copy = false } = {}) {
+  return new Promise(res => {
+    const d = document.createElement('dialog'), id = 'ac' + (++askConfirm.n), opener = document.activeElement;
+    d.className = 'dlg'; d.setAttribute('aria-labelledby', id);
+    const field = copy ? `<textarea class="dlg-in" readonly rows="6" aria-labelledby="${id}">${esc(value)}</textarea>` : `<input type="text" class="dlg-in" value="${esc(value)}" aria-labelledby="${id}">`;
+    d.innerHTML = `<form method="dialog"><p id="${id}" class="dlg-msg">${esc(msg)}</p>${field}<div class="row dlg-acts">${copy ? '' : '<button class="btn ghost" value="no" formnovalidate>취소</button>'}<button class="btn pri" value="yes">${copy ? '닫기' : esc(ok)}</button></div></form>`;
+    document.body.append(d);
+    const inp = d.querySelector('.dlg-in');
+    const off = () => { if (d.open) d.close(); };
+    addEventListener('hashchange', off);
+    d.addEventListener('close', () => {
+      removeEventListener('hashchange', off);
+      const v = d.returnValue === 'yes' && !copy ? inp.value : null;
+      d.remove();
+      if (opener?.isConnected) opener.focus();
+      res(v);
+    });
+    d.showModal();
+    inp.focus(); inp.select();
+  });
+}
+// 오류를 사람이 읽을 우리말로 (영어 원문 오류를 그대로 보여 주지 않는다)
+function errText(err, what = '처리') {
+  const m = String(err?.message || err || '');
+  if (/[가-힣]/.test(m)) return m;
+  if (err instanceof SyntaxError || /JSON/i.test(m)) return 'JSON 형식이 맞지 않다. 파일이나 붙여 넣은 글이 중간에 잘리지 않았는지 확인한다.';
+  if (/quota/i.test(m) || err?.name === 'QuotaExceededError') return '이 기기 저장 공간이 꽉 찼다. 안 쓰는 PDF 나 사진을 지우고 다시 한다.';
+  if (/fetch|network|load failed|offline/i.test(m)) return '인터넷에 연결되지 않았다. 연결을 확인하고 다시 한다.';
+  if (/\b(401|403)\b|auth|key|token/i.test(m)) return 'API 키나 토큰이 맞지 않다. 설정에서 다시 넣는다.';
+  if (/\b429\b|rate/i.test(m)) return '요청이 너무 잦다. 1분쯤 뒤에 다시 한다.';
+  if (/\b5\d\d\b|overload/i.test(m)) return '서버가 지금 바쁘다. 잠시 뒤에 다시 한다.';
+  return `${what}하지 못했다. 잠시 뒤에 다시 하고, 계속 안 되면 새로 고침 한다.`;
+}
 // 확인 창이 떠 있으면 화면 단축키는 쉰다 (Esc 는 창만 닫는다)
 const dlgOpen = () => !!document.querySelector('dialog[open]');
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
@@ -533,9 +570,9 @@ function viewHome() {
   </aside>
   </div>
   `;
-  $('#goalBtn')?.addEventListener('click', () => {
+  $('#goalBtn')?.addEventListener('click', async () => {
     const cur = S.kvGet('goal', 'day')?.min || 0;
-    const v = prompt('하루 공부 시간 목표를 시간으로 쓴다. 예: 3, 4.5 (비우면 목표 없음)', cur ? String(Math.round(cur / 6) / 10) : '');
+    const v = await askText('하루 공부 시간 목표를 시간으로 쓴다. 예: 3, 4.5 (비우면 목표 없음)', cur ? String(Math.round(cur / 6) / 10) : '');
     if (v === null) return;
     const h = parseFloat(v.replace(',', '.'));
     if (v.trim() && !(h > 0 && h <= 20)) return toast('0~20 사이 숫자로 쓴다.');
@@ -1007,7 +1044,7 @@ function viewPack() {
       S.recordAsk(p.id, text);
       render.keepScroll = true; render();
     } catch (err) {
-      toast(err.message, 4000);
+      toast(errText(err), 4000);
       btn.disabled = false; btn.textContent = '묻기';
     }
   });
@@ -1037,7 +1074,7 @@ function bindSrcPane(p, texts, cur) {
     if (!files.length) return;
     toast('사진을 줄여서 저장하는 중…');
     try { for (const f of files) await SRC.addImage(p.id, f); toast(`사진 ${files.length}장을 넣었다. 이 기기에만 저장된다.`); }
-    catch (err) { toast('사진을 저장하지 못했다: ' + err.message, 4000); }
+    catch (err) { toast(errText(err, '사진 저장'), 4000); }
     drawImgs();
   });
   const drawImgs = async () => {
@@ -1223,7 +1260,7 @@ document.addEventListener('click', async e => {
   if (!b) return;
   const p = D.db().byId[b.dataset.rename];
   if (!p) return;
-  const t = prompt(`새 이름을 쓴다. 비워 두면 원래 이름(${p._title || p.title})으로 돌아간다.`, p.title);
+  const t = await askText(`새 이름을 쓴다. 비워 두면 원래 이름(${p._title || p.title})으로 돌아간다.`, p.title);
   if (t === null) return;
   D.renamePack(p.id, t);
   await D.loadAll();
@@ -1746,7 +1783,7 @@ document.addEventListener('keydown', e => {
     <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
     <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다 · Esc 그만</td></tr>
     <tr><td>채점 방법 탭</td><td>← → 탭 옮기기</td></tr>
-    <tr><td>메뉴·형광펜 띠</td><td>Esc 닫기 (문제 풀이에서는 '그만' 버튼으로)</td></tr></table>
+    <tr><td>Esc</td><td>메뉴·형광펜 띠·창 닫기 · 문제 풀이·스피드 퀴즈·카드에서는 그만 (남은 게 있으면 먼저 묻는다)</td></tr></table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn pri">닫기</button></div></form>`;
   document.body.append(d);
   d.addEventListener('close', () => d.remove());
@@ -1763,7 +1800,7 @@ document.addEventListener('keydown', e => {
   const conf = { q: 'sure', w: 'unsure', e: 'guess' }[e.key.toLowerCase()];
   if (/^[1-6]$/.test(e.key)) { const b = main.querySelector(`[data-ch="${e.key}"]:not([disabled])`); if (b) { e.preventDefault(); b.click(); } }
   else if (conf) { const b = main.querySelector(`[data-conf="${conf}"]`); if (b) { e.preventDefault(); b.click(); } }
-  else if (e.key === 'Escape' && $('#quit')) { e.preventDefault(); $('#quit').focus(); toast('그만두려면 Enter. 계속 풀려면 Tab.'); }
+  else if (e.key === 'Escape' && $('#quit')) { e.preventDefault(); $('#quit').click(); }
   else if (e.key.toLowerCase() === 's' && $('#noSrcSkip')) { e.preventDefault(); $('#noSrcSkip').click(); }
   else if (e.key.toLowerCase() === 'd' && $('#skipBtn')) { e.preventDefault(); $('#skipBtn').click(); }
   else if (e.key === 'Enter') {
@@ -1824,8 +1861,8 @@ async function gradeOne(i, btn) {
         const j = await AI.judgeShort(pack, q, a);
         r = { result: j.verdict === 'correct' ? 'ok' : j.verdict === 'partial' ? 'part' : 'wrong', ai: j.reason };
       } catch (err) {
-        toast(err.message, 4000);
-        r = { result: 'wrong', aiError: err.message };
+        toast(errText(err), 4000);
+        r = { result: 'wrong', aiError: errText(err, '채점') };
       }
     } else r = { result: 'wrong', canOverride: true };
   } else {
@@ -1837,8 +1874,8 @@ async function gradeOne(i, btn) {
         const ratio = fb.max ? fb.score / fb.max : 0;
         r = { result: ratio >= 0.8 ? 'ok' : ratio >= 0.4 ? 'part' : 'wrong', fb };
       } catch (err) {
-        toast(err.message, 4500);
-        r = { result: null, selfGrade: true, aiError: err.message };
+        toast(errText(err), 4500);
+        r = { result: null, selfGrade: true, aiError: errText(err, '채점') };
       }
     } else r = { result: null, selfGrade: true };
   }
@@ -2012,7 +2049,7 @@ function bindResult(i) {
       }
       toast('채점 결과를 넣었다.');
       render.keepScroll = true; drawQuestion(); focusResult();
-    } catch (err) { toast(err.message, 5000); }
+    } catch (err) { toast(errText(err), 5000); }
   });
   $('#retryAi')?.addEventListener('click', async e => {
     delete session.results[i];
@@ -2297,11 +2334,13 @@ function viewSpeed() {
   const inp = $('#spIn');
   inp.focus();
   speed.lock = false;
-  speed.t0 = Date.now();
+  const used = speed.resume || 0; speed.resume = 0;
+  speed.t0 = Date.now() - used;
   // 긴 문제는 읽는 시간만큼 더 준다 (15자에 1초)
   const untimed = !speed.per; // '시간 없이' 를 고른 경우
   const per = untimed ? 0 : speed.per + Math.round(String(it.prompt).length / 15) + (it.ctx ? Math.round(it.ctx.length / 20) : 0);
-  const bar0 = document.getElementById('spBar'); if (bar0) bar0.style.transitionDuration = per + 's';
+  const left = Math.max(0, per * 1000 - used);
+  const bar0 = document.getElementById('spBar'); if (bar0) { if (used && per) bar0.style.transform = `scaleX(${left / (per * 1000)})`; bar0.style.transitionDuration = left / 1000 + 's'; }
   const secEl = $('#spSec');
   const tickSec = () => { if (!secEl.isConnected) return clearInterval(speed.secT); secEl.textContent = untimed ? '시간 없이' : `${Math.max(0, Math.ceil(per - (Date.now() - speed.t0) / 1000))}초 남음${per > speed.per ? ` (읽기 +${per - speed.per}초)` : ''}`; };
   clearInterval(speed.secT); tickSec(); speed.secT = setInterval(tickSec, 500);
@@ -2310,7 +2349,7 @@ function viewSpeed() {
   // 시간 막대: 다음 그림에서 0 으로 줄인다 (transform 만 움직인다)
   if (!untimed) requestAnimationFrame(() => requestAnimationFrame(() => { const b = document.getElementById('spBar'); if (b) b.style.transform = 'scaleX(0)'; }));
   clearTimeout(speed.timer);
-  if (!untimed) speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
+  if (!untimed) speed.timer = setTimeout(() => answerSpeed(inp.value, true), left);
   $('#spForm').addEventListener('submit', e => {
     e.preventDefault();
     if (speed.lock) return nextSpeed(); // 정답을 보는 중에 Enter 면 바로 다음
@@ -2320,7 +2359,12 @@ function viewSpeed() {
   $('#spQuit').addEventListener('click', async () => {
     const done = speed.i + (speed.lock ? 1 : 0); // 정답을 보여 주는 중이면 그 문제까지 푼 것
     const left = speed.items.length - done;
-    if (left > 0) { clearTimeout(speed.timer); if (!(await askConfirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`, '결과 보기', '계속 풀기'))) { render.keepScroll = true; render(); return; } }
+    if (left > 0) {
+      // 묻는 동안은 시간을 멈춘다. 계속 풀면 남은 시간부터
+      const used = speed.lock ? 0 : Date.now() - speed.t0;
+      clearTimeout(speed.timer); clearInterval(speed.secT);
+      const bar = document.getElementById('spBar'); if (bar) { bar.style.transform = getComputedStyle(bar).transform; bar.style.transitionDuration = '0s'; }
+      if (!(await askConfirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`, '결과 보기', '계속 풀기'))) { if (!speed.lock) speed.resume = used; render.keepScroll = true; render(); return; } }
     clearTimeout(speed.timer); clearTimeout(speed.adv); clearInterval(speed.secT);
     speed.items = speed.items.slice(0, done); speed.i = done; render();
   });
@@ -2466,7 +2510,13 @@ function viewFlash() {
 // 카드: 1 = 몰랐다, 2 = 알았다 (뒤집은 뒤에만)
 document.addEventListener('keydown', e => {
   if (params().path !== '/flash' || !flash || dlgOpen() || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === 'Escape') { e.preventDefault(); location.hash = '#/cards'; return; } // Esc: 카드 그만
+  if (e.key === 'Escape') { // Esc: 카드 그만 (남았으면 묻는다)
+    e.preventDefault();
+    const n = flash.list.length - flash.i;
+    if (n <= 0) { location.hash = '#/cards'; return; }
+    askConfirm(`아직 ${n}장 남았다. 그만할까? 넘긴 카드는 기록됐다.`, '그만하기', '계속 하기').then(y => { if (y) location.hash = '#/cards'; else $('#fc')?.focus(); });
+    return;
+  }
   if (!flash.back) return;
   if (['input', 'textarea', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
   if (e.key === '1') { e.preventDefault(); flash.next?.(false); }
@@ -2558,7 +2608,7 @@ function viewGen() {
       genResult = { packId: src.id, qs: qs.filter((x, i) => !errs.some(m => m.includes(`questions[${i}]`))) };
       showResult();
     } catch (err) {
-      toast(err.message, 4500);
+      toast(errText(err), 4500);
     }
     btn.disabled = false;
     btn.textContent = '만들기';
@@ -3158,7 +3208,7 @@ function viewSettings() {
         render();
       });
     } catch (err) {
-      out.innerHTML = `<p class="note" style="margin-top:10px">${esc(err.message)}</p>`;
+      out.innerHTML = `<p class="note" style="margin-top:10px">${esc(errText(err))}</p>`;
     }
   };
   $('#impCheck').addEventListener('click', () => check($('#impText').value));
@@ -3175,7 +3225,7 @@ function viewSettings() {
       const merged = JSON.stringify({ packs, ...(pdfs.length ? { pdfs } : {}) });
       showText(merged);
       check(merged);
-    } catch (err) { out.innerHTML = `<p class="note">${esc(err.message)}</p>`; }
+    } catch (err) { out.innerHTML = `<p class="note">${esc(errText(err))}</p>`; }
   });
   $$('[data-del]').forEach(b => b.addEventListener('click', async () => {
     if (!(await askConfirm('이 자료를 이 기기에서 지울까? 푼 기록은 남는다.'))) return;
@@ -3195,7 +3245,7 @@ function viewSettings() {
   $('#testKey').addEventListener('click', async e => {
     saveSettings();
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 확인 중';
-    try { const t = await AI.testKey(); toast('연결됐다: ' + t.slice(0, 30), 3000); } catch (err) { toast(err.message, 5000); }
+    try { const t = await AI.testKey(); toast('연결됐다: ' + t.slice(0, 30), 3000); } catch (err) { toast(errText(err), 5000); }
     b.disabled = false; b.textContent = '연결 확인';
   });
 
@@ -3226,7 +3276,7 @@ function viewSettings() {
       await D.loadAll();
       toast('불러와서 합쳤다.');
       render();
-    } catch (err) { toast(err.message, 4000); }
+    } catch (err) { toast(err instanceof SyntaxError ? '백업 파일이 아니거나 깨진 파일이다. 설정의 "백업 내보내기" 로 만든 .json 파일을 고른다.' : errText(err, '불러오기'), 5000); }
   });
   $('#reset').addEventListener('click', async () => {
     if (SYNC.isOn()) return toast('동기화 중에는 지워도 Gist 에서 다시 돌아온다. 먼저 연결을 끊는다.', 4500);
@@ -3240,7 +3290,7 @@ function viewSettings() {
     if (!tok) return toast('토큰을 붙여넣는다.');
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 연결 중';
     try { const r = await SYNC.connect(tok); toast(`${r.login} 의 Gist 에 연결했다.`); await D.loadAll(); render(); }
-    catch (err) { toast(err.message, 5000); b.disabled = false; b.textContent = '연결하고 동기화'; }
+    catch (err) { toast(errText(err), 5000); b.disabled = false; b.textContent = '연결하고 동기화'; }
   });
   $('#syncNow')?.addEventListener('click', async e => {
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 동기화 중';
@@ -3253,7 +3303,7 @@ function viewSettings() {
   $('#ghCopy')?.addEventListener('click', async () => {
     const t = SYNC.conf().token;
     try { await navigator.clipboard.writeText(t); toast('토큰을 복사했다. 다른 기기의 설정 → 동기화에 붙여넣는다.', 4000); }
-    catch (e) { prompt('자동 복사가 막혔다. 아래 글을 길게 눌러 복사한다.', t); }
+    catch (e) { askText('자동 복사가 막혔다. 아래 글을 길게 눌러 복사한다.', t, { copy: true }); }
   });
   $('#syncOff')?.addEventListener('click', async () => {
     if (!(await askConfirm('이 기기에서 동기화를 끊을까? 이 기기와 Gist 의 기록은 그대로 남는다.'))) return;
@@ -3466,7 +3516,7 @@ ${blank.text}`;
   $('#bAi')?.addEventListener('click', async e => {
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 확인 중';
     try { const a = await AI.askAboutPack(p, prompt, []); $('#bFb').innerHTML = md(a); }
-    catch (err) { toast(err.message, 4500); }
+    catch (err) { toast(errText(err), 4500); }
     b.disabled = false; b.textContent = 'AI 피드백 받기';
   });
   $('#bAgain').addEventListener('click', () => { blank = { pack: p.id, text: '', phase: 'write', start: Date.now() }; viewBlank(); });
@@ -3809,7 +3859,7 @@ async function viewPdf() {
       toast(`PDF ${done.length}개 넣었다.`);
       render();
     } catch (err) {
-      $('#pdfMsg').innerHTML = `<p class="note">저장하지 못했다: ${esc(err.message)}. 기기 저장 공간을 확인한다.</p>`;
+      $('#pdfMsg').innerHTML = `<p class="note">${esc(errText(err, '저장'))}</p>`;
     }
   });
   $$('[data-psave]').forEach(b => b.addEventListener('click', async () => {
@@ -3842,7 +3892,7 @@ async function viewPdfOne(id, q) {
     try {
       pdfView = await PDF.renderPdf(box, x.blob, { zoom, onPages: n => { const el = document.getElementById('pdfPages'); if (el) el.textContent = `${n}쪽`; } });
     } catch (err) {
-      box.innerHTML = `<p class="note">PDF 를 열지 못했다: ${esc(err.message)}</p>`;
+      box.innerHTML = `<p class="note">PDF 를 열지 못했다. ${esc(errText(err, '열기'))}</p>`;
     }
   };
   const setZoom = z => { zoom = Math.min(3, Math.max(0.5, Math.round(z * 4) / 4)); S.save('pdfZoom', zoom); $('#zVal').textContent = Math.round(zoom * 100) + '%'; draw(); };
