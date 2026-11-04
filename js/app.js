@@ -256,13 +256,19 @@ function labelChipGroups(root = main) {
 // 브라우저 기본 confirm 대신 쓰는 화면 안 확인 창. true/false 로 돌아온다
 function askConfirm(msg, yes = '그래', no = '아니') {
   return new Promise(res => {
-    const d = document.createElement('dialog');
-    d.className = 'dlg'; d.setAttribute('aria-labelledby', 'acMsg');
-    d.innerHTML = `<form method="dialog"><p id="acMsg" style="margin-top:0">${esc(msg)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" value="no">${esc(no)}</button><button class="btn pri" value="yes">${esc(yes)}</button></div></form>`;
+    const d = document.createElement('dialog'), id = 'ac' + (++askConfirm.n), opener = document.activeElement;
+    d.className = 'dlg'; d.setAttribute('aria-labelledby', id);
+    d.innerHTML = `<form method="dialog"><p id="${id}" class="dlg-msg">${esc(msg)}</p><div class="row dlg-acts"><button class="btn ghost" value="no">${esc(no)}</button><button class="btn pri" value="yes">${esc(yes)}</button></div></form>`;
     document.body.append(d);
-    d.addEventListener('close', () => { res(d.returnValue === 'yes'); d.remove(); });
+    d.addEventListener('close', () => {
+      const ok = d.returnValue === 'yes';
+      d.remove();
+      // 아니면 누르던 버튼으로 초점을 돌려준다 (화면이 바뀌면 render 가 제목으로 옮긴다)
+      if (!ok && opener?.isConnected) opener.focus();
+      res(ok);
+    });
     d.showModal();
-    d.querySelector('[value=yes]').focus();
+    d.querySelector('[value=no]').focus(); // 기본은 안전한 쪽
   });
 }
 // 단원(자료) 고르기 칩을 단원 묶음별로 접어서 (고른 것이 든 묶음만 펼침)
@@ -275,6 +281,9 @@ function unitChips(subs, packs, sel) {
     }).join('')}`;
   }).join('');
 }
+askConfirm.n = 0;
+// 확인 창이 떠 있으면 화면 단축키는 쉰다 (Esc 는 창만 닫는다)
+const dlgOpen = () => !!document.querySelector('dialog[open]');
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
 function syncTitle() {
   const h1 = main.querySelector('h1');
@@ -297,11 +306,12 @@ function render() {
   const fsel = render.keepScroll ? focusKey(document.activeElement) : null;
   const { path } = params();
   const fn = routes[path] || viewHome;
-  if (!routes[path] && path !== '/' && path) setTimeout(() => toast('없는 화면이라 홈을 보여 준다.'), 50);
+  const lost = !routes[path] && path !== '/' && path;
   if (READ_ROUTES.has(path)) ensureReadFonts();
   $$('.bottom a', document).forEach(a => { const on = a.dataset.nav === (navOf[path] || 'more'); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   main.innerHTML = '';
   fn();
+  if (lost) main.insertAdjacentHTML('afterbegin', '<p class="note info" role="status">찾는 화면이 없어서 홈을 보여 준다. 주소를 다시 확인한다.</p>');
   updateTop();
   // 화면 제목을 탭 제목에 쓰고, 다른 화면으로 옮겨 왔으면 키보드 초점을 그 화면 제목으로
   const h1 = main.querySelector('h1');
@@ -733,7 +743,7 @@ function viewStudy() {
     $('#cAdd').addEventListener('submit', e => { e.preventDefault(); if (addCat(sel, e.target.n.value)) again(); });
     $$('[data-cname]').forEach(inp => inp.addEventListener('change', () => { const v = inp.value.trim(); if (!v) return again(); saveCats(sel, myCats(sel).map(c => c.id === inp.dataset.cname ? { ...c, name: v } : c)); toast('이름을 바꿨다.'); }));
     $$('[data-cmv]').forEach(b => b.addEventListener('click', () => { const cs = myCats(sel).slice(); const i = cs.findIndex(c => c.id === b.dataset.cmv), j = i + Number(b.dataset.d); if (j < 0 || j >= cs.length) return; [cs[i], cs[j]] = [cs[j], cs[i]]; saveCats(sel, cs); again(); }));
-    $$('[data-cdel]').forEach(b => b.addEventListener('click', () => { const c = myCats(sel).find(x => x.id === b.dataset.cdel); if (!c || !confirm(`"${c.name}" 분류를 지울까? 안에 있던 자료는 "분류 안 됨" 으로 간다.`)) return; saveCats(sel, myCats(sel).filter(x => x.id !== c.id)); again(); }));
+    $$('[data-cdel]').forEach(b => b.addEventListener('click', async () => { const c = myCats(sel).find(x => x.id === b.dataset.cdel); if (!c || !(await askConfirm(`"${c.name}" 분류를 지울까? 안에 있던 자료는 "분류 안 됨" 으로 간다.`))) return; saveCats(sel, myCats(sel).filter(x => x.id !== c.id)); again(); }));
     $$('[data-pcat]').forEach(sl => sl.addEventListener('change', () => { setCatOf(sl.dataset.pcat, sl.value); toast('저장했다.'); }));
   }
   $$('.pgroup').forEach(d => d.addEventListener('toggle', () => { const c = S.load('studyClosed', {}); if (d.open) delete c[d.dataset.gk]; else c[d.dataset.gk] = 1; S.save('studyClosed', c); }));
@@ -755,7 +765,7 @@ function viewStudy() {
   }));
   $('[data-ord-done]')?.addEventListener('click', () => { location.hash = back; });
   $('[data-ord-reset]')?.addEventListener('click', async e => {
-    if (!confirm('이 과목 자료를 원래 순서로 돌릴까?')) return;
+    if (!(await askConfirm('이 과목 자료를 원래 순서로 돌릴까?'))) return;
     D.savePackOrder(e.currentTarget.dataset.ordReset, null);
     await D.loadAll(); render.keepScroll = true; render();
   });
@@ -1036,7 +1046,7 @@ function bindSrcPane(p, texts, cur) {
     const box = document.getElementById('srcImgs');
     if (!box) return;
     box.innerHTML = list.map(im => { const u = URL.createObjectURL(im.blob); srcUrls.push(u); return `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="교과서 사진" loading="lazy"></a><button class="btn sm ghost bad" data-imgdel="${im.id}">사진 지우기</button></figure>`; }).join('');
-    box.querySelectorAll('[data-imgdel]').forEach(b => b.addEventListener('click', async () => { if (!confirm('이 사진을 지울까?')) return; await SRC.deleteImage(b.dataset.imgdel); drawImgs(); }));
+    box.querySelectorAll('[data-imgdel]').forEach(b => b.addEventListener('click', async () => { if (!(await askConfirm('이 사진을 지울까?'))) return; await SRC.deleteImage(b.dataset.imgdel); drawImgs(); }));
   };
   drawImgs();
 }
@@ -1050,7 +1060,7 @@ function openSrcDialog(p, t) {
     <label class="field"><span>본문 (줄바꿈 그대로 붙여넣는다)</span><textarea name="body" style="min-height:45vh;font-size:.95rem">${esc(t?.body || '')}</textarea></label>
     <div class="row between"><span>${t ? (t.fromPack && t.mine ? '<button value="revert" class="btn sm ghost">자료 원래 본문으로</button>' : '<button value="del" class="btn sm bad">이 본문 지우기</button>') : ''}</span><span class="row"><button value="cancel" class="btn sm ghost">닫기</button><button value="save" class="btn sm pri">저장</button></span></div>
   </form>`;
-  dlg.onclose = () => {
+  dlg.onclose = async () => {
     const v = dlg.returnValue, f = dlg.querySelector('form');
     if (v === 'save') {
       const body = f.body.value.replace(/\r\n/g, '\n');
@@ -1058,7 +1068,7 @@ function openSrcDialog(p, t) {
       const tid = SRC.saveText(p, t?.tid, f.title.value.trim() || '본문', body);
       const tabs = S.load('srcTab', {}); tabs[p.id] = tid; S.save('srcTab', tabs);
       S.save('srcOn', true);
-    } else if (v === 'del') { if (!confirm('이 본문을 지울까? 여기에 칠한 형광펜은 목록에만 남는다.')) return; SRC.deleteText(p, t); }
+    } else if (v === 'del') { if (!(await askConfirm('이 본문을 지울까? 여기에 칠한 형광펜은 목록에만 남는다.'))) return; SRC.deleteText(p, t); }
     else if (v === 'revert') SRC.revertText(p, t);
     else return;
     location.hash = `#/pack?id=${encodeURIComponent(p.id)}`;
@@ -1150,7 +1160,7 @@ document.addEventListener('toggle', e => {
 }, true);
 // 펼친 메뉴 안에서는 ↑ ↓ 로 항목을 옮겨 다닌다
 document.addEventListener('keydown', e => {
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || dlgOpen()) return;
   const d = e.target.closest?.('details.menu');
   if (!d) return;
   if (!d.open) { if (e.key === 'ArrowDown' && e.target.tagName === 'SUMMARY') { e.preventDefault(); d.open = true; requestAnimationFrame(() => d.querySelector('.mi')?.focus()); } return; }
@@ -1166,7 +1176,7 @@ document.addEventListener('click', e => {
   document.querySelectorAll('details.menu[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('.mi')) d.open = false; });
 });
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
+  if (e.key !== 'Escape' || dlgOpen()) return;
   if (selBar && selBar.style.display === 'flex') { hideSelBar(); getSelection().removeAllRanges(); return; }
   const d = document.querySelector('details.menu[open]');
   if (d) { d.open = false; d.querySelector('summary').focus(); }
@@ -1338,11 +1348,11 @@ function openMarkDialog(id) {
     <textarea name="note" placeholder="메모" style="min-height:90px">${esc(h.note || '')}</textarea>
     <div class="row between" style="margin-top:10px"><button value="del" class="btn sm bad">지우기</button><span class="row"><button value="cancel" class="btn sm ghost">닫기</button><button value="save" class="btn sm pri">저장</button></span></div>
   </form>`;
-  dlg.onclose = () => {
+  dlg.onclose = async () => {
     const v = dlg.returnValue;
     const f = dlg.querySelector('form');
     if (v === 'save') { const { u, ...rest } = h; S.kvSet('hl', id, { ...rest, color: f.color.value, note: f.note.value.trim() }); }
-    else if (v === 'del') { if (!confirm('이 형광펜과 메모를 지울까?')) return; S.kvDel('hl', id); }
+    else if (v === 'del') { if (!(await askConfirm('이 형광펜과 메모를 지울까?'))) return; S.kvDel('hl', id); }
     else return;
     render.keepScroll = true; render();
   };
@@ -1621,9 +1631,9 @@ function drawQuestion0() {
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
     ${q.type === 'mcq' && !res && !exam ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 보기 · Q/W/E 확신도 · Enter 채점 · ? 단축키 전체</p>` : ''}
+    <div class="row q-foot"><button type="button" class="chip${pr?.star ? ' on' : ''}" id="starBtn" aria-pressed="${!!pr?.star}">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</button>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
     </div></div>
   </section>
-  <div class="row"><button type="button" class="chip${pr?.star ? ' on' : ''}" id="starBtn" aria-pressed="${!!pr?.star}">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</button>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
   `;
 
   $('.q-src')?.addEventListener('toggle', e => S.save('qSrcOpen', e.target.open));
@@ -1724,7 +1734,7 @@ function syncCheck() {
 
 // ? 를 누르면 키보드 단축키 목록
 document.addEventListener('keydown', e => {
-  if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (e.key !== '?' || dlgOpen() || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
   if (['textarea', 'input', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
   e.preventDefault();
   const d = document.createElement('dialog');
@@ -1745,7 +1755,7 @@ document.addEventListener('keydown', e => {
 
 // 태블릿 키보드용: 숫자로 보기 고르기, Enter 로 채점·다음
 document.addEventListener('keydown', e => {
-  if (params().path !== '/run' || !session || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (params().path !== '/run' || !session || dlgOpen() || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = (e.target.tagName || '').toLowerCase();
   if (['textarea', 'input', 'select'].includes(tag)) return;
   // 버튼에 초점이 있을 때 Enter 는 그 버튼이 받는다 (두 번 누르는 것을 막는다)
@@ -2013,7 +2023,7 @@ function bindResult(i) {
 
 async function submitExam() {
   if (!session || session.submitted) return;
-  const unanswered = session.items.filter((_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
+  const unanswered = session.items.filter(async (_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
   if (session.endAt > Date.now() && unanswered && !(await askConfirm(`안 쓴 문제가 ${unanswered}개 있다. 안 쓴 문제는 채점하지 않고 '안 푼 문제' 로 남긴다. 제출할까?`, '제출', '계속 풀기'))) return;
   tickSpent();
   session.submitted = true;
@@ -2222,7 +2232,7 @@ function speedPool(c) {
       // 뜻풀이·문장으로 된 카드는 뺀다 (세 낱말 넘는 뒷면, '~다.' 로 끝나는 뒷면, 문장인 앞면)
       if (back.replace(/\s*[(\[][^)\]]*[)\]]/g, '').split(/\s+/).length > 3 || /(다|요)\.?$/.test(back)) continue;
       if (/[。.]\s*$|です|ます/.test(String(x.c.front).trim())) continue;
-      out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back, x.c.front), show: back, cue: KANA.test(x.c.front) ? '뜻' : '' });
+      out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back, x.c.front), show: back, cue: KANA.test(x.c.front) ? (/^[a-z]/i.test(back.trim()) ? '읽기' : '뜻') : '' });
     }
   }
   return out;
@@ -2362,7 +2372,7 @@ function viewSpeedResult() {
 }
 // 스피드 퀴즈 중 Esc 는 그만
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || params().path !== '/speed' || !speed || speed.i >= speed.items.length || !$('#spQuit')) return;
+  if (e.key !== 'Escape' || dlgOpen() || params().path !== '/speed' || !speed || speed.i >= speed.items.length || !$('#spQuit')) return;
   e.preventDefault(); $('#spQuit').click();
 });
 
@@ -2437,7 +2447,7 @@ function viewFlash() {
     <div${langAttr(showBack ? x.c.back : x.c.front)}>${esc(showBack ? x.c.back : x.c.front)}</div>
     ${showBack && x.c.note ? `<p class="small muted" style="margin-top:10px">${esc(x.c.note)}</p>` : ''}
   </section>
-  ${flash.back ? `<div class="row flash-acts"><button class="btn bad" id="no">몰랐다 <kbd>1</kbd></button><button class="btn ok" id="yes">알았다 <kbd>2</kbd></button></div>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
+  ${flash.back ? `<div class="row flash-acts"><button class="btn bad" id="no">몰랐다 <kbd>1</kbd></button><button class="btn ok" id="yes">알았다 <kbd>2</kbd></button></div><p class="small muted">몰랐다고 한 카드는 이번 판 끝에 한 번 더 나온다.</p>` : '<p class="small muted" style="text-align:center">떠올려 본 다음 뒤집는다.</p>'}`;
   if (!flash.shownAt || flash.shownFor !== flash.i) { flash.shownAt = Date.now(); flash.shownFor = flash.i; }
   const flip = () => { flash.back = !flash.back; viewFlash(); announce(`${(flash.flip === 'back' ? !flash.back : flash.back) ? '뒷면' : '앞면'}: ${(flash.flip === 'back' ? !flash.back : flash.back) ? x.c.back : x.c.front}`); };
   $('#fc').addEventListener('click', flip);
@@ -2455,7 +2465,7 @@ function viewFlash() {
 }
 // 카드: 1 = 몰랐다, 2 = 알았다 (뒤집은 뒤에만)
 document.addEventListener('keydown', e => {
-  if (params().path !== '/flash' || !flash || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (params().path !== '/flash' || !flash || dlgOpen() || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'Escape') { e.preventDefault(); location.hash = '#/cards'; return; } // Esc: 카드 그만
   if (!flash.back) return;
   if (['input', 'textarea', 'select'].includes((e.target.tagName || '').toLowerCase())) return;
@@ -2642,8 +2652,8 @@ function viewPlan() {
     D.saveExamLocal(out);
     D.loadAll().then(() => { toast('저장했다.'); render(); });
   });
-  $('#planDel')?.addEventListener('click', async () => { if (!confirm('주간 공부 계획을 지울까? 체크한 기록은 남는다.')) return; D.clearPlan(); await D.loadAll(); render(); });
-  $('#resetExam').addEventListener('click', () => { if (!confirm('내가 고친 날짜와 범위를 지울까?')) return; D.clearExamLocal(); D.loadAll().then(render); });
+  $('#planDel')?.addEventListener('click', async () => { if (!(await askConfirm('주간 공부 계획을 지울까? 체크한 기록은 남는다.'))) return; D.clearPlan(); await D.loadAll(); render(); });
+  $('#resetExam').addEventListener('click', async () => { if (!(await askConfirm('내가 고친 날짜와 범위를 지울까?'))) return; D.clearExamLocal(); D.loadAll().then(render); });
   $('#pf').addEventListener('submit', e => {
     e.preventDefault();
     const f = e.target;
@@ -2653,7 +2663,7 @@ function viewPlan() {
   });
   $$('[data-pc]').forEach(cb => cb.addEventListener('change', () => { setPlan(cb.dataset.pc, { done: cb.checked, doneAt: cb.checked ? Date.now() : null }); render.keepScroll = true; render(); announce(cb.checked ? '끝냄으로 표시했다' : '끝냄을 풀었다'); }));
   $$('[data-pd]').forEach(b => b.addEventListener('click', () => { S.kvDel('plan', b.dataset.pd); render.keepScroll = true; render(); }));
-  $('#clearDone')?.addEventListener('click', () => { if (!confirm('끝낸 계획을 목록에서 지울까? 공부 일지에는 남는다.')) return; for (const p of planList()) if (p.done) setPlan(p.id, { hidden: true }); render.keepScroll = true; render(); });
+  $('#clearDone')?.addEventListener('click', async () => { if (!(await askConfirm('끝낸 계획을 목록에서 지울까? 공부 일지에는 남는다.'))) return; for (const p of planList()) if (p.done) setPlan(p.id, { hidden: true }); render.keepScroll = true; render(); });
 }
 
 // ================= 기록·타이머 =================
@@ -3168,7 +3178,7 @@ function viewSettings() {
     } catch (err) { out.innerHTML = `<p class="note">${esc(err.message)}</p>`; }
   });
   $$('[data-del]').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('이 자료를 이 기기에서 지울까? 푼 기록은 남는다.')) return;
+    if (!(await askConfirm('이 자료를 이 기기에서 지울까? 푼 기록은 남는다.'))) return;
     D.deleteLocalPack(b.dataset.del); await D.loadAll(); render.keepScroll = true; render();
   }));
   $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
@@ -3218,9 +3228,9 @@ function viewSettings() {
       render();
     } catch (err) { toast(err.message, 4000); }
   });
-  $('#reset').addEventListener('click', () => {
+  $('#reset').addEventListener('click', async () => {
     if (SYNC.isOn()) return toast('동기화 중에는 지워도 Gist 에서 다시 돌아온다. 먼저 연결을 끊는다.', 4500);
-    if (!confirm('이 기기의 푼 기록, 풀이 이력, 카드·읽기·타이머 기록을 모두 지울까? 자료, 계획, 형광펜·메모, API 키는 남는다.')) return;
+    if (!(await askConfirm('이 기기의 푼 기록, 풀이 이력, 카드·읽기·타이머 기록을 모두 지울까? 자료, 계획, 형광펜·메모, API 키는 남는다.'))) return;
     S.resetProgress(); toast('지웠다.'); render();
   });
 
@@ -3245,8 +3255,8 @@ function viewSettings() {
     try { await navigator.clipboard.writeText(t); toast('토큰을 복사했다. 다른 기기의 설정 → 동기화에 붙여넣는다.', 4000); }
     catch (e) { prompt('자동 복사가 막혔다. 아래 글을 길게 눌러 복사한다.', t); }
   });
-  $('#syncOff')?.addEventListener('click', () => {
-    if (!confirm('이 기기에서 동기화를 끊을까? 이 기기와 Gist 의 기록은 그대로 남는다.')) return;
+  $('#syncOff')?.addEventListener('click', async () => {
+    if (!(await askConfirm('이 기기에서 동기화를 끊을까? 이 기기와 Gist 의 기록은 그대로 남는다.'))) return;
     SYNC.disconnect(); render();
   });
 }
@@ -3359,7 +3369,7 @@ function viewBlank() {
     <p class="small muted">자료를 덮고 그 단원에서 기억나는 것을 빈 종이에 쓰듯 다 써 본다. 그다음 자료와 비교해서 빠진 핵심어를 찾는다. 읽기만 하는 것보다 오래 남는다 (인출 연습).</p>
     <section class="card flat"><ul class="list">${packs.map(x => `<li><a class="item" href="#/blank?pack=${encodeURIComponent(x.id)}">${subjDot(x.subject)}<span class="grow">${esc(x.title)}</span><span class="small muted">핵심어 ${keywordsOf(x).length}</span></a></li>`).join('') || '<li class="item muted">본문이 있는 자료가 없다.</li>'}</ul></section>
     ${hist.length ? `<h2>최근 백지 복습</h2><section class="card flat"><ul class="list">${hist.map(h => `<li class="item"><span class="grow">${esc(D.db().byId[h.pack]?.title || h.pack)}<br><span class="small muted">${S.fmtDate(S.ymd(new Date(h.t)))} ${S.fmtTime(h.t)}</span></span><span class="tag ${h.cov >= 70 ? 'ok' : h.cov >= 40 ? 'warn' : 'bad'}">${h.cov}%</span><button type="button" class="btn sm ghost" data-bdel="${esc(h.id)}" aria-label="이 백지 복습 기록 지우기">지우기</button></li>`).join('')}</ul></section>` : ''}`;
-    $$('[data-bdel]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 백지 복습 기록을 지울까? (점수 기록만 지운다)')) return; S.kvDel('blank', b.dataset.bdel); render.keepScroll = true; render(); }));
+    $$('[data-bdel]').forEach(b => b.addEventListener('click', async () => { if (!(await askConfirm('이 백지 복습 기록을 지울까? (점수 기록만 지운다)'))) return; S.kvDel('blank', b.dataset.bdel); render.keepScroll = true; render(); }));
     return;
   }
   if (!blank || blank.pack !== p.id) blank = { pack: p.id, text: '', phase: 'write', start: Date.now() };
@@ -3693,8 +3703,8 @@ function viewMath() {
   startTimerLoop();
   $('#mcGo')?.addEventListener('click', async () => { if (S.load('timer', null)) { if (!(await askConfirm('집중 타이머가 돌고 있다. 타이머를 멈추고(지난 시간은 기록) 스톱워치를 켤까?', '스톱워치 켜기', '그대로'))) return; const t = S.load('timer', null); S.recordFocus(Math.floor((Date.now() - t.start) / 60000)); S.remove('timer'); } const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
   $('#mcStop')?.addEventListener('click', () => { stopClock(); render(); });
-  $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
-  $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 공부 시간 기록을 지울까? 지운 시간은 공부 시간에서 빠진다.')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
+  $('#mcDrop')?.addEventListener('click', async () => { if (!(await askConfirm('지금까지 잰 시간을 버릴까?'))) return; S.remove('mclock'); syncClockPill(); render(); });
+  $$('[data-mx]').forEach(b => b.addEventListener('click', async () => { if (!(await askConfirm('이 공부 시간 기록을 지울까? 지운 시간은 공부 시간에서 빠진다.'))) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
 
   // 날짜는 공부한 날 기준이라 새벽 4시 전 시각은 그다음 날 새벽이다 (예: 22일 03:00 = 23일 새벽 3시)
   const at = (d, t) => { const [y, mo, da] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number); return new Date(y, mo - 1, da + (h < S.DAY_START_HOUR ? 1 : 0), h, mi).getTime(); };
@@ -3811,7 +3821,7 @@ async function viewPdf() {
     toast('저장했다.'); render.keepScroll = true; render();
   }));
   $$('[data-pdel]').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('이 PDF 를 이 기기에서 지울까? 자료와 기록은 그대로다.')) return;
+    if (!(await askConfirm('이 PDF 를 이 기기에서 지울까? 자료와 기록은 그대로다.'))) return;
     await PDF.deletePdf(b.dataset.pdel); toast('지웠다.'); render.keepScroll = true; render();
   }));
 }
