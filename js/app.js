@@ -1280,6 +1280,8 @@ document.addEventListener('click', async e => {
   await D.loadAll();
   toast(t.trim() ? '이름을 바꿨다.' : '원래 이름으로 돌렸다.');
   render.keepScroll = true; render();
+  // 다시 그린 뒤 초점을 그 자료의 관리 메뉴 버튼으로 (키보드 위치를 잃지 않게)
+  document.querySelector(`[data-rename="${CSS.escape(p.id)}"]`)?.closest('details')?.querySelector('summary')?.focus();
 });
 
 // ---------- 형광펜: 고르면 아래에 도구 띠가 뜬다 ----------
