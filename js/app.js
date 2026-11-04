@@ -3255,7 +3255,7 @@ function viewSettings() {
 
   // API 키
   // 예전 Anthropic 키(apiKey)는 여기서 같이 지운다
-  const saveSettings = () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: $('#apiKey').value.trim(), model: $('#model').value }); };
+  const saveSettings = () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: $('#apiKey').value.trim(), model: $('#model').value, modelPicked: true }); };
   $('#saveKey').addEventListener('click', () => { saveSettings(); toast('저장했다.'); render.keepScroll = true; render(); });
   $('#model').addEventListener('change', saveSettings);
   $('#showKey').addEventListener('click', () => { const i = $('#apiKey'); i.type = i.type === 'password' ? 'text' : 'password'; });
@@ -3263,7 +3263,7 @@ function viewSettings() {
   $('#testKey').addEventListener('click', async e => {
     saveSettings();
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 확인 중';
-    try { const t = await AI.testKey(); toast('연결됐다: ' + t.slice(0, 30), 3000); } catch (err) { toast(errText(err), 5000); }
+    try { const t = await AI.testKey(); toast('연결됐다: ' + t, 5000); } catch (err) { toast(errText(err), 5000); }
     b.disabled = false; b.textContent = '연결 확인';
   });
 

@@ -5,15 +5,18 @@ import { textsForAI } from './src.js';
 
 // '-latest' 이름은 Google 이 가장 새 모델로 알아서 이어 준다 (모델 이름이 바뀌어도 그대로 쓴다)
 export const MODELS = [
-  { id: 'gemini-flash-latest', name: 'Gemini Flash', note: '무료 등급에서 쓸 수 있다. 기본값.' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', note: '무료 등급에서 쓸 수 있다. 기본값.' },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash (가장 새 버전)', note: 'Google 이 고르는 최신 Flash.' },
   { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite', note: '무료 한도가 더 넉넉하고 빠르다. 서술형 채점은 덜 꼼꼼하다.' },
   { id: 'gemini-pro-latest', name: 'Gemini Pro', note: '가장 꼼꼼하다. 무료 등급에서는 막혀 있을 수 있다.' },
 ];
+let lastModel = '';
 const API = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 export function settings() {
   const s = { model: MODELS[0].id, geminiKey: '', ...load('settings', {}) };
-  if (!MODELS.some(m => m.id === s.model)) s.model = MODELS[0].id; // 예전 Claude 모델 설정은 버린다
+  // 예전 Claude 모델 설정, 그리고 직접 고르지 않은 '최신 Flash' 는 3 Flash 로
+  if (!MODELS.some(m => m.id === s.model) || (s.model === 'gemini-flash-latest' && !s.modelPicked)) s.model = MODELS[0].id;
   return s;
 }
 export function hasKey() {
@@ -52,6 +55,7 @@ async function ask({ system, user, schema, maxTokens = 8000 }) {
   if (!cand) throw new Error('Gemini 가 답을 주지 않았다. 다시 시도해 줘.');
   if (['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'].includes(cand.finishReason)) throw new Error('Gemini 가 이 요청을 처리하지 않았다. 문장을 조금 바꿔서 다시 해 줘.');
   if (cand.finishReason === 'MAX_TOKENS') throw new Error('답이 너무 길어서 중간에 끊겼다. 다시 시도해 줘.');
+  lastModel = data.modelVersion || s.model;
   const text = (cand.content?.parts || []).filter(x => x.text && !x.thought).map(x => x.text).join('');
   if (!schema) return text;
   try {
@@ -73,7 +77,7 @@ function explainError(st, msg) {
 
 export async function testKey() {
   const t = await ask({ system: '짧게 답한다.', user: '"연결됨" 이라고만 답해.', maxTokens: 2000 });
-  return t.trim();
+  return `${t.trim().slice(0, 20)} · 답한 모델: ${lastModel}`;
 }
 
 const GRADER_SYSTEM = `너는 한국 고등학교 1학년 정기고사(2회고사) 채점 선생님이다.
