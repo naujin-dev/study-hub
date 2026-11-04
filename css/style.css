@@ -747,3 +747,12 @@ details.card.flat>summary.wsum::before{display:none}
 details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 
 .result p{max-width:40em}
+
+.ugroup{margin:6px 0}
+.ugroup>summary{cursor:pointer;padding:6px 0;color:var(--ink2);font-weight:500}
+.ugroup .chips{margin:4px 0 8px}
+/* 태블릿 손가락: 작은 글자 링크도 누르는 칸 44px */
+@media (pointer:coarse){
+  main p.small>a,main .row>a.small,main a.small,td>a,.j-row a,.ptitle+p a{display:inline-flex;align-items:center;min-height:44px}
+  .mcal-g span,.mcal-g a{min-height:40px}
+}

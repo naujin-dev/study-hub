@@ -217,7 +217,7 @@ const routes = {
   '/speed': viewSpeed,
 };
 // 아래 메뉴에서 켜질 칸. 암기카드·계획·시간 재기는 더보기에 들어 있으므로 더보기가 켜진다.
-const navOf = { '/speed': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/speed': 'quiz', '/cards': 'quiz', '/flash': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 // 화면의 글에서 일본어(가나·한자 덩어리)는 lang="ja" 로 감싸고, 영어가 대부분인 문단은 lang="en" 으로.
@@ -252,6 +252,28 @@ function labelChipGroups(root = main) {
     g.setAttribute('role', 'group');
     if (h) { if (!h.id) h.id = 'cg' + Date.now().toString(36) + i; g.setAttribute('aria-labelledby', h.id); }
   });
+}
+// 브라우저 기본 confirm 대신 쓰는 화면 안 확인 창. true/false 로 돌아온다
+function askConfirm(msg, yes = '그래', no = '아니') {
+  return new Promise(res => {
+    const d = document.createElement('dialog');
+    d.className = 'dlg'; d.setAttribute('aria-labelledby', 'acMsg');
+    d.innerHTML = `<form method="dialog"><p id="acMsg" style="margin-top:0">${esc(msg)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" value="no">${esc(no)}</button><button class="btn pri" value="yes">${esc(yes)}</button></div></form>`;
+    document.body.append(d);
+    d.addEventListener('close', () => { res(d.returnValue === 'yes'); d.remove(); });
+    d.showModal();
+    d.querySelector('[value=yes]').focus();
+  });
+}
+// 단원(자료) 고르기 칩을 단원 묶음별로 접어서 (고른 것이 든 묶음만 펼침)
+function unitChips(subs, packs, sel) {
+  return SUBJECTS.filter(x => subs.includes(x.id)).map(x => {
+    const groups = packGroups(packs.filter(p => p.subject === x.id), 'unit');
+    return `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${groups.map(g => {
+      const on = g.packs.some(p => sel.includes(p.id));
+      return `<details class="ugroup"${on || groups.length === 1 ? ' open' : ''}><summary class="small">${esc(shortUnit(g.name))} <span class="muted">${g.packs.length}개</span></summary>${chipGroup('packs', g.packs.map(p => ({ value: p.id, label: p.title })), sel).replace('<div class="chips"', `<div class="chips" role="group" aria-label="${esc(shortUnit(g.name))}"`)}</details>`;
+    }).join('')}`;
+  }).join('');
 }
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
 function syncTitle() {
@@ -486,7 +508,7 @@ function viewHome() {
     ${sm ? `<a class="card flat scope-mini" href="#/plan"><div class="row between"><b>시험 범위 회독</b><span class="small muted mono">${sm.done}/${sm.cells}</span></div><div class="bar" style="margin:8px 0 6px"><i style="width:${sm.pct}%"></i></div><span class="small muted">범위 ${sm.rows}줄 × 회독 ${Math.round(sm.cells / Math.max(1, sm.rows))}번 · Notion 체크 기준 (${esc(String(nst.generated || '').slice(5, 16).replace('T', ' '))})</span></a>` : ''}
 
     <section class="card flat subj-table">
-      <div class="row between"><h2 style="margin:0">과목</h2><span class="small muted">푼 문제 · 정답률 · 오늘/하루 목표</span></div>
+      <div class="row between"><h2 style="margin:0">과목</h2><span class="small muted">푼 문제 · 정답률 · 오늘 푼 문제/목표</span></div>
       <ul class="list">${SUBJECTS.filter(s => st[s.id].packs).map(s => {
         const o = st[s.id], g = goalOf[s.id], date = subjDate(s.id);
         return `<li><a class="item srow" href="#/study?s=${s.id}">${subjDot(s.id)}<span class="grow"><b>${s.name}</b>${date ? ` <span class="small muted">${dLabel(date)}</span>` : ''}<span class="mini-bar wide" style="--c:${subjColor(s.id)}"><i style="width:${pct(o.tried, o.total)}%;background:${subjColor(s.id)}"></i></span></span>
@@ -1598,7 +1620,7 @@ function drawQuestion0() {
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
-    ${q.type === 'mcq' && !res ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 보기 · Q/W/E 확신도 · Enter 채점 · ? 단축키 전체</p>` : ''}
+    ${q.type === 'mcq' && !res && !exam ? `<p class="small muted keyhint">키보드: 숫자 1~${(q.choices || []).length} 보기 · Q/W/E 확신도 · Enter 채점 · ? 단축키 전체</p>` : ''}
     </div></div>
   </section>
   <div class="row"><button type="button" class="chip${pr?.star ? ' on' : ''}" id="starBtn" aria-pressed="${!!pr?.star}">${pr?.star ? '헷갈림 표시됨' : '헷갈림 표시'}</button>${q.source ? `<span class="small muted">출처: ${esc(q.source)}</span>` : ''}</div>
@@ -1624,11 +1646,11 @@ function drawQuestion0() {
     if (q.type === 'short') inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#checkBtn')?.click(); } });
   }
   $$('[data-go]').forEach(b => b.addEventListener('click', () => { session.i = Number(b.dataset.go); drawQuestion(); }));
-  $('#quit').addEventListener('click', () => {
+  $('#quit').addEventListener('click', async () => {
     if (session.viewing) { toSummary(); return; }
-    if (exam && !session.submitted) { if (!confirm('실전을 그만두면 쓴 답은 채점하지 않는다. 그만둘까?')) return; session = null; location.hash = '#/quiz'; return; }
+    if (exam && !session.submitted) { if (!(await askConfirm('실전을 그만두면 쓴 답은 채점하지 않는다. 그만둘까?', '그만두기', '계속 풀기'))) return; session = null; location.hash = '#/quiz'; return; }
     const left = session.items.length - Object.keys(session.results).length;
-    if (left > 0 && Object.keys(session.results).length && !confirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`)) return;
+    if (left > 0 && Object.keys(session.results).length && !(await askConfirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`, '결과 보기', '계속 풀기'))) return;
     if (session.mode !== 'exam' && Object.keys(session.results).length) { session.viewing = false; session.i = session.items.length; render(); return; }
     session = null; location.hash = '#/quiz';
   });
@@ -1992,14 +2014,16 @@ function bindResult(i) {
 async function submitExam() {
   if (!session || session.submitted) return;
   const unanswered = session.items.filter((_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
-  if (session.endAt > Date.now() && unanswered && !confirm(`안 쓴 문제가 ${unanswered}개 있다. 제출할까?`)) return;
+  if (session.endAt > Date.now() && unanswered && !(await askConfirm(`안 쓴 문제가 ${unanswered}개 있다. 안 쓴 문제는 채점하지 않고 '안 푼 문제' 로 남긴다. 제출할까?`, '제출', '계속 풀기'))) return;
   tickSpent();
   session.submitted = true;
   clearInterval(tickTimer._t);
   session.usedMs = Date.now() - session.startedAt;
-  const essays = session.items.map((it, i) => ({ it, i })).filter(x => x.it.q.type !== 'mcq');
+  const essays = session.items.map((it, i) => ({ it, i })).filter(x => x.it.q.type !== 'mcq' && !(session.answers[x.i] == null || session.answers[x.i] === ''));
   main.innerHTML = `<section class="card"><h2><span class="spin"></span> 채점 중</h2><p id="gprog" class="muted">객관식 채점 중…</p></section>`;
-  for (let i = 0; i < session.items.length; i++) if (session.items[i].q.type === 'mcq') await gradeOne(i);
+  // 안 쓴 문제는 채점하지 않는다 (오답노트·복습에 넣지 않고 결과에 '안 푼 문제' 로)
+  const blank = i => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); };
+  for (let i = 0; i < session.items.length; i++) if (session.items[i].q.type === 'mcq' && !blank(i)) await gradeOne(i);
   // 단답형·서술형은 AI 를 쓸 수 있어서 두 개씩 나눠 보낸다.
   let done = 0;
   const queue = [...essays];
@@ -2063,7 +2087,7 @@ function viewSummary() {
   ${self ? `<p class="note">스스로 채점할 서술형이 ${self}개 남았다. 눌러서 채점한다.</p>` : ''}
   <section class="card flat"><ul class="list">${items.map((it, i) => {
     const r = res[i];
-    const tag = r?.result === 'ok' ? '<span class="tag ok">맞음</span>' : r?.result === 'part' ? '<span class="tag warn">부분</span>' : r?.result === 'wrong' ? '<span class="tag bad">틀림</span>' : r?.selfGrade ? '<span class="tag vio">채점 필요</span>' : skipped[i] ? '<span class="tag">건너뜀</span>' : '<span class="tag">안 풂</span>';
+    const tag = r?.result === 'ok' ? '<span class="tag ok">맞음</span>' : r?.result === 'part' ? '<span class="tag warn">부분</span>' : r?.result === 'wrong' ? (r.skipped ? '<span class="tag">모름</span>' : '<span class="tag bad">틀림</span>') : r?.selfGrade ? '<span class="tag vio">채점 필요</span>' : skipped[i] ? '<span class="tag">건너뜀</span>' : '<span class="tag">안 풂</span>';
     return `<li><a class="item" href="#" data-open="${i}"><span class="mono small" style="width:2em">${i + 1}</span><span class="grow">${esc(it.q.question.slice(0, 70))}${it.q.question.length > 70 ? '…' : ''}<br><span class="small muted">${esc(packsOfKey(it.key).map(p => p.title).join(' · ') || subjName(it.pack.subject))} · ${TYPE_NAME[it.q.type]}${r?.fb?.max ? ` · ${r.fb.score}/${r.fb.max}점` : ''}</span></span>${tag}</a>${r?.result === 'wrong' || r?.result === 'part' ? causeSelect(it.key, i + 1) : ''}</li>`;
   }).join('')}</ul></section>`;
   scrollTo(0, 0);
@@ -2165,14 +2189,17 @@ const SPEED_SKIP = /<보기>|\[보기\]|[ⓐ-ⓩ]|다음\s*(표|글|그림|자�
 const OLD_HANGUL = /[\u1100-\u11FF\uA960-\uA97F\uD7B0-\uD7FF\u3164-\u318E]/;
 // 카드 뒷면에서 맞는 답으로 받아 줄 것들: 그대로, 괄호 뺀 것, 괄호 안, [ ] 앞과 안 (pyo [표]),
 // 쉼표·/·또는 으로 나열한 말은 하나만 써도 맞음 (추천, 권유 → 추천)
-const speedAnswers = back => {
+const speedAnswers = (back, front = '') => {
   const b = String(back || '').trim();
   const out = new Set([b]);
   const add = x => { x = String(x || '').trim(); if (x) out.add(x); };
   add(b.replace(/\s*\([^)]*\)/g, ''));
   add(b.replace(/\s*\[[^\]]*\]/g, ''));
   for (const m of b.matchAll(/[(\[]([^)\]]+)[)\]]/g)) add(m[1]);
-  for (const part of b.replace(/\s*[(\[][^)\]]*[)\]]/g, '').split(/\s*[,，、\/]\s*|\s+또는\s+/)) add(part);
+  // '/' 와 '또는' 은 아무거나 하나. 쉼표 나열은 다 써야 맞음 (순서는 상관없음) — 일본어 낱말 뜻(추천, 권유)만 하나로 맞음
+  const core = b.replace(/\s*[(\[][^)\]]*[)\]]/g, '');
+  for (const part of core.split(/\s*\/\s*|\s+또는\s+/)) add(part);
+  if (KANA.test(front)) for (const part of core.split(/\s*[,，、]\s*/)) add(part);
   return [...out];
 };
 function speedPool(c) {
@@ -2195,7 +2222,7 @@ function speedPool(c) {
       // 뜻풀이·문장으로 된 카드는 뺀다 (세 낱말 넘는 뒷면, '~다.' 로 끝나는 뒷면, 문장인 앞면)
       if (back.replace(/\s*[(\[][^)\]]*[)\]]/g, '').split(/\s+/).length > 3 || /(다|요)\.?$/.test(back)) continue;
       if (/[。.]\s*$|です|ます/.test(String(x.c.front).trim())) continue;
-      out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back), show: back });
+      out.push({ kind: 'c', key: x.key, pack: x.pack, prompt: x.c.front, answers: speedAnswers(back, x.c.front), show: back, cue: KANA.test(x.c.front) ? '뜻' : '' });
     }
   }
   return out;
@@ -2221,7 +2248,7 @@ function viewSpeedSetup() {
   // 과목을 고르면 단원(자료)도 고를 수 있다 (문제 풀기·암기카드와 같게)
   const drawPacks = () => {
     const ss = picked('subject');
-    $('#spPacks').innerHTML = ss.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + SUBJECTS.filter(x => ss.includes(x.id)).map(x => `${ss.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', D.db().packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs || [])}`).join('')
+    $('#spPacks').innerHTML = ss.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + unitChips(ss, D.db().packs, last.packs || [])
       : '<p class="small muted" style="margin:8px 0 0">안 고르면 모든 과목에서 낸다. 과목을 고르면 단원도 고를 수 있다.</p>';
     $$('#spPacks input').forEach(i => i.addEventListener('change', cnt));
     cnt();
@@ -2252,7 +2279,7 @@ function viewSpeed() {
     ${speed.per ? `<div class="sp-bar" aria-hidden="true"><i id="spBar" style="transition-duration:${speed.per}s"></i></div>` : '<div class="sp-bar-gap"></div>'}
     <section class="card sp-card">
       <p class="small muted" style="margin:0 0 6px">${subjDot(it.pack.subject)} ${esc(it.pack.title)} · ${it.kind === 'c' ? '카드' : '단답형'}</p>
-      <p class="sp-q" id="spQ"${langAttr(it.prompt)}>${esc(it.prompt)}</p>
+      <p class="sp-q" id="spQ"><span${langAttr(it.prompt)}>${esc(it.prompt)}</span>${it.cue ? ` <span class="tag">${it.cue} 쓰기</span>` : ''}</p>
       ${it.ctx ? `<div class="q-ctx sp-ctx">${ctxHtml(it.ctx)}</div>` : ''}
       <form id="spForm" autocomplete="off" class="sp-form"><input id="spIn" type="text" aria-labelledby="spQ" placeholder="답 쓰고 Enter" enterkeyhint="done"><button type="button" class="btn ghost" id="spPass">모름</button></form>
       <p class="sp-fb" id="spFb" aria-live="polite"></p>
@@ -2276,14 +2303,14 @@ function viewSpeed() {
   if (!untimed) speed.timer = setTimeout(() => answerSpeed(inp.value, true), per * 1000);
   $('#spForm').addEventListener('submit', e => {
     e.preventDefault();
-    if (speed.lock && !speed.per) return nextSpeed(); // 시간 없이: 정답을 본 뒤 Enter 로 다음
+    if (speed.lock) return nextSpeed(); // 정답을 보는 중에 Enter 면 바로 다음
     answerSpeed(inp.value, false);
   });
   $('#spPass').addEventListener('click', () => answerSpeed('', false));
-  $('#spQuit').addEventListener('click', () => {
+  $('#spQuit').addEventListener('click', async () => {
     const done = speed.i + (speed.lock ? 1 : 0); // 정답을 보여 주는 중이면 그 문제까지 푼 것
     const left = speed.items.length - done;
-    if (left > 0 && !confirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`)) return;
+    if (left > 0) { clearTimeout(speed.timer); if (!(await askConfirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`, '결과 보기', '계속 풀기'))) { render.keepScroll = true; render(); return; } }
     clearTimeout(speed.timer); clearTimeout(speed.adv); clearInterval(speed.secT);
     speed.items = speed.items.slice(0, done); speed.i = done; render();
   });
@@ -2359,7 +2386,7 @@ function viewCardsSetup() {
   const draw = () => {
     const subs = picked('subject');
     // 단원 칩이 수십 개라 과목을 고른 뒤에만 과목별로 묶어 보여 준다
-    $('#cpacks').innerHTML = subs.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + SUBJECTS.filter(x => subs.includes(x.id)).map(x => `${subs.length > 1 ? `<p class="small muted" style="margin:8px 0 4px">${subjDot(x.id)} ${x.name}</p>` : ''}${chipGroup('packs', packs.filter(p => p.subject === x.id).map(p => ({ value: p.id, label: p.title })), last.packs)}`).join('')
+    $('#cpacks').innerHTML = subs.length ? '<h2 class="h3" style="margin-top:14px">단원</h2>' + unitChips(subs, packs, last.packs || [])
       : '<p class="small muted" style="margin:10px 0 0">과목을 고르면 단원도 고를 수 있다.</p>';
     $$('input[name="packs"]').forEach(i => i.addEventListener('change', cnt));
     cnt();
@@ -3652,9 +3679,9 @@ function viewMath() {
     el.textContent = `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   };
   clearInterval(viewMath._t); upd(); if (mc) viewMath._t = setInterval(upd, 1000);
-  $$('[data-tm]').forEach(b => b.addEventListener('click', () => {
+  $$('[data-tm]').forEach(b => b.addEventListener('click', async () => {
     // 스톱워치와 같이 돌면 시간이 두 번 셀 수 있어서 하나만 돌게 한다
-    if (S.load('mclock', null) && !confirm('스톱워치가 돌고 있다. 스톱워치를 멈추고(기록하고) 집중 타이머를 켤까?')) return;
+    if (S.load('mclock', null) && !(await askConfirm('스톱워치가 돌고 있다. 스톱워치를 멈추고(기록하고) 집중 타이머를 켤까?', '타이머 켜기', '그대로'))) return;
     if (S.load('mclock', null)) stopClock();
     S.save('timer', { start: Date.now(), len: Number(b.dataset.tm) }); startTimerLoop(); render.keepScroll = true; render();
   }));
@@ -3664,7 +3691,7 @@ function viewMath() {
     S.remove('timer'); syncClockPill(); toast('멈췄다. 지난 시간은 기록했다.'); render.keepScroll = true; render();
   });
   startTimerLoop();
-  $('#mcGo')?.addEventListener('click', () => { if (S.load('timer', null)) { if (!confirm('집중 타이머가 돌고 있다. 타이머를 멈추고(지난 시간은 기록) 스톱워치를 켤까?')) return; const t = S.load('timer', null); S.recordFocus(Math.floor((Date.now() - t.start) / 60000)); S.remove('timer'); } const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
+  $('#mcGo')?.addEventListener('click', async () => { if (S.load('timer', null)) { if (!(await askConfirm('집중 타이머가 돌고 있다. 타이머를 멈추고(지난 시간은 기록) 스톱워치를 켤까?', '스톱워치 켜기', '그대로'))) return; const t = S.load('timer', null); S.recordFocus(Math.floor((Date.now() - t.start) / 60000)); S.remove('timer'); } const sub = $('[name="csub"]').value; reader.flush(); S.save('clockSub', sub); S.save('mclock', { start: Date.now(), sub }); syncClockPill(); render(); });
   $('#mcStop')?.addEventListener('click', () => { stopClock(); render(); });
   $('#mcDrop')?.addEventListener('click', () => { if (!confirm('지금까지 잰 시간을 버릴까?')) return; S.remove('mclock'); syncClockPill(); render(); });
   $$('[data-mx]').forEach(b => b.addEventListener('click', () => { if (!confirm('이 공부 시간 기록을 지울까? 지운 시간은 공부 시간에서 빠진다.')) return; S.cancelSubjectTime(b.dataset.mx); toast('지웠다.'); render.keepScroll = true; render(); }));
@@ -3819,7 +3846,7 @@ function viewMore() {
     ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기'],
     ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장'],
     ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고'],
-    ['#/blank', '백지 복습', '자료를 안 보고 기억나는 것을 다 써 본 뒤 비교 (서울대생 백지 공부법·파인만 기법)'],
+    ['#/blank', '백지 복습', '자료를 덮고 기억나는 걸 다 써 본 뒤 비교'],
     ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로'],
     ['#/check', '자료 점검', '공부자료에 표시 오류나 형식 문제가 있는지 찾기'],
     ['#/marks', '형광펜·메모 모아보기', '자료에 칠한 곳과 메모만 훑어보기'],
@@ -3858,7 +3885,7 @@ function viewHelp() {
 
 ## 공부법에서 가져온 기능
 
-- **백지 복습** (서울대생 백지 공부법, 파인만 기법): 자료 화면의 "백지 복습" 또는 더보기 → 백지 복습. 자료를 덮고 기억나는 것을 다 쓴 뒤 "자료와 비교" 를 누르면 핵심어(굵은 글씨, 형광 강조, 소제목, 카드)를 몇 % 떠올렸는지, 빠진 핵심어가 무엇인지 보여 준다. Claude 에게 잘못 쓴 설명까지 확인받을 수 있다.
+- **백지 복습**: 자료 화면의 "백지 복습" 또는 더보기 → 백지 복습. 자료를 덮고 기억나는 것을 다 쓴 뒤 "자료와 비교" 를 누르면 핵심어(굵은 글씨, 형광 강조, 소제목, 카드)를 몇 % 떠올렸는지, 빠진 핵심어가 무엇인지 보여 준다. Claude 에게 잘못 쓴 설명까지 확인받을 수 있다.
 - **확신도 체크** (메타인지): 객관식·단답형에서 채점 전에 "확실 / 애매 / 찍음" 을 고른다. 찍어서 맞힌 문제는 아는 것으로 치지 않고 오답노트와 복습에 다시 나온다. 애매하게 맞힌 문제는 헷갈림 표시가 붙는다. 확실하다고 했는데 틀리면 따로 알려 준다.
 - **오답 원인**: 오답노트에서 개념 부족 / 암기 부족 / 실수 / 문제 잘못 읽음 / 시간 부족을 고른다. 원인별로 모아 보고, 기록 화면에서 비율을 본다.
 - **스피드 퀴즈**: 홈의 "더 풀기 → 스피드 퀴즈" 나 더보기. 단답형 문제와 답이 짧은 카드에서 뽑아, 문제마다 8·12·20초 안에 답을 직접 쳐서 Enter. 바로 정답이 뜨고, 못 떠올린 것은 오답노트와 카드 복습에 들어간다. Esc 로 그만.
