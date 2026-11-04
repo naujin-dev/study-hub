@@ -745,3 +745,5 @@ details.week>summary,.week summary{flex-wrap:wrap}
 details.card.flat>summary.wsum::before{display:none}
 .wsum .q-head::before{content:'';display:inline-block;width:.8em;height:.8em;background:var(--ink3);-webkit-mask:var(--ic-chev) center/contain no-repeat;mask:var(--ic-chev) center/contain no-repeat;transition:transform .15s var(--ease-out)}
 details[open]>.wsum .q-head::before{transform:rotate(90deg)}
+
+.result p{max-width:40em}

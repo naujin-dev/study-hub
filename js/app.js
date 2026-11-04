@@ -241,6 +241,8 @@ function markLang(root = main) {
       if (latin >= 12 && latin > hangul * 3) { const el = n.parentElement; if (el && el !== root && !el.closest('nav,header')) el.lang = 'en'; }
     }
   }
+  // 형광펜 글처럼 짧게 잘린 영어도 덩어리째 본다
+  root.querySelectorAll('.hl-text,.hl-quote,blockquote').forEach(el => { if (!el.closest('[lang]:not(html)') && langOf(el.textContent) === 'en') el.lang = 'en'; });
 }
 // 칩 묶음에 바로 앞 제목을 이름으로 붙인다 (화면 낭독기가 '8초' 가 무엇인지 알게)
 function labelChipGroups(root = main) {
@@ -1109,7 +1111,8 @@ document.addEventListener('click', e => {
 });
 // 좁은 화면에서 키보드로 옮겨 간 칸이 아래 메뉴에 가리면 가운데로 올린다
 document.addEventListener('focusin', e => {
-  if (innerWidth >= 900 || !main.contains(e.target)) return;
+  // 키보드로 옮겨 간 버튼·입력칸만 (글을 손가락으로 눌러 본문 칸에 초점이 가는 경우는 건드리지 않는다)
+  if (innerWidth >= 900 || !main.contains(e.target) || e.target === main || e.target.getAttribute('tabindex') === '-1' || !e.target.matches(':focus-visible')) return;
   const r = e.target.getBoundingClientRect(), nav = document.querySelector('nav.bottom')?.getBoundingClientRect();
   if (nav && r.bottom > nav.top - 8) e.target.scrollIntoView({ block: 'center' });
 });
@@ -1666,7 +1669,7 @@ function drawQuestion0() {
     await gradeOne(session.i, $('#checkBtn'));
     render.keepScroll = true; drawQuestion();
     announce($('#resBox h2')?.textContent || '');
-    ($('#actions') || $('#resBox'))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    ($('#actions') || $('#resBox'))?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     if (!main.contains(document.activeElement)) ($('#selfForm input') || $('#next'))?.focus({ preventScroll: true });
   });
   $('#skipBtn')?.addEventListener('click', () => {
@@ -2412,7 +2415,11 @@ function viewFlash() {
   const flip = () => { flash.back = !flash.back; viewFlash(); announce(`${(flash.flip === 'back' ? !flash.back : flash.back) ? '뒷면' : '앞면'}: ${(flash.flip === 'back' ? !flash.back : flash.back) ? x.c.back : x.c.front}`); };
   $('#fc').addEventListener('click', flip);
   $('#fc').addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
-  const next = knew => { S.recordCard(x.key, knew, Date.now() - flash.shownAt); flash.shownAt = 0; if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash(); };
+  const next = knew => {
+    S.recordCard(x.key, knew, Date.now() - flash.shownAt); flash.shownAt = 0; if (knew) flash.knew++; else flash.list.push(x); flash.i++; flash.back = false; viewFlash();
+    const y = flash.list[flash.i]; // 다음 카드 앞면을 화면 낭독기로
+    if (y) announce(`${knew ? '알았다' : '몰랐다'}. 다음 카드: ${flash.flip === 'back' ? y.c.back : y.c.front}`);
+  };
   $('#yes')?.addEventListener('click', () => next(true));
   $('#no')?.addEventListener('click', () => next(false));
   flash.next = next;
