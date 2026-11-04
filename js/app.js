@@ -267,7 +267,7 @@ function askConfirm(msg, yes = '그래', no = '아니') {
       const ok = d.returnValue === 'yes';
       d.remove();
       // 아니면 누르던 버튼으로 초점을 돌려준다 (화면이 바뀌면 render 가 제목으로 옮긴다)
-      if (!ok && opener?.isConnected) opener.focus();
+      if (!ok) refocus(opener);
       res(ok);
     });
     d.showModal();
@@ -285,22 +285,36 @@ function unitChips(subs, packs, sel) {
   }).join('');
 }
 askConfirm.n = 0;
+// 창을 닫은 뒤 초점을 연 버튼으로. 그 버튼이 숨었으면 (닫힌 메뉴 안) 메뉴 버튼으로
+function refocus(el) {
+  if (!el?.isConnected) return;
+  if (el.checkVisibility ? el.checkVisibility() : el.offsetParent) return el.focus();
+  el.closest('details')?.querySelector('summary')?.focus();
+}
 // 브라우저 기본 prompt 대신 쓰는 글 입력 창. 쓴 글 또는 null (취소). copy 면 읽기 전용으로 보여 주기만
-function askText(msg, value = '', { ok = '확인', copy = false } = {}) {
+function askText(msg, value = '', { ok = '확인', copy = false, check = null } = {}) {
   return new Promise(res => {
     const d = document.createElement('dialog'), id = 'ac' + (++askConfirm.n), opener = document.activeElement;
     d.className = 'dlg'; d.setAttribute('aria-labelledby', id);
     const field = copy ? `<textarea class="dlg-in" readonly rows="6" aria-labelledby="${id}">${esc(value)}</textarea>` : `<input type="text" class="dlg-in" value="${esc(value)}" aria-labelledby="${id}">`;
-    d.innerHTML = `<form method="dialog"><p id="${id}" class="dlg-msg">${esc(msg)}</p>${field}<div class="row dlg-acts">${copy ? '' : '<button class="btn ghost" value="no" formnovalidate>취소</button>'}<button class="btn pri" value="yes">${copy ? '닫기' : esc(ok)}</button></div></form>`;
+    d.innerHTML = `<form method="dialog"><p id="${id}" class="dlg-msg">${esc(msg)}</p>${field}<p class="dlg-err small" role="alert" hidden></p><div class="row dlg-acts">${copy ? '' : '<button type="button" class="btn ghost" data-no>취소</button>'}<button class="btn pri">${copy ? '닫기' : esc(ok)}</button></div></form>`;
     document.body.append(d);
-    const inp = d.querySelector('.dlg-in');
+    const inp = d.querySelector('.dlg-in'), errEl = d.querySelector('.dlg-err');
     const off = () => { if (d.open) d.close(); };
     addEventListener('hashchange', off);
+    d.querySelector('[data-no]')?.addEventListener('click', () => d.close());
+    // Enter 나 확인: 값을 검사해서 틀리면 창을 열어 둔 채 칸 아래에 알려 준다
+    d.querySelector('form').addEventListener('submit', e => {
+      e.preventDefault();
+      const bad = !copy && check ? check(inp.value) : '';
+      if (bad) { errEl.textContent = bad; errEl.hidden = false; inp.setAttribute('aria-invalid', 'true'); inp.focus(); return; }
+      d.close('yes');
+    });
     d.addEventListener('close', () => {
       removeEventListener('hashchange', off);
       const v = d.returnValue === 'yes' && !copy ? inp.value : null;
       d.remove();
-      if (opener?.isConnected) opener.focus();
+      refocus(opener);
       res(v);
     });
     d.showModal();
@@ -572,7 +586,7 @@ function viewHome() {
   `;
   $('#goalBtn')?.addEventListener('click', async () => {
     const cur = S.kvGet('goal', 'day')?.min || 0;
-    const v = await askText('하루 공부 시간 목표를 시간으로 쓴다. 예: 3, 4.5 (비우면 목표 없음)', cur ? String(Math.round(cur / 6) / 10) : '');
+    const v = await askText('하루 공부 시간 목표를 시간으로 쓴다. 예: 3, 4.5 (비우면 목표 없음)', cur ? String(Math.round(cur / 6) / 10) : '', { check: x => { const h = parseFloat(x.replace(',', '.')); return !x.trim() || (h > 0 && h <= 20) ? '' : '0~20 사이 숫자로 쓴다. 예: 3 또는 4.5'; } });
     if (v === null) return;
     const h = parseFloat(v.replace(',', '.'));
     if (v.trim() && !(h > 0 && h <= 20)) return toast('0~20 사이 숫자로 쓴다.');

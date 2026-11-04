@@ -765,3 +765,4 @@ details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 
 .dlg-in{width:100%;margin:4px 0 12px}
 @media (pointer:coarse){.plan-row{min-height:44px}}
+.dlg-err{color:var(--bad);margin:-6px 0 10px}
