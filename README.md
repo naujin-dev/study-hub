@@ -41,7 +41,7 @@
 
 1. GitHub 저장소 **Settings → Pages** 에서 Source 를 "Deploy from a branch", 브랜치 `main`, 폴더 `/ (root)` 로 저장한다. 1~2분 뒤 사이트 주소가 열린다.
 2. **Settings → Actions → General → Workflow permissions** 를 "Read and write permissions" 로 바꾼다. 자료를 올렸을 때 `data/index.json` 을 자동으로 다시 만드는 데 필요하다.
-3. (선택, 유료) 사이트 [설정] 에 Anthropic API 키를 넣으면 버튼 하나로 AI 채점이 된다. 키 없이도 무료로 쓸 수 있다: 채점 화면의 "채점 요청 복사" 를 claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣고, Claude 가 준 답을 사이트에 다시 붙여넣으면 점수와 피드백이 들어간다.
+3. (선택, 무료) 사이트 [설정] 에 Gemini API 키(Google AI Studio 에서 무료로 만든다)를 넣으면 버튼 하나로 AI 채점이 된다. 키 없이도 무료로 쓸 수 있다: 채점 화면의 "채점 요청 복사" 를 claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣고, Claude 가 준 답을 사이트에 다시 붙여넣으면 점수와 피드백이 들어간다.
 
 ## 자료 넣기
 
@@ -76,7 +76,7 @@ python3 -m http.server 8000      # http://localhost:8000
 | `js/charts.js` | 그래프 (SVG) |
 | `js/notion.js` | Notion 자동 업데이트 받기(암호 풀기) |
 | `js/pdf.js` | PDF 원본 저장(IndexedDB)과 보기(pdf.js) |
-| `js/vendor/` | 마크다운, HTML 정리, Anthropic SDK 라이브러리 |
+| `js/vendor/` | 마크다운, HTML 정리, PDF 라이브러리 |
 | `data/exam.json` | 시험 날짜와 과목별 범위 |
 | `data/packs/` | 공부자료 |
 | `data/index.json` | 자료 목록. `scripts/check_packs.py` 가 만든다. 직접 고치지 않는다 |
@@ -108,5 +108,5 @@ Notion 계획을 고쳤으면 Claude Code 에게 "Notion 주간 계획 다시 �
 - 기록은 그 기기의 브라우저에 쌓이고, [설정 → 기록 동기화] 에 GitHub 토큰(Gists 읽기·쓰기 권한만)을 넣으면 내 비공개 Gist 에도 쌓인다. 같은 토큰을 넣은 기기끼리 기록이 합쳐진다. 기록은 지우지 않고 더하기만 해서 두 기기에서 동시에 공부해도 사라지지 않는다.
 - API 키와 GitHub 토큰은 Gist 와 백업 파일에 들어가지 않는다.
 - 기록 구조: `js/store.js` 맨 위 설명. 푼 기록과 복습 일정은 쌓인 기록(events)에서 매번 다시 계산한다.
-- AI 기능은 브라우저에서 Anthropic 으로 바로 요청한다. 쓴 만큼 API 요금이 나온다. 기본 모델은 Claude Opus 5.5 이고 설정에서 Sonnet 5.5, Haiku 5.5 로 바꿀 수 있다.
+- AI 기능은 브라우저에서 Google Gemini API 로 바로 요청한다. 무료 등급은 분당·하루 횟수 한도가 있고, 보낸 내용을 Google 이 서비스 개선에 쓸 수 있다. 기본 모델은 Gemini Flash 이고 설정에서 Flash-Lite, Pro 로 바꿀 수 있다.
 - 저장소가 공개라서 `data/packs/` 의 자료는 누구나 볼 수 있다. 남에게 보이면 안 되는 자료는 저장소에 올리지 말고 [자료 가져오기] 로만 넣는다.

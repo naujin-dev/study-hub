@@ -1,8 +1,8 @@
 // 오프라인 모드: 사이트 파일을 이 기기에 저장해 두고, 인터넷이 없으면 저장본을 보여준다.
 // 인터넷이 있으면 항상 새 파일을 먼저 받고 (받은 것으로 저장본도 새로 고친다), 없을 때만 저장본을 쓴다.
 // VERSION 과 FILES 는 scripts/bump_version.py 가 쓴다.
-const VERSION = '20261104053718';
-const FILES = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "css/fonts/pretendard/pretendard.css", "css/fonts/old-hangul/old-hangul.css", "css/fonts/hanja/hanja.css", "css/fonts/noto-serif-kr/noto-serif-kr.css", "data/index.json", "data/exam.json", "js/ai.js", "js/charts.js", "js/data.js", "js/hl.js", "js/notion.js", "js/pdf.js", "js/prompts.js", "js/src.js", "js/store.js", "js/sync.js", "js/app.min.js", "css/fonts/old-hangul/sans-400.woff2", "css/fonts/old-hangul/sans-700.woff2", "css/fonts/old-hangul/serif-400.woff2", "css/fonts/old-hangul/serif-700.woff2", "js/vendor/anthropic-sdk-0.131.0.js", "js/vendor/marked-12.0.2.min.js", "js/vendor/pdfjs-4.10.38.min.js", "js/vendor/pdfjs-4.10.38.worker.min.js", "js/vendor/purify-3.1.6.min.js"];
+const VERSION = '20261104054340';
+const FILES = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "css/fonts/pretendard/pretendard.css", "css/fonts/old-hangul/old-hangul.css", "css/fonts/hanja/hanja.css", "css/fonts/noto-serif-kr/noto-serif-kr.css", "data/index.json", "data/exam.json", "js/ai.js", "js/charts.js", "js/data.js", "js/hl.js", "js/notion.js", "js/pdf.js", "js/prompts.js", "js/src.js", "js/store.js", "js/sync.js", "js/app.min.js", "css/fonts/old-hangul/sans-400.woff2", "css/fonts/old-hangul/sans-700.woff2", "css/fonts/old-hangul/serif-400.woff2", "css/fonts/old-hangul/serif-700.woff2", "js/vendor/marked-12.0.2.min.js", "js/vendor/pdfjs-4.10.38.min.js", "js/vendor/pdfjs-4.10.38.worker.min.js", "js/vendor/purify-3.1.6.min.js"];
 const CACHE = 'study-hub';
 
 self.addEventListener('install', e => {
@@ -23,7 +23,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const same = url.origin === self.location.origin && url.pathname.startsWith(new URL('./', self.location).pathname);
   const font = FONT_HOSTS.includes(url.hostname);
-  if (!same && !font) return; // Claude API, GitHub 등은 건드리지 않는다
+  if (!same && !font) return; // Gemini API, GitHub 등은 건드리지 않는다
   e.respondWith((async () => {
     const c = await caches.open(CACHE);
     const isPage = req.mode === 'navigate';

@@ -1,81 +1,78 @@
-// Claude API 호출. API 키는 이 기기의 브라우저에만 저장하고, 요청은 브라우저에서 api.anthropic.com 으로 바로 보낸다.
+// Gemini API 호출. API 키는 이 기기의 브라우저에만 저장하고, 요청은 브라우저에서 Google 로 바로 보낸다.
 import { load } from './store.js';
 import { SUBJ, essayMax } from './data.js';
 import { textsForAI } from './src.js';
 
+// '-latest' 이름은 Google 이 가장 새 모델로 알아서 이어 준다 (모델 이름이 바뀌어도 그대로 쓴다)
 export const MODELS = [
-  { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', note: '채점이 가장 꼼꼼하다. 기본값.' },
-  { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', note: 'Opus 의 절반 가격. 대부분 충분하다.' },
-  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', note: '가장 싸고 빠르다. 서술형 채점은 덜 정확할 수 있다.' },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash', note: '무료 등급에서 쓸 수 있다. 기본값.' },
+  { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite', note: '무료 한도가 더 넉넉하고 빠르다. 서술형 채점은 덜 꼼꼼하다.' },
+  { id: 'gemini-pro-latest', name: 'Gemini Pro', note: '가장 꼼꼼하다. 무료 등급에서는 막혀 있을 수 있다.' },
 ];
-
-const SDK_URL = new URL('./vendor/anthropic-sdk-0.131.0.js', import.meta.url).href;
-let sdkPromise = null;
+const API = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 export function settings() {
-  return { model: 'claude-opus-5-5', apiKey: '', ...load('settings', {}) };
+  const s = { model: MODELS[0].id, geminiKey: '', ...load('settings', {}) };
+  if (!MODELS.some(m => m.id === s.model)) s.model = MODELS[0].id; // 예전 Claude 모델 설정은 버린다
+  return s;
 }
 export function hasKey() {
-  return !!settings().apiKey;
-}
-
-async function client() {
-  const s = settings();
-  if (!s.apiKey) throw new Error('설정에서 Anthropic API 키를 먼저 넣어 줘.');
-  if (!sdkPromise) sdkPromise = import(SDK_URL);
-  const mod = await sdkPromise;
-  const Anthropic = mod.default || mod.Anthropic;
-  return new Anthropic({ apiKey: s.apiKey, dangerouslyAllowBrowser: true, maxRetries: 2 });
+  return !!settings().geminiKey;
 }
 
 // 한 번 묻고 답을 받는다. schema 가 있으면 JSON 객체로 돌려준다.
-async function ask({ system, user, schema, maxTokens = 8000, effort = 'medium' }) {
+async function ask({ system, user, schema, maxTokens = 8000 }) {
   const s = settings();
-  const c = await client();
-  const params = {
-    model: s.model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: user }],
-    output_config: { effort },
+  if (!s.geminiKey) throw new Error('설정에서 Gemini API 키를 먼저 넣어 줘.');
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts: [{ text: user }] }],
+    generationConfig: { maxOutputTokens: maxTokens },
   };
-  if (schema) params.output_config.format = { type: 'json_schema', schema };
-  // Opus 5.5, Sonnet 5.5 는 안전 필터가 오판으로 거절하면 다른 모델로 다시 시도하게 한다.
-  const canFallback = s.model === 'claude-opus-5-5' || s.model === 'claude-sonnet-5-5';
-  let res;
-  try {
-    // 긴 답(문제 만들기)도 시간 초과 없이 받으려고 스트리밍으로 받고 끝난 메시지만 쓴다.
-    res = canFallback
-      ? await c.beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }).finalMessage()
-      : await c.messages.stream(params).finalMessage();
-  } catch (err) {
-    throw new Error(explainError(err));
+  if (schema) Object.assign(body.generationConfig, { responseMimeType: 'application/json', responseJsonSchema: schema });
+  let res, data;
+  for (let tries = 0; ; tries++) {
+    try {
+      res = await fetch(API + encodeURIComponent(s.model) + ':generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': s.geminiKey },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error('인터넷 연결을 확인해 줘.');
+    }
+    data = await res.json().catch(() => ({}));
+    // 서버가 잠깐 바쁠 때는 두 번까지 다시 해 본다
+    if ((res.status === 503 || res.status === 500) && tries < 2) { await new Promise(r => setTimeout(r, 1500 * (tries + 1))); continue; }
+    break;
   }
-  if (res.stop_reason === 'refusal') throw new Error('Claude 가 이 요청을 처리하지 않았다. 문장을 조금 바꿔서 다시 해 줘.');
-  if (res.stop_reason === 'max_tokens') throw new Error('답이 너무 길어서 중간에 끊겼다. 다시 시도해 줘.');
-  const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  if (!res.ok) throw new Error(explainError(res.status, data?.error?.message || ''));
+  if (data.promptFeedback?.blockReason) throw new Error('Gemini 가 이 요청을 처리하지 않았다. 문장을 조금 바꿔서 다시 해 줘.');
+  const cand = data.candidates?.[0];
+  if (!cand) throw new Error('Gemini 가 답을 주지 않았다. 다시 시도해 줘.');
+  if (['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'].includes(cand.finishReason)) throw new Error('Gemini 가 이 요청을 처리하지 않았다. 문장을 조금 바꿔서 다시 해 줘.');
+  if (cand.finishReason === 'MAX_TOKENS') throw new Error('답이 너무 길어서 중간에 끊겼다. 다시 시도해 줘.');
+  const text = (cand.content?.parts || []).filter(x => x.text && !x.thought).map(x => x.text).join('');
   if (!schema) return text;
   try {
-    return JSON.parse(text);
+    return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
   } catch (e) {
     throw new Error('AI 답을 읽지 못했다. 다시 시도해 줘.');
   }
 }
 
-function explainError(err) {
-  const st = err && err.status;
-  if (st === 401) return 'API 키가 맞지 않는다. 설정에서 키를 다시 확인해 줘.';
-  if (st === 403) return '이 API 키로는 이 모델을 쓸 수 없다. 설정에서 다른 모델을 골라 봐.';
-  if (st === 404) return '모델을 찾지 못했다. 설정에서 모델을 다시 골라 줘.';
-  if (st === 429) return '요청이 너무 많다. 1분쯤 뒤에 다시 해 줘.';
-  if (st === 400 && /credit|balance/i.test(err.message || '')) return 'API 크레딧이 부족하다. console.anthropic.com 에서 결제 상태를 확인해 줘.';
-  if (st >= 500) return 'Anthropic 서버 오류다. 잠시 뒤 다시 해 줘.';
-  if (!st) return '인터넷 연결을 확인해 줘. (' + (err && err.message || err) + ')';
-  return `오류 ${st}: ${err.message || ''}`;
+function explainError(st, msg) {
+  if (st === 400 && /api key|API_KEY/i.test(msg)) return 'API 키가 맞지 않는다. 설정에서 키를 다시 확인해 줘.';
+  if (st === 400) return '요청 형식 오류다. 다른 모델을 골라 다시 해 봐.';
+  if (st === 401 || st === 403) return '이 API 키로는 이 모델을 쓸 수 없다. 키를 확인하거나 설정에서 다른 모델을 골라 봐.';
+  if (st === 404) return '모델을 찾지 못했다. 설정에서 다른 모델을 골라 줘.';
+  if (st === 429) return '무료 한도를 다 썼다. 1분쯤 뒤에 다시 하거나, 하루 한도면 내일 다시 해 줘. 설정에서 Flash-Lite 로 바꾸면 한도가 더 넉넉하다.';
+  if (st >= 500) return 'Google 서버가 지금 바쁘다. 잠시 뒤 다시 해 줘.';
+  return `오류 ${st}. 잠시 뒤 다시 해 줘.`;
 }
 
 export async function testKey() {
-  const t = await ask({ system: '짧게 답한다.', user: '"연결됨" 이라고만 답해.', maxTokens: 2000, effort: 'low' });
+  const t = await ask({ system: '짧게 답한다.', user: '"연결됨" 이라고만 답해.', maxTokens: 2000 });
   return t.trim();
 }
 
@@ -178,7 +175,7 @@ ${q.explanation ? '[해설] ' + q.explanation + '\n' : ''}
 }
 
 export async function judgeShort(pack, q, answer) {
-  return ask({ system: '너는 고등학교 시험 단답형 채점 선생님이다.', user: shortUser(pack, q, answer), schema: SHORT_SCHEMA, maxTokens: 4000, effort: 'low' });
+  return ask({ system: '너는 고등학교 시험 단답형 채점 선생님이다.', user: shortUser(pack, q, answer), schema: SHORT_SCHEMA, maxTokens: 4000 });
 }
 
 // ---------- API 키 없이: claude.ai 채팅에 붙여넣을 채점 요청 ----------

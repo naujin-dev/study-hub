@@ -2548,7 +2548,7 @@ function viewGen() {
   const p = D.db().byId[id];
   main.innerHTML = `
   <h1>AI 문제 만들기</h1>
-  <p class="small muted">공부자료 본문을 보고 Claude 가 새 문제를 만든다. 만든 문제는 이 기기에 "(AI 문제)" 자료로 저장된다.</p>
+  <p class="small muted">공부자료 본문을 보고 AI(Gemini) 가 새 문제를 만든다. 만든 문제는 이 기기에 "(AI 문제)" 자료로 저장된다.</p>
   ${AI.hasKey() ? '' : '<p class="note info">API 키가 없으면 무료로: "채팅용 프롬프트 복사" → claude.ai 나 공부 Claude 채팅에 붙여넣기 → 받은 JSON 을 <a href="#/settings">설정 → 자료 가져오기</a> 에 붙여넣기.</p>'}
   <form id="gf" class="card">
     <label class="field"><span>자료</span><select name="pack">${packs.map(x => `<option value="${esc(x.id)}"${x.id === id ? ' selected' : ''}>${subjName(x.subject)} · ${esc(x.title)}</option>`).join('')}</select></label>
@@ -3124,12 +3124,13 @@ function viewSettings() {
   </section>
 
   <section class="card">
-    <h2>AI 채점 (Claude API)</h2>
-    <p class="small">서술형 채점, 단답형 유사 답 확인, 자료 질문, 문제 만들기에 쓴다. 키는 <b>이 기기의 브라우저에만</b> 저장되고, 요청은 이 브라우저에서 Anthropic 으로 바로 간다. 키는 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> 에서 만든다. 쓴 만큼 요금이 나온다.</p>
-    <label class="field"><span>API 키</span><input type="password" id="apiKey" value="${esc(s.apiKey)}" placeholder="sk-ant-..." autocomplete="off"></label>
+    <h2>AI 채점 (Gemini API)</h2>
+    <p class="small">서술형 채점, 단답형 유사 답 확인, 자료 질문, 문제 만들기에 쓴다. 키는 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 에서 구글 계정으로 무료로 만든다 (카드 등록 없음). 키는 <b>이 기기의 브라우저에만</b> 저장되고, 요청은 이 브라우저에서 Google 로 바로 간다.</p>
+    <p class="small muted">무료 등급은 분당·하루 횟수 한도가 있고, 보낸 내용을 Google 이 서비스 개선에 쓸 수 있다.</p>
+    <label class="field"><span>API 키</span><input type="password" id="apiKey" value="${esc(s.geminiKey)}" placeholder="AIza..." autocomplete="off"></label>
     <label class="field"><span>모델</span><select id="model">${AI.MODELS.map(m => `<option value="${m.id}"${m.id === s.model ? ' selected' : ''}>${m.name} — ${m.note}</option>`).join('')}</select></label>
-    <div class="row"><button class="btn pri" id="saveKey">저장</button><button class="btn" id="testKey">연결 확인</button><button class="btn ghost" id="showKey">키 보기</button>${s.apiKey ? '<button class="btn bad ghost" id="delKey">키 지우기</button>' : ''}</div>
-    <p class="small muted" style="margin-top:8px">공용 컴퓨터에서는 키를 넣지 않는다. 키가 새어 나간 것 같으면 콘솔에서 바로 지운다.</p>
+    <div class="row"><button class="btn pri" id="saveKey">저장</button><button class="btn" id="testKey">연결 확인</button><button class="btn ghost" id="showKey">키 보기</button>${s.geminiKey ? '<button class="btn bad ghost" id="delKey">키 지우기</button>' : ''}</div>
+    <p class="small muted" style="margin-top:8px">공용 컴퓨터에서는 키를 넣지 않는다. 키가 새어 나간 것 같으면 AI Studio 에서 바로 지운다.</p>
   </section>
 
   <section class="card">
@@ -3253,11 +3254,12 @@ function viewSettings() {
   }));
 
   // API 키
-  const saveSettings = () => { S.save('settings', { ...AI.settings(), apiKey: $('#apiKey').value.trim(), model: $('#model').value }); };
+  // 예전 Anthropic 키(apiKey)는 여기서 같이 지운다
+  const saveSettings = () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: $('#apiKey').value.trim(), model: $('#model').value }); };
   $('#saveKey').addEventListener('click', () => { saveSettings(); toast('저장했다.'); render.keepScroll = true; render(); });
   $('#model').addEventListener('change', saveSettings);
   $('#showKey').addEventListener('click', () => { const i = $('#apiKey'); i.type = i.type === 'password' ? 'text' : 'password'; });
-  $('#delKey')?.addEventListener('click', () => { S.save('settings', { ...AI.settings(), apiKey: '' }); toast('키를 지웠다.'); render.keepScroll = true; render(); });
+  $('#delKey')?.addEventListener('click', () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: '' }); toast('키를 지웠다.'); render.keepScroll = true; render(); });
   $('#testKey').addEventListener('click', async e => {
     saveSettings();
     const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 확인 중';
@@ -3497,7 +3499,7 @@ function viewBlank() {
     })()}</p></section>
     <section class="card notes" id="bNotes">${notesHtml}</section>
   </div>
-  <section class="card"><h2>설명이 맞는지 Claude 에게 확인 (파인만 기법)</h2>
+  <section class="card"><h2>설명이 맞는지 확인받기</h2>
     <p class="small muted">빠진 것뿐 아니라 내가 잘못 알고 쓴 것까지 찾아 준다.</p>
     <div class="row">${AI.hasKey() ? '<button class="btn pri" id="bAi">AI 피드백 받기</button>' : ''}<button class="btn${AI.hasKey() ? '' : ' pri'}" id="bCopy">채팅용 요청 복사 (무료)</button><a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai 열기</a></div>
     <pre class="prompt" id="bPre" hidden></pre><div id="bFb" class="notes"></div></section>
