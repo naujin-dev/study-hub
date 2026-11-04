@@ -729,3 +729,19 @@ details.week>summary,.week summary{flex-wrap:wrap}
 .subj-table .srow{flex-wrap:wrap;row-gap:4px}
 .subj-table .nums{grid-template-columns:repeat(3,minmax(3em,auto));column-gap:.9em;margin-left:auto}
 .sp-bar-gap{height:6px;margin:10px 0 14px}
+
+/* 오답노트 카드 머리: 표시 줄 위, 문제 글 아래 */
+.wsum{color:var(--ink);display:block}
+.wsum .q-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.wsum .wq{display:block;margin-top:6px}
+/* 휴대폰: 문제 글을 <보기> 지문보다 먼저 (시험지 순서) */
+@media (max-width:600px){
+  .qcard.has-ctx .q-split{display:flex;flex-direction:column}
+  .qcard.has-ctx .q-main{display:contents}
+  .qcard.has-ctx .q-main>*{order:2}
+  .qcard.has-ctx .q-main>.q-text{order:0}
+  .qcard.has-ctx .q-split>.q-ctx{order:1}
+}
+details.card.flat>summary.wsum::before{display:none}
+.wsum .q-head::before{content:'';display:inline-block;width:.8em;height:.8em;background:var(--ink3);-webkit-mask:var(--ic-chev) center/contain no-repeat;mask:var(--ic-chev) center/contain no-repeat;transition:transform .15s var(--ease-out)}
+details[open]>.wsum .q-head::before{transform:rotate(90deg)}
