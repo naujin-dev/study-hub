@@ -1439,7 +1439,7 @@ function highlight(root, term) {
 
 // ================= 문제 고르기 =================
 function viewQuizSetup() {
-  const last = S.load('quizPrefs', { subject: [], packs: [], types: ['mcq', 'short', 'essay'], src: 'all', count: '10', mode: 'practice', minutes: '30', order: 'shuffle' });
+  const last = { lv: 'all', tl: 'off', ...S.load('quizPrefs', { subject: [], packs: [], types: ['mcq', 'short', 'essay'], src: 'all', count: '10', mode: 'practice', minutes: '30', order: 'shuffle' }) };
   const packs = D.db().packs.filter(p => (p.questions || []).length);
   if (!packs.length) {
     main.innerHTML = `<h1>문제 풀기</h1><p class="muted">문제가 들어 있는 자료가 아직 없다. <a href="#/settings">자료 가져오기</a></p>`;
@@ -1454,10 +1454,12 @@ function viewQuizSetup() {
     <h2 class="h3" style="margin-top:14px">어떤 문제</h2>${chipGroup('src', [
       { value: 'all', label: '전체' }, { value: 'new', label: '안 푼 문제' }, { value: 'wrong', label: '오답만' },
       { value: 'due', label: '복습할 때 된 문제' }, { value: 'star', label: '헷갈림 표시' }], [last.src], false)}
+    <h2 class="h3" style="margin-top:14px">난이도</h2>${chipGroup('lv', [{ value: 'all', label: '전체' }, { value: 'hard', label: '어려움 이상' }, { value: 'killer', label: '최상(킬러)만' }], [last.lv], false)}
     <div class="grid" style="margin-top:14px">
       <label class="field"><span>개수</span><select name="count">${['5', '10', '20', '30', 'all'].map(v => `<option value="${v}"${last.count === v ? ' selected' : ''}>${v === 'all' ? '전부' : v + '문제'}</option>`).join('')}</select></label>
       <label class="field"><span>순서</span><select name="order"><option value="shuffle"${last.order === 'shuffle' ? ' selected' : ''}>섞기</option><option value="seq"${last.order === 'seq' ? ' selected' : ''}>자료 순서대로</option></select></label>
       <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
+      <label class="field"><span>문제마다 시간 제한</span><select name="tl"><option value="off"${last.tl === 'off' ? ' selected' : ''}>없음</option><option value="on"${last.tl === 'on' ? ' selected' : ''}>문제에 정한 시간</option><option value="tight"${last.tl === 'tight' ? ' selected' : ''}>빠듯하게 (시간 20% 줄임)</option></select></label>
       <label class="field" id="minField"><span>제한 시간(분)</span><input type="number" name="minutes" min="1" max="180" value="${esc(last.minutes)}"></label>
     </div>
     <p id="qcount" class="small muted"></p>
@@ -1480,17 +1482,21 @@ function viewQuizSetup() {
   };
   const collect = () => {
     const f = $('#qf');
-    return { subject: picked('subject'), packs: picked('packs'), types: picked('types'), src: picked('src')[0] || 'all', count: f.count.value, order: f.order.value, mode: f.mode.value, minutes: f.minutes.value };
+    return { subject: picked('subject'), packs: picked('packs'), types: picked('types'), src: picked('src')[0] || 'all', lv: picked('lv')[0] || 'all', tl: f.tl.value, count: f.count.value, order: f.order.value, mode: f.mode.value, minutes: f.minutes.value };
   };
   const count = () => {
     const c = collect();
     const items = pickItems(c);
     $('#qcount').textContent = `조건에 맞는 문제 ${items.length}개`;
-    $('#minField').style.display = c.mode === 'exam' ? '' : 'none';
+    // 실전 + 문제마다 시간 제한이면 전체 시간은 문제 시간의 합으로 정한다
+    const auto = c.mode === 'exam' && c.tl !== 'off';
+    $('#minField').style.display = c.mode === 'exam' && !auto ? '' : 'none';
+    if (auto) { const n = c.count === 'all' ? items.length : Math.min(items.length, Number(c.count)); $('#qcount').textContent += ` · 전체 시간은 문제마다 정한 시간의 합 (약 ${Math.round(n * avgLimit(items, c.tl) / 60)}분)`; }
   };
   $$('input[name="subject"]').forEach(i => i.addEventListener('change', drawPacks));
-  $$('input[name="types"],input[name="src"]').forEach(i => i.addEventListener('change', count));
+  $$('input[name="types"],input[name="src"],input[name="lv"]').forEach(i => i.addEventListener('change', count));
   $('#qf').mode.addEventListener('change', count);
+  $('#qf').tl.addEventListener('change', count);
   drawPacks();
   $('#qf').addEventListener('submit', e => {
     e.preventDefault();
@@ -1503,9 +1509,14 @@ function viewQuizSetup() {
     if (!items.length) return toast('조건에 맞는 문제가 없다.');
     if (c.order === 'shuffle') items = shuffle(items);
     if (c.count !== 'all') items = items.slice(0, Number(c.count));
-    startSession(items, c.mode, Number(c.minutes) || 30);
+    const tlf = { off: 0, on: 1, tight: 0.8 }[c.tl] || 0;
+    const minutes = c.mode === 'exam' && tlf ? Math.max(1, Math.ceil(items.reduce((t, x) => t + qLimit(x.q, tlf), 0) / 60)) : Number(c.minutes) || 30;
+    startSession(items, c.mode, minutes, { tl: tlf });
   });
 }
+// 문제 하나에 줄 시간(초). 문제에 time 이 없으면 유형별 기본값
+const qLimit = (q, f = 1) => Math.max(15, Math.round((q.time || { mcq: 90, short: 60, essay: 300 }[q.type] || 90) * f));
+const avgLimit = (items, tl) => { const f = { on: 1, tight: 0.8 }[tl] || 1; return items.length ? items.reduce((t, x) => t + qLimit(x.q, f), 0) / items.length : 0; };
 
 // 섞어 풀기 (인터리빙): 복습할 때 된 것·오답·안 푼 것을 과목을 번갈아 가며 섞는다
 function mixItems(n = 20) {
@@ -1528,6 +1539,8 @@ function pickItems(c) {
   if (c.src === 'wrong') items = items.filter(x => prog[x.key]?.wrong);
   if (c.src === 'due') items = items.filter(x => { const r = prog[x.key]; return r && r.n && r.due && r.due <= t; });
   if (c.src === 'star') items = items.filter(x => prog[x.key]?.star);
+  if (c.lv === 'hard') items = items.filter(x => (x.q.difficulty || 0) >= 3);
+  if (c.lv === 'killer') items = items.filter(x => (x.q.difficulty || 0) >= 4);
   return items;
 }
 
@@ -1629,6 +1642,33 @@ function restoreFocus(sel) {
   if (closed) el = closed.querySelector('summary');
   el?.focus({ preventScroll: true });
 }
+// 연습 + 문제마다 시간 제한: 시간이 다 되면 고른 답으로 채점하고, 답이 없으면 모르는 문제로 넘긴다
+function runQuestionTimer(q, res, exam) {
+  clearInterval(session.qTimer);
+  if (!session.tl || exam || res) return;
+  session.qStart = session.qStart || {};
+  const i = session.i;
+  if (!session.qStart[i]) session.qStart[i] = Date.now();
+  const lim = qLimit(q, session.tl) * 1000;
+  const tick = () => {
+    const el = $('#qTime');
+    if (!el || session.i !== i || session.results[i]) return clearInterval(session.qTimer);
+    const left = Math.max(0, Math.ceil((lim - (Date.now() - session.qStart[i])) / 1000));
+    el.textContent = left >= 60 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : `${left}초`;
+    el.classList.toggle('bad', left <= 10); el.classList.toggle('warn', left > 10);
+    if (left === 10 && !session.said10) { session.said10 = true; announce('10초 남았다'); }
+    if (left > 0) return;
+    clearInterval(session.qTimer);
+    session.said10 = false;
+    toast('시간 초과');
+    const c = $('#checkBtn');
+    if (c && !c.disabled) c.click();
+    setTimeout(() => { if (session.i === i && !session.results[i]) $('#skipBtn')?.click(); }, 300);
+  };
+  tick();
+  session.qTimer = setInterval(tick, 250);
+  onLeave = () => clearInterval(session?.qTimer);
+}
 function drawQuestion() {
   const fsel = focusKey(document.activeElement);
   drawQuestion0();
@@ -1675,7 +1715,7 @@ function drawQuestion0() {
   <div class="row between"><span class="small muted">${session.i + 1} / ${session.items.length}${exam ? ' · 실전' : ''}</span>${timer}<button class="btn sm ghost" id="quit">그만</button></div>
   ${navButtons()}
   <section class="card qcard${q.context || citeSrc ? ' has-ctx' : ''}">
-    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag" title="난이도">난이도 ${q.difficulty}</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
+    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag${q.difficulty >= 4 ? ' bad' : ''}" title="난이도">${['', '쉬움', '보통', '어려움', '최상'][q.difficulty] || '난이도 ' + q.difficulty}</span>` : ''}${session.tl && !exam && !res ? `<span class="tag warn mono" id="qTime" role="timer" aria-live="off">${qLimit(q, session.tl)}초</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
     <div class="q-split">
     ${(() => {
       // <보기> 같은 지문 칸이 있어도 (가)·(나) 를 가리키면 자료 원문을 아래에 같이 펼친다
@@ -1773,6 +1813,7 @@ function drawQuestion0() {
     announce('모르는 문제로 넘김');
   });
   bindResult(session.i);
+  runQuestionTimer(q, res, exam);
   if (exam && !session.submitted) tickTimer();
 }
 
@@ -3980,6 +4021,7 @@ function viewHelp() {
 
 - **객관식**: 바로 채점한다.
 - **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
+- **고난도·시간 제한**: [문제](#/quiz) 에서 난이도 '어려움 이상' 이나 '최상(킬러)만' 을 고른다. '문제마다 시간 제한' 을 켜면 문제에 정한 시간(없으면 객관식 90초·단답 60초·서술 300초)이 줄어들고, 시간이 다 되면 고른 답으로 채점하거나 모르는 문제로 넘긴다. 실전 모드에서는 전체 시간이 문제 시간의 합이 된다.
 - **AI 키**: [설정](#/settings) 의 "AI 채점 (Gemini API)" 에 Google AI Studio(aistudio.google.com) 에서 무료로 만든 Gemini 키를 넣는다. 아래에서 말하는 "API 키" 가 이것이다.
 - **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 
