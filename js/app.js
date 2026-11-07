@@ -347,10 +347,11 @@ function ensureReadFonts() {
   ensureReadFonts.done = true;
   addCss('css/fonts/noto-serif-kr/noto-serif-kr.css');
 }
+document.addEventListener('toggle', e => { if (e.target.open) ensureHanjaFont(); }, true);
 const addCss = href => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l); };
 // 한자 글꼴 목록은 화면에 한자가 있을 때만 붙인다
 function ensureHanjaFont() {
-  if (ensureHanjaFont.done || !/[\u3400-\u9FFF\uF900-\uFAFF]/.test(main.textContent)) return;
+  if (ensureHanjaFont.done || !/[\u3400-\u9FFF\uF900-\uFAFF]/.test(main.innerText)) return;
   ensureHanjaFont.done = true;
   addCss('css/fonts/hanja/hanja.css');
 }
@@ -2652,9 +2653,10 @@ function viewPlan() {
   const weeksHtml = np && np.weeks ? np.weeks.filter(w => w.end >= t || w === openWeek).map(w => {
     const items = w.groups.flatMap(g => g.items.map(i => byId[i.id]).filter(Boolean));
     const done = items.filter(i => i.done).length;
+    const late = items.filter(i => i.date && i.date < t && !i.done).length;
     const isCur = w === openWeek;
     return `<details class="card flat week${isCur ? ' cur' : ''}"${isCur ? ' open' : ''}>
-      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ` <span class="tag vio">${w.start > t ? '다음 주' : '이번 주'}</span>` : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
+      <summary><b>${esc(w.title)}</b> ${w.stage ? `<span class="tag vio">${esc(w.stage)}</span>` : ''}${isCur ? ` <span class="tag vio">${w.start > t ? '다음 주' : '이번 주'}</span>` : ''}${w.overlap ? ` <span class="tag warn">${esc(w.overlap)}</span>` : ''}${late ? ` <span class="tag warn">밀린 것 ${late}</span>` : ''} <span class="small muted">${done}/${items.length}</span>
         <div class="bar" style="margin-top:6px"><i style="width:${pct(done, items.length)}%"></i></div></summary>
       ${w.note ? `<p class="small muted" style="white-space:pre-wrap">${esc(w.note)}</p>` : ''}
       ${w.groups.map(g => {
@@ -2662,7 +2664,7 @@ function viewPlan() {
         if (!gi.length) return '';
         const self = g.items.length === 1 && g.items[0].self;
         return `<div class="wgroup">${self ? '' : `<div class="wg-h">${g.subject ? subjDot(g.subject) : g.label ? `<span class="tag">${esc(g.label)}</span>` : ''} <b>${esc(g.title)}</b></div>`}
-          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}${p.date && p.date < t && !p.done ? '<br><span class="tag warn">밀림</span>' : ''}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${self && p.subject ? subjDot(p.subject) + ' ' : ''}${esc(planText(p.text))}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
+          <ul class="list">${gi.map(p => `<li class="item" style="align-items:flex-start"><label class="plan-row"><input type="checkbox" data-pc="${p.id}"${p.done ? ' checked' : ''}><span class="pdate mono small${p.date === t ? ' today' : ''}${p.date && p.date < t && !p.done ? ' late' : ''}">${p.date ? Number(p.date.slice(5, 7)) + '/' + Number(p.date.slice(8)) : '이번 주'}${p.date && p.date < t && !p.done ? '<span class="vh"> 밀림</span>' : ''}</span><span class="grow"${p.done ? ' style="text-decoration:line-through;color:var(--ink3)"' : ''}>${self && p.subject ? subjDot(p.subject) + ' ' : ''}${esc(planText(p.text))}</span></label>${planGo(p)}</li>`).join('')}</ul></div>`;
       }).join('')}
       ${w.url ? `<p class="small"><a href="${esc(w.url)}" target="_blank" rel="noopener">Notion 에서 보기</a></p>` : ''}
     </details>`;
@@ -3282,7 +3284,7 @@ function viewSettings() {
     // 누른 버튼에 초점이 남도록 disabled 대신 aria-disabled
     b.setAttribute('aria-disabled', 'true'); b.innerHTML = '<span class="spin"></span> 확인 중'; keyMsg('');
     try { const t = await AI.testKey(v); saveSettings(); keyMsg('연결됐다. 키를 저장했다. ' + t); if (!$('#delKey')) { render.keepScroll = true; render(); $('#testKey')?.focus(); keyMsg('연결됐다. 키를 저장했다. ' + t); } }
-    catch (err) { keyMsg(errText(err), true); }
+    catch (err) { keyMsg(errText(err).replace(/설정에서 /g, '위에서 '), true); /* 이미 설정 화면이라 '위에서' */ }
     const nb = $('#testKey'); if (nb) { nb.removeAttribute('aria-disabled'); nb.textContent = '연결 확인'; }
   });
 

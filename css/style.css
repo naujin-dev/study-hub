@@ -770,3 +770,4 @@ details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 @media (pointer:coarse){.plan-row{min-height:44px}}
 .dlg-err{color:var(--bad);margin:-6px 0 10px}
 .choice .ctag{margin-left:auto;flex:none}
+.pdate.late{color:var(--warn);font-weight:600}
