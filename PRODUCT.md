@@ -31,7 +31,7 @@ web
 ## Capabilities and Constraints
 
 - 과목: 국어, 영어, 통합사회, 통합과학, 한국사, 과학탐구실험, 일본어 (수학은 자료 없이 공부 시간만 잰다).
-- 정적 사이트(GitHub Pages, 빌드 단계 없는 ES 모듈). 라이브러리는 저장소 안에 둔다(marked, DOMPurify, Anthropic SDK, pdf.js).
+- 정적 사이트(GitHub Pages, 빌드 단계 없는 ES 모듈). 라이브러리는 저장소 안에 둔다(marked, DOMPurify, pdf.js). AI 기능은 브라우저에서 Gemini API 로 바로 요청한다.
 - 기능: 자료 읽기(형광펜·메모·원문 같이 보기·PDF 원본), 객관식·단답형·서술형 풀이와 AI 채점(무료 채팅 채점 포함), 오답노트, 간격 반복 복습, 암기카드, 백지 복습, 공부 일지·기록·달력, 스톱워치와 하루 목표 시간, 시험 일정과 Notion 계획, 내 분류.
 - 자료는 대부분 이 기기와 비공개 Gist 에만 있고, 공개 저장소에는 올리지 않는다(교재 저작권, 개인 계획).
 - 사이트 코드를 고치면 `scripts/bump_version.py` 를 돌려야 기기들이 새 버전을 받는다.

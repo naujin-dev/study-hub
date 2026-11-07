@@ -24,8 +24,8 @@ export function hasKey() {
 }
 
 // 한 번 묻고 답을 받는다. schema 가 있으면 JSON 객체로 돌려준다.
-async function ask({ system, user, schema, maxTokens = 8000 }) {
-  const s = settings();
+async function ask({ system, user, schema, maxTokens = 8000, key = '' }) {
+  const s = { ...settings(), ...(key ? { geminiKey: key } : {}) };
   if (!s.geminiKey) throw new Error('설정에서 Gemini API 키를 먼저 넣어 줘.');
   const body = {
     systemInstruction: { parts: [{ text: system }] },
@@ -75,8 +75,8 @@ function explainError(st, msg) {
   return `오류 ${st}. 잠시 뒤 다시 해 줘.`;
 }
 
-export async function testKey() {
-  const t = await ask({ system: '짧게 답한다.', user: '"연결됨" 이라고만 답해.', maxTokens: 2000 });
+export async function testKey(key = '') {
+  const t = await ask({ system: '짧게 답한다.', user: '"연결됨" 이라고만 답해.', maxTokens: 2000, key });
   return `${t.trim().slice(0, 20)} · 답한 모델: ${lastModel}`;
 }
 

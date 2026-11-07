@@ -345,9 +345,14 @@ const READ_ROUTES = new Set(['/pack', '/run', '/blank', '/final', '/q', '/wrong'
 function ensureReadFonts() {
   if (ensureReadFonts.done) return;
   ensureReadFonts.done = true;
-  for (const href of ['css/fonts/noto-serif-kr/noto-serif-kr.css', 'css/fonts/hanja/hanja.css']) {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l);
-  }
+  addCss('css/fonts/noto-serif-kr/noto-serif-kr.css');
+}
+const addCss = href => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l); };
+// 한자 글꼴 목록은 화면에 한자가 있을 때만 붙인다
+function ensureHanjaFont() {
+  if (ensureHanjaFont.done || !/[\u3400-\u9FFF\uF900-\uFAFF]/.test(main.textContent)) return;
+  ensureHanjaFont.done = true;
+  addCss('css/fonts/hanja/hanja.css');
 }
 function render() {
   if (onLeave) { const f = onLeave; onLeave = null; try { f(); } catch (e) { console.warn(e); } }
@@ -362,6 +367,7 @@ function render() {
   $$('.bottom a', document).forEach(a => { const on = a.dataset.nav === (navOf[path] || 'more'); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   main.innerHTML = '';
   fn();
+  ensureHanjaFont();
   if (lost) main.insertAdjacentHTML('afterbegin', '<p class="note info" role="status">찾는 화면이 없어서 홈을 보여 준다. 주소를 다시 확인한다.</p>');
   updateTop();
   // 화면 제목을 탭 제목에 쓰고, 다른 화면으로 옮겨 왔으면 키보드 초점을 그 화면 제목으로
@@ -1652,7 +1658,7 @@ function drawQuestion0() {
       const n = i + 1;
       let cls = sel.includes(n) ? 'sel' : '';
       if (res) cls = right.includes(n) ? 'right' : (sel.includes(n) ? 'wrong' : '');
-      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span${langAttr(c)}>${esc(c)}</span></button></li>`;
+      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span${langAttr(c)}>${esc(c)}</span>${res && right.includes(n) ? `<span class="tag ok ctag">${sel.includes(n) ? '정답 · 내 답' : '정답'}</span>` : res && sel.includes(n) ? '<span class="tag bad ctag">내 답</span>' : ''}</button></li>`;
     }).join('')}</ul>`;
   } else if (q.type === 'short') {
     body = `<input type="text" id="ansIn" aria-label="답" placeholder="답을 쓴다" value="${esc(ans || '')}"${locked ? ' disabled' : ''} autocomplete="off" style="margin-top:12px">`;
@@ -3127,9 +3133,11 @@ function viewSettings() {
     <h2>AI 채점 (Gemini API)</h2>
     <p class="small">서술형 채점, 단답형 유사 답 확인, 자료 질문, 문제 만들기에 쓴다. 키는 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 에서 구글 계정으로 무료로 만든다 (카드 등록 없음). 키는 <b>이 기기의 브라우저에만</b> 저장되고, 요청은 이 브라우저에서 Google 로 바로 간다.</p>
     <p class="small muted">무료 등급은 분당·하루 횟수 한도가 있고, 보낸 내용을 Google 이 서비스 개선에 쓸 수 있다.</p>
-    <label class="field"><span>API 키</span><input type="password" id="apiKey" value="${esc(s.geminiKey)}" placeholder="AIza..." autocomplete="off"></label>
-    <label class="field"><span>모델</span><select id="model">${AI.MODELS.map(m => `<option value="${m.id}"${m.id === s.model ? ' selected' : ''}>${m.name} — ${m.note}</option>`).join('')}</select></label>
-    <div class="row"><button class="btn pri" id="saveKey">저장</button><button class="btn" id="testKey">연결 확인</button><button class="btn ghost" id="showKey">키 보기</button>${s.geminiKey ? '<button class="btn bad ghost" id="delKey">키 지우기</button>' : ''}</div>
+    <label class="field"><span>API 키</span><input type="password" id="apiKey" value="${esc(s.geminiKey)}" placeholder="AIza..." autocomplete="off" aria-describedby="keyMsg"></label>
+    <p class="small" id="keyMsg" role="status"></p>
+    <label class="field"><span>모델</span><select id="model" aria-describedby="modelNote">${AI.MODELS.map(m => `<option value="${m.id}"${m.id === s.model ? ' selected' : ''}>${m.name}</option>`).join('')}</select></label>
+    <p class="small muted" id="modelNote">${esc(AI.MODELS.find(m => m.id === s.model)?.note || '')}</p>
+    <div class="row"><button class="btn pri" id="saveKey">저장</button><button class="btn" id="testKey">연결 확인</button><button class="btn ghost" id="showKey" aria-pressed="false">키 보기</button>${s.geminiKey ? '<button class="btn bad ghost" id="delKey">키 지우기</button>' : ''}</div>
     <p class="small muted" style="margin-top:8px">공용 컴퓨터에서는 키를 넣지 않는다. 키가 새어 나간 것 같으면 AI Studio 에서 바로 지운다.</p>
   </section>
 
@@ -3254,17 +3262,28 @@ function viewSettings() {
   }));
 
   // API 키
-  // 예전 Anthropic 키(apiKey)는 여기서 같이 지운다
-  const saveSettings = () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: $('#apiKey').value.trim(), model: $('#model').value, modelPicked: true }); };
-  $('#saveKey').addEventListener('click', () => { saveSettings(); toast('저장했다.'); render.keepScroll = true; render(); });
-  $('#model').addEventListener('change', saveSettings);
-  $('#showKey').addEventListener('click', () => { const i = $('#apiKey'); i.type = i.type === 'password' ? 'text' : 'password'; });
+  // 키는 빈 칸으로 덮어쓰지 않는다 (지우기는 '키 지우기' 로만). 예전 Anthropic 키(apiKey)는 저장할 때 같이 지운다
+  const keyMsg = (t, bad) => { const m = $('#keyMsg'); m.textContent = t; m.style.color = bad ? 'var(--bad)' : ''; $('#apiKey').setAttribute('aria-invalid', bad ? 'true' : 'false'); };
+  const saveSettings = (withKey = true) => {
+    const { apiKey, ...rest } = AI.settings(), v = $('#apiKey').value.trim();
+    S.save('settings', { ...rest, ...(withKey && v ? { geminiKey: v } : {}), model: $('#model').value, modelPicked: true });
+  };
+  $('#saveKey').addEventListener('click', () => {
+    if (!$('#apiKey').value.trim()) { keyMsg('키 칸이 비어 있다. AI Studio 에서 만든 키를 붙여넣는다.', true); return $('#apiKey').focus(); }
+    saveSettings(); toast('저장했다.'); render.keepScroll = true; render();
+  });
+  $('#model').addEventListener('change', () => { saveSettings(false); $('#modelNote').textContent = AI.MODELS.find(m => m.id === $('#model').value)?.note || ''; });
+  $('#showKey').addEventListener('click', e => { const i = $('#apiKey'), on = i.type === 'password'; i.type = on ? 'text' : 'password'; e.currentTarget.textContent = on ? '키 숨기기' : '키 보기'; e.currentTarget.setAttribute('aria-pressed', String(on)); });
   $('#delKey')?.addEventListener('click', () => { const { apiKey, ...rest } = AI.settings(); S.save('settings', { ...rest, geminiKey: '' }); toast('키를 지웠다.'); render.keepScroll = true; render(); });
   $('#testKey').addEventListener('click', async e => {
-    saveSettings();
-    const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> 확인 중';
-    try { const t = await AI.testKey(); toast('연결됐다: ' + t, 5000); } catch (err) { toast(errText(err), 5000); }
-    b.disabled = false; b.textContent = '연결 확인';
+    const b = e.currentTarget, v = $('#apiKey').value.trim();
+    if (b.getAttribute('aria-disabled') === 'true') return;
+    if (!v) { keyMsg('키 칸이 비어 있다. AI Studio 에서 만든 키를 붙여넣고 다시 누른다.', true); return $('#apiKey').focus(); }
+    // 누른 버튼에 초점이 남도록 disabled 대신 aria-disabled
+    b.setAttribute('aria-disabled', 'true'); b.innerHTML = '<span class="spin"></span> 확인 중'; keyMsg('');
+    try { const t = await AI.testKey(v); saveSettings(); keyMsg('연결됐다. 키를 저장했다. ' + t); if (!$('#delKey')) { render.keepScroll = true; render(); $('#testKey')?.focus(); keyMsg('연결됐다. 키를 저장했다. ' + t); } }
+    catch (err) { keyMsg(errText(err), true); }
+    const nb = $('#testKey'); if (nb) { nb.removeAttribute('aria-disabled'); nb.textContent = '연결 확인'; }
   });
 
   $('#updBtn').addEventListener('click', () => checkUpdate(true));
@@ -3959,6 +3978,7 @@ function viewHelp() {
 
 - **객관식**: 바로 채점한다.
 - **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
+- **AI 키**: [설정](#/settings) 의 "AI 채점 (Gemini API)" 에 Google AI Studio(aistudio.google.com) 에서 무료로 만든 Gemini 키를 넣는다. 아래에서 말하는 "API 키" 가 이것이다.
 - **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 
 ## 공부법에서 가져온 기능
