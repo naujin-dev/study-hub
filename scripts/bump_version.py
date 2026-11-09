@@ -50,7 +50,7 @@ else:
 (ROOT / "version.json").write_text(json.dumps({"v": v}) + "\n", encoding="utf-8")
 
 # 오프라인 모드: sw.js 의 버전과 미리 저장할 파일 목록
-files = ["./", "index.html", "version.json", "favicon.svg", "css/style.css", "css/fonts/pretendard/pretendard.css", "css/fonts/old-hangul/old-hangul.css", "css/fonts/hanja/hanja.css", "css/fonts/noto-serif-kr/noto-serif-kr.css", "data/index.json", "data/exam.json"]
+files = ["./", "index.html", "version.json", "favicon.svg", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png", "css/style.css", "css/fonts/pretendard/pretendard.css", "css/fonts/old-hangul/old-hangul.css", "css/fonts/hanja/hanja.css", "css/fonts/noto-serif-kr/noto-serif-kr.css", "data/index.json", "data/exam.json"]
 files += [f"js/{m}" for m in mods if m != "app.js"] + ["js/app.min.js"]
 # 옛한글 자모는 작아서 미리 받아 둔다 (오프라인에서도 원문이 깨지지 않게)
 files += sorted(f"css/fonts/old-hangul/{p.name}" for p in (ROOT / "css" / "fonts" / "old-hangul").glob("*.woff2"))
