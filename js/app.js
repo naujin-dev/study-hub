@@ -338,7 +338,7 @@ const dlgOpen = () => !!document.querySelector('dialog[open]');
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
 function syncTitle() {
   const h1 = main.querySelector('h1');
-  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · 2회고사 공부방` : '2회고사 공부방';
+  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · Folio` : 'Folio';
 }
 // 명조(원문)와 한자 글꼴 목록은 크다. 원문·문제를 보여 주는 화면에 처음 갈 때만 붙인다
 const READ_ROUTES = new Set(['/pack', '/run', '/blank', '/final', '/q', '/wrong', '/flash', '/marks', '/check', '/journal']);

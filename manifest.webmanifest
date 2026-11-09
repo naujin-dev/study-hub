@@ -1,7 +1,7 @@
 {
-  "name": "2회고사 공부방",
-  "short_name": "공부방",
-  "description": "2회고사 준비용 개인 공부 사이트",
+  "name": "Folio",
+  "short_name": "Folio",
+  "description": "2회고사 준비용 개인 공부 노트",
   "lang": "ko",
   "start_url": "./#/",
   "scope": "./",

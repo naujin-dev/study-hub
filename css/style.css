@@ -771,3 +771,5 @@ details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 .dlg-err{color:var(--bad);margin:-6px 0 10px}
 .choice .ctag{margin-left:auto;flex:none}
 .pdate.late{color:var(--warn);font-weight:600}
+.brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.01em}
+.brand img{display:block;flex:none}
