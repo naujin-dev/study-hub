@@ -2,7 +2,9 @@
 // 토큰은 이 기기에만 저장하고 Gist 에 올리지 않는다. API 키도 올리지 않는다.
 //
 // Gist 파일
-//   study-hub-state.json          : kv (계획, 회고, 형광펜·메모, 읽음, 시험 정보, 가져온 자료)
+//   study-hub-kv-<종류>.json      : kv 를 종류별로 (계획, 회고, 형광펜·메모, 읽음, 시험 정보 …)
+//   study-hub-kv-packs-<과목>.json : 큰 것(가져온 자료·원문·책 문제)은 과목별로 한 번 더 나눈다
+//   study-hub-state.json          : 예전 한 덩어리 파일. 받아서 합친 뒤 지운다
 //   study-hub-events-YYYY-MM.json : 그 달의 events
 // 동기화 = 받아서 합치기 → 합친 결과 올리기. 지우는 일은 없으므로 두 기기가 동시에 써도 기록이 사라지지 않는다.
 import * as S from './store.js';
@@ -69,7 +71,7 @@ export async function connect(token) {
   let gistId = '';
   for (let page = 1; page <= 5 && !gistId; page++) {
     const list = await gh(`/gists?per_page=100&page=${page}`, { token });
-    const hit = list.find(g => g.files && g.files[STATE_FILE]);
+    const hit = list.find(g => g.description === DESC || (g.files && Object.keys(g.files).some(n => n.startsWith('study-hub-'))));
     if (hit) gistId = hit.id;
     if (list.length < 100) break;
   }
@@ -80,6 +82,8 @@ export async function connect(token) {
   setConf({ token, gistId, login: user.login, auto: true });
   S.save('syncHashes', {});
   S.save('syncEtag', '');
+  S.save('syncRaw', {});
+  S.save('syncRemote', []);
   await syncNow();
   return { login: user.login, gistId };
 }
@@ -120,6 +124,24 @@ async function fileText(f) {
   return r.text();
 }
 
+// kv 를 작은 파일로 나눈다: 종류마다 하나, 큰 것(자료·원문·책 문제)은 과목마다 하나.
+// 계획 하나를 체크해도 5MB 를 통째로 올리고 받던 것을, 바뀐 조각만 오가게 한다.
+// 방금 받은 파일 내용의 해시. 합친 뒤 내 것이 그대로면 다시 올리지 않는다
+let pulled = {};
+const HEAVY = new Set(['packs', 'srctext', 'bookq']);
+const safe = t => String(t).toLowerCase().replace(/[^a-z0-9]/g, '') || 'x';
+function kvFiles(kv) {
+  const out = {};
+  for (const col in kv) {
+    for (const id in kv[col]) {
+      const name = `study-hub-kv-${safe(col)}${HEAVY.has(col) ? '-' + safe(String(id).split('-')[0]) : ''}.json`;
+      const f = out[name] || (out[name] = {});
+      (f[col] || (f[col] = {}))[id] = kv[col][id];
+    }
+  }
+  return out;
+}
+
 async function pullMerge() {
   let g;
   const et = S.load('syncEtag', '');
@@ -132,15 +154,24 @@ async function pullMerge() {
     g = await gh('/gists/' + conf().gistId);
   }
   if (g.notModified) return false;
+  // 지난번에 받은 것과 주소(raw_url, 내용이 바뀌면 달라진다)가 같은 파일은 다시 받지 않는다
+  const seen = S.load('syncRaw', {});
+  const now = {};
+  const names = Object.keys(g.files).filter(n => n.startsWith('study-hub-'));
+  const todo = names.filter(n => { now[n] = g.files[n].raw_url || ''; return !now[n] || seen[n] !== now[n]; });
+  const texts = await Promise.all(todo.map(n => fileText(g.files[n])));
   const incoming = { events: [], kv: {} };
-  for (const name in g.files) {
-    if (!name.startsWith('study-hub-')) continue;
+  todo.forEach((name, k) => {
     let data;
-    try { data = JSON.parse(await fileText(g.files[name])); } catch (e) { continue; }
-    if (name === STATE_FILE) incoming.kv = data.kv || {};
-    else if (Array.isArray(data.events)) incoming.events.push(...data.events);
-  }
+    try { data = JSON.parse(texts[k]); } catch (e) { delete now[name]; return; }
+    pulled[name] = hash(texts[k]);
+    if (Array.isArray(data.events)) incoming.events.push(...data.events);
+    // 예전 한 덩어리 파일(study-hub-state.json)과 새 조각 파일 모두 kv 를 담고 있다
+    for (const col in data.kv || {}) Object.assign(incoming.kv[col] || (incoming.kv[col] = {}), data.kv[col]);
+  });
   const changed = S.mergeIn(incoming);
+  S.save('syncRaw', now);
+  S.save('syncRemote', names);
   S.save('syncEtag', g.__etag || '');
   if (changed) window.dispatchEvent(new CustomEvent('sh-synced'));
   return changed;
@@ -154,7 +185,9 @@ function hash(s) {
 
 async function push() {
   const snap = S.snapshot();
-  const files = { [STATE_FILE]: JSON.stringify({ app: 'study-hub', v: 2, u: Date.now(), kv: snap.kv }) };
+  const files = {};
+  const parts = kvFiles(snap.kv);
+  for (const name in parts) files[name] = JSON.stringify({ app: 'study-hub', v: 2, kv: parts[name] });
   const byMonth = {};
   for (const e of snap.events) {
     const d = new Date(e.t);
@@ -166,17 +199,34 @@ async function push() {
   const send = {};
   const next = {};
   for (const name in files) {
-    const h = hash(files[name]);
-    next[name] = h;
-    // state 파일의 u 는 매번 바뀌므로 kv 부분만 비교한다
-    const cmp = name === STATE_FILE ? hash(JSON.stringify(snap.kv)) : h;
-    next[name] = cmp;
-    if (old[name] !== cmp) send[name] = { content: files[name] };
+    next[name] = hash(files[name]);
+    if (old[name] !== next[name] && pulled[name] !== next[name]) send[name] = { content: files[name] };
   }
-  if (Object.keys(send).length) {
-    await gh('/gists/' + conf().gistId, { method: 'PATCH', body: JSON.stringify({ files: send }) });
+  // 조각 파일을 다 올리고 나면 예전 한 덩어리 파일은 지운다 (내용은 이미 받아서 합쳤다)
+  if (S.load('syncRemote', []).includes(STATE_FILE)) send[STATE_FILE] = null;
+  const names = Object.keys(send);
+  if (names.length) {
+    // 처음 나눠 올릴 때는 양이 많다. 한 번에 3MB 쯤씩 끊어 보낸다
+    let batch = {}, size = 0;
+    const raw = S.load('syncRaw', {});
+    const flush = async () => {
+      if (!Object.keys(batch).length) return;
+      const g = await gh('/gists/' + conf().gistId, { method: 'PATCH', body: JSON.stringify({ files: batch }), wantEtag: true });
+      // 내가 방금 올린 파일은 다음에 다시 받지 않게 주소를 적어 둔다
+      for (const n in batch) { if (g?.files?.[n]?.raw_url) raw[n] = g.files[n].raw_url; else delete raw[n]; }
+      S.save('syncRaw', raw);
+      batch = {}; size = 0;
+    };
+    for (const n of names) {
+      const len = send[n] ? send[n].content.length : 0;
+      if (size && size + len > 3e6) await flush();
+      batch[n] = send[n]; size += len;
+    }
+    await flush();
+    S.save('syncRemote', S.load('syncRemote', []).filter(n => n !== STATE_FILE));
   }
   S.save('syncHashes', next);
+  pulled = {};
 }
 
 // ---------- 자동 동기화 ----------
