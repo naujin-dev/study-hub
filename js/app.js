@@ -1902,6 +1902,9 @@ function tickTimer() {
 const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s.,·・、。'"‘’“”()\[\]{}~!?\-_/]/g, '');
 // 빈칸이 여럿인 답 ("이승만, 이시영") 은 순서를 바꿔 써도 맞다
 const partsKey = s => String(s || '').split(/\s*[,，、]\s*/).map(norm).filter(Boolean).sort().join('|');
+// 영어·일본어: 단어는 같고 순서만 다른지 (부사구 위치 차이 등). 문법이 맞는지는 사람이나 AI 가 본다
+const wordsKey = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[.,!?;:'"‘’“”()]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+const sameWords = (answers, a) => answers.some(x => wordsKey(x) === wordsKey(a) && norm(x) !== norm(a));
 const shortOk = (answers, a) => answers.some(x => norm(x) === norm(a) || (/[,，、]/.test(x) && partsKey(x) === partsKey(a)));
 
 // i 번째 문제 채점. 결과를 session.results 에 넣고 기록한다.
@@ -1928,7 +1931,7 @@ async function gradeOne(i, btn) {
         toast(errText(err), 4000);
         r = { result: 'wrong', aiError: errText(err, '채점') };
       }
-    } else r = { result: 'wrong', canOverride: true };
+    } else r = { result: 'wrong', canOverride: true, orderOnly: ['eng', 'jpn'].includes(pack.subject) && sameWords(q.answers, a) };
   } else {
     if (empty) r = { result: 'wrong', fb: { kind: 'essay', score: 0, max: D.essayMax(q), criteria: [], good: '', missing: '답을 쓰지 않았다.', improved: '' } };
     else if (AI.hasKey()) {
@@ -1976,7 +1979,8 @@ function resultHtml(it, r) {
     if (r.ai) h += `<p class="small">AI: ${esc(r.ai)}</p>`;
     if (r.aiError) h += `<p class="small">AI 확인 실패: ${esc(r.aiError)}</p>`;
     if (r.result !== 'ok' && !r.skipped) {
-      h += `<button class="btn sm" data-override>내 답도 맞다 (맞음으로 고치기)</button>`;
+      if (r.orderOnly) h += `<p class="small note info">단어는 정답과 같고 순서만 다르다. 문제 조건이 어순을 정하지 않았고 문법상 맞으면 맞은 답이다.</p>`;
+      h += `<button class="btn sm${r.orderOnly ? ' pri' : ''}" data-override>내 답도 맞다 (맞음으로 고치기)</button>`;
       if (!r.ai && !r.chatDone) h += `<details style="margin-top:8px"><summary>Claude 채팅으로 확인 (무료)</summary>${chatBox('같은 뜻인지 확인 요청 복사')}</details>`;
     }
   }
