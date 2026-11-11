@@ -773,3 +773,18 @@ details[open]>.wsum .q-head::before{transform:rotate(90deg)}
 .pdate.late{color:var(--warn);font-weight:600}
 .brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.01em}
 .brand img{display:block;flex:none}
+
+/* 찾기 */
+.find-btn{display:inline-flex;align-items:center;gap:6px;color:var(--ink3)}
+.find-btn kbd{font:500 .68rem var(--sans);color:var(--ink3);border:1px solid var(--rule);border-radius:4px;padding:1px 5px}
+@media (max-width:700px),(pointer:coarse){.find-btn kbd{display:none}}
+dialog.dlg.find{width:min(620px,calc(100% - 24px));padding:0;margin-top:max(12px,9vh);max-height:min(76vh,640px);overflow:hidden}
+dialog.dlg.find[open]{display:flex;flex-direction:column}
+.find-in{display:flex;gap:8px;align-items:center;padding:12px;border-bottom:1px solid var(--rule)}
+.find-in input{flex:1;min-width:0;font-size:1rem;border-color:transparent;background:transparent;padding:8px 6px}
+.find-list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
+.find-list a{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:8px;text-decoration:none;color:var(--ink);min-height:44px}
+.find-list .tag{flex:none;margin-top:2px;min-width:3.6em;text-align:center}
+.find-list .fsub{display:block;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.find-list li[aria-selected="true"] a,.find-list a:hover{background:var(--sunk)}
+.find-hint{margin:0;padding:8px 14px;border-top:1px solid var(--rule)}

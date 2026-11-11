@@ -335,6 +335,97 @@ function errText(err, what = '처리') {
 }
 // 확인 창이 떠 있으면 화면 단축키는 쉰다 (Esc 는 창만 닫는다)
 const dlgOpen = () => !!document.querySelector('dialog[open]');
+// ================= 찾기 (화면·자료·본문을 한 칸에서) =================
+const findNorm = t => String(t || '').normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+function findResults(qs) {
+  const q = findNorm(qs);
+  const packs = D.db().packs;
+  if (!q) {
+    // 빈 칸: 자주 가는 화면 + 최근에 읽던 자료
+    const recent = Object.entries(S.kvAll('pos') || {}).sort((a, b) => (b[1].u || 0) - (a[1].u || 0)).map(([id]) => D.db().byId[id]).filter(Boolean).slice(0, 4);
+    return [
+      ...recent.map(p => ({ kind: '최근 자료', href: '#/pack?id=' + encodeURIComponent(p.id), title: p.title, sub: subjName(p.subject) + ' · ' + shortUnit(p.unit || '') })),
+      ...SCREENS.map(([h, t, d]) => ({ kind: '화면', href: h, title: t, sub: d })),
+    ];
+  }
+  const out = [];
+  for (const [h, t, d, k] of SCREENS) {
+    const hit = findNorm(t).includes(q) ? 0 : findNorm(d + (k || '')).includes(q) ? 1 : -1;
+    if (hit >= 0) out.push({ kind: '화면', href: h, title: t, sub: d, rank: hit });
+  }
+  for (const p of packs) {
+    const head = findNorm(p.title + (p.unit || '') + subjName(p.subject) + p.id);
+    if (head.includes(q)) out.push({ kind: '자료', href: '#/pack?id=' + encodeURIComponent(p.id), title: p.title, sub: subjName(p.subject) + ' · ' + shortUnit(p.unit || ''), rank: findNorm(p.title).includes(q) ? 2 : 3 });
+  }
+  // 본문·카드·문제 안의 글 (두 글자부터). 자료마다 처음 걸린 곳 한 줄만 보여 준다
+  if (q.length >= 2) {
+    const seen = new Set(out.filter(x => x.kind === '자료').map(x => x.href));
+    let n = 0;
+    for (const p of packs) {
+      if (n >= 12) break;
+      const href = '#/pack?id=' + encodeURIComponent(p.id);
+      if (seen.has(href)) continue;
+      const raw = [p.notes || '', ...(p.cards || []).map(c => c.front + ' — ' + c.back), ...(p.questions || []).map(x => x.question)];
+      let snip = '';
+      for (const t of raw) {
+        const flat = String(t).replace(/[#*>|`_~<>]|mark|\/mark/g, ' ').replace(/\s+/g, ' ');
+        const i = flat.toLowerCase().replace(/\s/g, '').indexOf(q);
+        if (i < 0) continue;
+        // 띄어쓰기를 뺀 위치를 원래 글 위치로 되돌린다
+        let k = 0, j = 0; while (j < flat.length && k < i) { if (flat[j] !== ' ') k++; j++; }
+        snip = (j > 24 ? '…' : '') + flat.slice(Math.max(0, j - 24), j + 60).trim() + '…';
+        break;
+      }
+      if (snip) { out.push({ kind: '본문', href, title: p.title, sub: snip, rank: 4 }); n++; }
+    }
+  }
+  return out.sort((a, b) => a.rank - b.rank).slice(0, 30);
+}
+function openFind() {
+  if (dlgOpen()) return;
+  const opener = document.activeElement;
+  const d = document.createElement('dialog');
+  d.className = 'dlg find'; d.setAttribute('aria-label', '찾기');
+  d.innerHTML = `<div class="find-in"><input type="search" id="findQ" placeholder="화면, 자료 이름, 본문 속 낱말" autocomplete="off" role="combobox" aria-expanded="true" aria-controls="findList" aria-autocomplete="list" aria-label="찾을 말"><button type="button" class="btn sm ghost" id="findX">닫기</button></div>
+    <ul class="find-list" id="findList" role="listbox" aria-label="찾은 것"></ul><p class="small muted find-hint" id="findHint" role="status"></p>`;
+  document.body.append(d);
+  const inp = d.querySelector('#findQ'), list = d.querySelector('#findList'), hint = d.querySelector('#findHint');
+  let res = [], cur = 0;
+  const draw = () => {
+    res = findResults(inp.value); cur = 0;
+    list.innerHTML = res.map((r, i) => `<li role="option" id="fo${i}" aria-selected="${i === 0}"><a href="${r.href}" tabindex="-1"><span class="tag">${r.kind}</span><span class="grow"><b${langAttr(r.title)}>${esc(r.title)}</b><span class="small muted fsub">${esc(r.sub || '')}</span></span></a></li>`).join('');
+    hint.textContent = res.length ? (inp.value.trim() ? `${res.length}개 찾음 · ↑↓ 고르기 · Enter 열기` : '낱말을 치면 화면·자료·본문에서 찾는다') : '찾은 것이 없다. 다른 낱말로 해 본다.';
+    inp.setAttribute('aria-activedescendant', res.length ? 'fo0' : '');
+  };
+  const move = n => {
+    if (!res.length) return;
+    list.children[cur]?.setAttribute('aria-selected', 'false');
+    cur = (n + res.length) % res.length;
+    const el = list.children[cur]; el.setAttribute('aria-selected', 'true'); el.scrollIntoView({ block: 'nearest' });
+    inp.setAttribute('aria-activedescendant', 'fo' + cur);
+  };
+  const go = href => { d.close('go'); if (location.hash === href) render(); else location.hash = href; };
+  inp.addEventListener('input', draw);
+  inp.addEventListener('keydown', e => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(cur + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(cur - 1); }
+    else if (e.key === 'Enter' && res[cur]) { e.preventDefault(); go(res[cur].href); }
+  });
+  list.addEventListener('click', e => { const a = e.target.closest('a'); if (a) { e.preventDefault(); go(a.getAttribute('href')); } });
+  d.querySelector('#findX').addEventListener('click', () => d.close());
+  d.addEventListener('click', e => { if (e.target === d) d.close(); }); // 바깥을 누르면 닫힌다
+  d.addEventListener('close', () => { const went = d.returnValue === 'go'; d.remove(); if (!went) refocus(opener); });
+  draw();
+  d.showModal();
+  inp.focus();
+}
+document.getElementById('findBtn')?.addEventListener('click', openFind);
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  const typing = ['textarea', 'input', 'select'].includes(tag) || e.target.isContentEditable;
+  if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey)) { e.preventDefault(); openFind(); }
+});
 // 화면 제목을 브라우저 탭 제목에 쓴다 (늦게 그려지는 화면은 그린 뒤에 다시 부른다)
 function syncTitle() {
   const h1 = main.querySelector('h1');
@@ -1847,6 +1938,7 @@ document.addEventListener('keydown', e => {
     <tr><td>실전 모드</td><td>← → 이전·다음 문제</td></tr>
     <tr><td>암기카드</td><td>스페이스 뒤집기 · 1 몰랐다 · 2 알았다 · Esc 그만</td></tr>
     <tr><td>채점 방법 탭</td><td>← → 탭 옮기기</td></tr>
+    <tr><td>찾기</td><td>Ctrl+K 또는 / 로 찾기 창 · ↑ ↓ 고르기 · Enter 열기</td></tr>
     <tr><td>Esc</td><td>메뉴·형광펜 띠·창 닫기 · 문제 풀이·스피드 퀴즈·카드에서는 그만 (남은 게 있으면 먼저 묻는다)</td></tr></table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn pri">닫기</button></div></form>`;
   document.body.append(d);
@@ -3985,24 +4077,31 @@ async function viewPdfOne(id, q) {
   draw();
 }
 
+// 화면 목록: 더보기와 찾기가 같이 쓴다. [주소, 이름, 설명, 찾을 때 쓰는 다른 말]
+const SCREENS = [
+    ['#/', '홈', '오늘 할 일, 복습할 문제, 과목별 진도', '오늘 처음 대시보드'],
+    ['#/study', '자료', '과목별 공부자료 읽기', '노트 정리 단원 원문'],
+    ['#/quiz', '문제 풀기', '과목·단원·난이도를 골라 풀기, 실전 모드', '퀴즈 시험 킬러 고난도 시간 제한 연습'],
+    ['#/wrong', '오답노트', '틀린 문제 다시 보기', '틀린 오답 복습'],
+    ['#/run?src=due', '복습할 문제 풀기', '오늘 다시 풀 때가 된 문제만', '복습 간격'],
+    ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기', '타이머 스톱워치 뽀모도로 시간'],
+    ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장', 'pdf 원본 파일'],
+    ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고', '일기 회고 기록 날짜'],
+    ['#/blank', '백지 복습', '자료를 덮고 기억나는 걸 다 써 본 뒤 비교', '백지 파인만 써 보기'],
+    ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로', '직전 요약 한 장 최종'],
+    ['#/check', '자료 점검', '공부자료에 표시 오류나 형식 문제가 있는지 찾기', '오류 검사'],
+    ['#/marks', '형광펜·메모 모아보기', '자료에 칠한 곳과 메모만 훑어보기', '하이라이트 밑줄 메모'],
+    ['#/cards', '암기카드', '용어, 단어, 연도를 카드로 외운다', '카드 단어 암기 플래시'],
+    ['#/speed', '스피드 퀴즈', '보기 없이 정해진 시간 안에 답을 직접 쳐서 정말 아는지 확인', '단답 빨리 타이핑'],
+    ['#/gen', 'AI 문제 만들기', '자료를 보고 새 문제를 만든다', 'ai 생성 새 문제'],
+    ['#/plan', '시험 일정과 계획', '과목별 날짜·범위, 할 일 목록', '계획표 주차 할 일 일정 노션 범위'],
+    ['#/stats', '공부 기록과 그래프', '잔디 달력, 누적 그래프, 정답률 변화, 쌓은 기록', '통계 달력 정답률 그래프'],
+    ['#/prompts', '공부자료 Claude 프롬프트', '과목별 프롬프트 복사', '프롬프트 복사'],
+    ['#/settings', '설정', '기록 동기화, API 키, 자료 가져오기, 백업', '동기화 백업 가져오기 불러오기 키 제미나이 gemini 토큰 github 업데이트'],
+    ['#/help', '사용법', '자료를 넣는 방법과 기능 설명', '도움말 설명 방법'],
+];
 function viewMore() {
-  const links = [
-    ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기'],
-    ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장'],
-    ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고'],
-    ['#/blank', '백지 복습', '자료를 덮고 기억나는 걸 다 써 본 뒤 비교'],
-    ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로'],
-    ['#/check', '자료 점검', '공부자료에 표시 오류나 형식 문제가 있는지 찾기'],
-    ['#/marks', '형광펜·메모 모아보기', '자료에 칠한 곳과 메모만 훑어보기'],
-    ['#/cards', '암기카드', '용어, 단어, 연도를 카드로 외운다'],
-    ['#/speed', '스피드 퀴즈', '보기 없이 정해진 시간 안에 답을 직접 쳐서 정말 아는지 확인'],
-    ['#/gen', 'AI 문제 만들기', '자료를 보고 새 문제를 만든다'],
-    ['#/plan', '시험 일정과 계획', '과목별 날짜·범위, 할 일 목록'],
-    ['#/stats', '공부 기록과 그래프', '잔디 달력, 누적 그래프, 정답률 변화, 쌓은 기록'],
-    ['#/prompts', '공부자료 Claude 프롬프트', '과목별 프롬프트 복사'],
-    ['#/settings', '설정', '기록 동기화, API 키, 자료 가져오기, 백업'],
-    ['#/help', '사용법', '자료를 넣는 방법과 기능 설명'],
-  ];
+  const links = SCREENS;
   // 쓰임새대로 묶는다: 공부할 때 / 기록 보기 / 자료 관리
   const groups = [
     ['공부할 때', ['#/speed', '#/cards', '#/blank', '#/final', '#/math', '#/gen']],
@@ -4010,7 +4109,8 @@ function viewMore() {
     ['자료와 설정', ['#/pdf', '#/check', '#/prompts', '#/settings', '#/help']],
   ];
   const byHref = Object.fromEntries(links.map(l => [l[0], l]));
-  main.innerHTML = `<h1>더보기</h1><div class="more-grid">${groups.map(([name, hs]) => `<section class="card flat"><h2>${name}</h2><ul class="list">${hs.map(h => byHref[h]).filter(Boolean).map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span><span class="go" aria-hidden="true"></span></a></li>`).join('')}</ul></section>`).join('')}</div>`;
+  main.innerHTML = `<h1>더보기</h1><p><button type="button" class="btn" id="moreFind">화면·자료·본문에서 찾기</button></p><div class="more-grid">${groups.map(([name, hs]) => `<section class="card flat"><h2>${name}</h2><ul class="list">${hs.map(h => byHref[h]).filter(Boolean).map(([h, t, d]) => `<li><a class="item" href="${h}"><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span><span class="go" aria-hidden="true"></span></a></li>`).join('')}</ul></section>`).join('')}</div>`;
+  $('#moreFind').addEventListener('click', openFind);
 }
 
 function viewHelp() {
