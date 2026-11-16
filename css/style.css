@@ -858,3 +858,7 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .pch.pab .pno{width:auto;margin-right:.5em}
 .paper .pch button[data-pm="bad"]{text-decoration:none}
 .paper .pch button[data-pm="bad"]>span:not(.pmk):not(.pno):not(.pdots){text-decoration:line-through}
+
+/* 원안지: 이어지는 조각, 화면 밖 면은 그리지 않기 */
+.pq.pcont{margin-top:0}
+.paper.pdone .ppage{content-visibility:auto;contain-intrinsic-size:210mm 297mm}

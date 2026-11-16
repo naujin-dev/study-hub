@@ -1817,7 +1817,7 @@ function drawQuestion0() {
   <div class="row between"><span class="small muted">${session.i + 1} / ${session.items.length}${exam ? ' · 실전' : ''}</span>${timer}<button class="btn sm ghost" id="quit">그만</button></div>
   ${navButtons()}
   <section class="card qcard${q.context || citeSrc ? ' has-ctx' : ''}">
-    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag${q.difficulty >= 4 ? ' bad' : ''}" title="난이도">${['', '쉬움', '보통', '어려움', '최상'][q.difficulty] || '난이도 ' + q.difficulty}</span>` : ''}${session.tl && !exam && !res ? `<span class="tag warn mono" id="qTime" role="timer" aria-live="off">${qLimit(q, session.tl)}초</span>` : ''}${pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
+    <div class="q-head">${subjDot(pack.subject)}<span class="small">${subjName(pack.subject)} · ${esc(pack.title)}</span><span class="tag">${TYPE_NAME[q.type]}</span>${q.difficulty ? `<span class="tag${q.difficulty >= 4 ? ' bad' : ''}" title="난이도">${['', '쉬움', '보통', '어려움', '최상'][q.difficulty] || '난이도 ' + q.difficulty}</span>` : ''}${session.tl && !exam && !res ? `<span class="tag warn mono" id="qTime" role="timer" aria-live="off">${qLimit(q, session.tl)}초</span>` : ''}${res && pr?.n ? `<span class="tag ${pr.last === 'ok' ? 'ok' : pr.last === 'part' ? 'warn' : 'bad'}">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : ''}</div>
     <div class="q-split">
     ${(() => {
       // <보기> 같은 지문 칸이 있어도 (가)·(나) 를 가리키면 자료 원문을 아래에 같이 펼친다
@@ -2052,7 +2052,9 @@ function pAct(i) {
   const why = r.ai ? `<p>${esc(r.ai)}</p>` : '';
   const exp = q.explanation ? `<p${langAttr(q.explanation)}>${esc(q.explanation)}</p>` : '';
   const need = !r.result ? '<p>서술형은 "자세히" 에서 모범 답안과 비교해 채점한다.</p>' : '';
-  return `<div class="pact done"><div class="pres">${tag}${ans}${why}${need}${exp}</div><button type="button" class="btn sm" data-pdetail="${i}">자세히</button></div>`;
+  const pr = S.qp(session.items[i].key);
+  const hist = pr?.n ? ` <span class="muted">지금까지 ${pr.ok}/${pr.n} 맞음</span>` : '';
+  return `<div class="pact done"><div class="pres">${tag}${hist}${ans}${why}${need}${exp}</div><button type="button" class="btn sm" data-pdetail="${i}">자세히</button></div>`;
 }
 function paperBlocks() {
   const blocks = [];
@@ -2061,9 +2063,10 @@ function paperBlocks() {
   session.items.forEach((it, i) => {
     const { pack, q } = it, a = session.answers[i], res = session.results[i];
     // 지문 없이 윗글·(가)를 가리키는 문제는 자료의 원문을 자료 상자로 싣는다
-    const cite = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body).map(t => t.body).join('\n\n') : '';
+    const cite = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body).map(t => t.body).join('\n\n').slice(0, 6000) : '';
     const ctx = pContext(q.context || cite);
-    const stem = pInline(q.question).replace(/(옳지|적절하지|알맞지) 않은/g, '$1 <u>않은</u>');
+    // 배점 표시([3.4점])는 싣지 않는다
+    const stem = pInline(q.question.replace(/\s*\[\d+(?:\.\d+)?점\]/g, '')).replace(/(옳지|적절하지|알맞지) 않은/g, '$1 <u>않은</u>');
     if (q.type === 'mcq') {
       if (!secM) { secM = true; blocks.push('<h2 class="psec">&lt; 선택형 문항 &gt;</h2>'); }
       const sel = Array.isArray(a) ? a : [];
@@ -2092,6 +2095,13 @@ function paperBlocks() {
   return blocks;
 }
 function drawPaper() {
+  // 처음 한 번은 시험지 글꼴을 받고 나서 그린다 (글꼴이 바뀌면 줄바꿈이 달라져 면이 다시 나뉘므로). 2.5초 넘으면 그냥 그린다
+  if (!ensurePaperFont.ready) {
+    const sid = session.id;
+    main.innerHTML = '<h1 class="vh">문제지</h1><p class="muted" role="status"><span class="spin"></span> 문제지를 준비하는 중</p>';
+    Promise.race([ensurePaperFont(), new Promise(r => setTimeout(r, 2500))]).then(() => { ensurePaperFont.ready = true; if (session && session.id === sid && params().path === '/run' && !session.viewing) render(); });
+    return;
+  }
   const exam = session.mode === 'exam';
   const keepY = drawPaper.keepY; drawPaper.keepY = null;
   const subs = [...new Set(session.items.map(x => x.pack.subject))];
@@ -2112,33 +2122,61 @@ function drawPaper() {
     paper.append(el);
     return el.querySelector('.pcols');
   };
+  paperFit(); // 배율을 먼저 맞춘다 (배율에 따라 줄바꿈이 조금 달라져서, 나눈 뒤에 바꾸면 넘칠 수 있다)
   // 한 면에 들어갈 만큼 넣고, 넘치면(단이 셋이 되면) 다음 면으로 넘긴다
   let n = 1, cols = newPage(1);
+  const over = c => c.scrollWidth > c.clientWidth + 1;
+  // 한 면(2단)보다 긴 문항은 뒤쪽부터 떼어 다음 면에 '이어지는 조각'으로 싣는다.
+  // 떼는 단위: 문항의 자식(선지·채점 줄·상자) → 상자 안의 줄. 더 못 떼면 그대로 둔다 (멈추지 않게 횟수도 막는다)
+  const splitLong = sec => {
+    for (let guard = 0; guard < 40 && over(cols); guard++) {
+      sec.classList.add('plong');
+      const rest = document.createElement('section');
+      rest.className = 'pq plong pcont';
+      rest.dataset.pcof = sec.dataset.pq || sec.dataset.pcof || '';
+      let moved = false;
+      for (let k = 0; k < 400 && over(cols); k++) {
+        const last = sec.lastElementChild;
+        if (!last) break;
+        if (sec.children.length > 1 && !(last.matches('.psrc,.pbogi') && last.children.length > 3 && sec.children.length === 2 && sec.firstElementChild.matches('.pstem'))) { rest.prepend(last); moved = true; continue; }
+        // 상자 하나만 남았거나 (발문 + 긴 상자): 상자 안의 줄을 옮긴다
+        const box = last.matches('.psrc,.pbogi') ? last : null;
+        if (!box || box.children.length < 2) break;
+        let rb = rest.firstElementChild;
+        if (!rb || !rb.classList.contains('pcontbox')) { rb = document.createElement('div'); rb.className = box.className + ' pcontbox'; rest.prepend(rb); }
+        rb.prepend(box.lastElementChild); moved = true;
+      }
+      if (!moved) break;
+      cols = newPage(++n);
+      cols.append(rest);
+      sec = rest;
+    }
+  };
   const tmp = document.createElement('div');
   for (const b of paperBlocks()) {
     tmp.innerHTML = b;
     const nodes = [...tmp.children];
     nodes.forEach(x => cols.append(x));
-    if (cols.scrollWidth > cols.clientWidth + 1 && cols.children.length > nodes.length) {
+    if (over(cols) && cols.children.length > nodes.length) {
       nodes.forEach(x => x.remove());
       cols = newPage(++n);
       nodes.forEach(x => cols.append(x));
     }
-    // 한 면보다 긴 문항(긴 지문)은 단을 넘어가게 풀어 준다
-    if (cols.scrollWidth > cols.clientWidth + 1) nodes.forEach(x => x.classList.add('plong'));
+    if (over(cols)) splitLong(nodes[nodes.length - 1]);
   }
   paper.querySelectorAll('.ppg').forEach(x => { x.textContent = `${x.dataset.pg}/${n}`; });
   paper.lastElementChild.querySelector('.pnext').remove();
   // 화면 폭에 맞춰 종이를 통째로 줄이거나 키운다 (A4 비율 그대로)
-  const fit = () => { const w = $('#paperWrap'); if (!w) return removeEventListener('resize', fit); paper.style.zoom = Math.min(1.7, Math.max(0.4, (w.clientWidth - 8) / 793.7)); };
-  fit(); addEventListener('resize', fit);
+  // 화면 밖의 면은 그리지 않게 해서 긴 문제지도 가볍게 넘긴다 (면 나누기가 끝난 뒤에만)
+  paper.classList.add('pdone');
   const count = () => {
     const done = session.items.filter((_, i) => { const a = session.answers[i]; return !(a == null || a === '' || (Array.isArray(a) && !a.length)); }).length;
     $('#pCount').textContent = exam ? `답한 문항 ${done}/${session.items.length}` : `채점한 문항 ${Object.keys(session.results).length}/${session.items.length}`;
   };
   // 채점한 문제만 그 자리에서 바꾼다. 그 면이 넘칠 때만 전체를 다시 앉힌다
   const redraw = (focusSel, i) => {
-    const old = i == null ? null : paper.querySelector(`.pq[data-pq="${i}"]`);
+    // 여러 면에 걸친 문항은 조각이 따로 있으므로 전체를 다시 앉힌다
+    const old = i == null || paper.querySelector(`[data-pcof="${i}"]`) ? null : paper.querySelector(`.pq[data-pq="${i}"]`);
     const html = old && paperBlocks().find(b => b.includes(`data-pq="${i}"`));
     if (html) {
       const cols = old.parentElement, long = old.classList.contains('plong');
@@ -2197,18 +2235,23 @@ function drawPaper() {
   });
   if (keepY != null) scrollTo(0, keepY);
   else if (drawPaper.backY != null) { scrollTo(0, drawPaper.backY); drawPaper.backY = null; }
-  ensurePaperFont();
-  // 글꼴이 늦게 오면 줄바꿈이 달라지므로 한 번 다시 앉힌다
-  document.fonts?.ready.then(() => { if ($('#paper') === paper && !paper.dataset.refit) { paper.dataset.refit = '1'; if ([...paper.querySelectorAll('.pcols')].some(c => c.scrollWidth > c.clientWidth + 1)) drawPaper(); } });
   if (exam) tickTimer();
 }
+// 화면 폭에 맞춰 종이를 통째로 줄이거나 키운다 (A4 비율 그대로). 창 크기 듣기는 한 번만 건다
+function paperFit() { const w = $('#paperWrap'), el = $('#paper'); if (w && el) el.style.zoom = Math.min(1.7, Math.max(0.4, (w.clientWidth - 8) / 793.7)); }
+addEventListener('resize', () => { clearTimeout(paperFit.t); paperFit.t = setTimeout(() => {
+  const el = $('#paper'); if (!el || !session || session.viewing) return;
+  const z = el.style.zoom; paperFit();
+  // 배율이 바뀌었으면 면을 다시 나눈다 (창 크기를 바꾼 그때 한 번만)
+  if (el.style.zoom !== z) { drawPaper.keepY = scrollY; drawPaper(); }
+}, 200); });
 function ensurePaperFont() {
-  if (ensurePaperFont.done) return;
-  ensurePaperFont.done = true;
+  if (ensurePaperFont.p) return ensurePaperFont.p;
   const st = document.createElement('style');
   st.textContent = `@font-face{font-family:'Paper Myeongjo';font-weight:400;font-display:swap;src:url(css/fonts/nanum-myeongjo/nm-400.woff2) format('woff2')}@font-face{font-family:'Paper Myeongjo';font-weight:700;font-display:swap;src:url(css/fonts/nanum-myeongjo/nm-700.woff2) format('woff2')}`;
   document.head.append(st);
-  document.fonts?.load("8pt 'Paper Myeongjo'"); document.fonts?.load("700 8pt 'Paper Myeongjo'");
+  ensurePaperFont.p = document.fonts?.load ? Promise.all([document.fonts.load("8pt 'Paper Myeongjo'", '가'), document.fonts.load("700 8pt 'Paper Myeongjo'", '가')]).catch(() => {}) : Promise.resolve();
+  return ensurePaperFont.p;
 }
 
 // i 번째 문제 채점. 결과를 session.results 에 넣고 기록한다.
