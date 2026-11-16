@@ -1549,7 +1549,7 @@ function viewQuizSetup() {
     <div class="grid" style="margin-top:14px">
       <label class="field"><span>개수</span><select name="count">${['5', '10', '20', '30', 'all'].map(v => `<option value="${v}"${last.count === v ? ' selected' : ''}>${v === 'all' ? '전부' : v + '문제'}</option>`).join('')}</select></label>
       <label class="field"><span>순서</span><select name="order"><option value="shuffle"${last.order === 'shuffle' ? ' selected' : ''}>섞기</option><option value="seq"${last.order === 'seq' ? ' selected' : ''}>자료 순서대로</option></select></label>
-      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
+      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="paper"${last.mode === 'paper' ? ' selected' : ''}>실전 · 원안지 형식 (노트북·태블릿)</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
       <label class="field"><span>문제마다 시간 제한</span><select name="tl"><option value="off"${last.tl === 'off' ? ' selected' : ''}>없음</option><option value="on"${last.tl === 'on' ? ' selected' : ''}>문제에 정한 시간</option><option value="tight"${last.tl === 'tight' ? ' selected' : ''}>빠듯하게 (시간 20% 줄임)</option></select></label>
       <label class="field" id="minField"><span>제한 시간(분)</span><input type="number" name="minutes" min="1" max="180" value="${esc(last.minutes)}"></label>
     </div>
@@ -1580,8 +1580,9 @@ function viewQuizSetup() {
     const items = pickItems(c);
     $('#qcount').textContent = `조건에 맞는 문제 ${items.length}개`;
     // 실전 + 문제마다 시간 제한이면 전체 시간은 문제 시간의 합으로 정한다
-    const auto = c.mode === 'exam' && c.tl !== 'off';
-    $('#minField').style.display = c.mode === 'exam' && !auto ? '' : 'none';
+    const timed = c.mode !== 'practice';
+    const auto = timed && c.tl !== 'off';
+    $('#minField').style.display = timed && !auto ? '' : 'none';
     if (auto) { const n = c.count === 'all' ? items.length : Math.min(items.length, Number(c.count)); $('#qcount').textContent += ` · 전체 시간은 문제마다 정한 시간의 합 (약 ${Math.round(n * avgLimit(items, c.tl) / 60)}분)`; }
   };
   $$('input[name="subject"]').forEach(i => i.addEventListener('change', drawPacks));
@@ -1601,7 +1602,13 @@ function viewQuizSetup() {
     if (c.order === 'shuffle') items = shuffle(items);
     if (c.count !== 'all') items = items.slice(0, Number(c.count));
     const tlf = { off: 0, on: 1, tight: 0.8 }[c.tl] || 0;
-    const minutes = c.mode === 'exam' && tlf ? Math.max(1, Math.ceil(items.reduce((t, x) => t + qLimit(x.q, tlf), 0) / 60)) : Number(c.minutes) || 30;
+    const minutes = c.mode !== 'practice' && tlf ? Math.max(1, Math.ceil(items.reduce((t, x) => t + qLimit(x.q, tlf), 0) / 60)) : Number(c.minutes) || 30;
+    if (c.mode === 'paper') {
+      // 원안지는 선택형을 앞에, 서답형(단답형 → 서술형)을 뒤에 싣는다
+      const rank = { mcq: 0, short: 1, essay: 2 };
+      items = items.map((x, i) => [x, i]).sort((a, b) => (rank[a[0].q.type] - rank[b[0].q.type]) || (a[1] - b[1])).map(x => x[0]);
+      return startSession(items, 'exam', minutes, { tl: tlf, paper: true });
+    }
     startSession(items, c.mode, minutes, { tl: tlf });
   });
 }
@@ -1676,6 +1683,7 @@ function viewRun() {
   if (session.viewing) return drawQuestion();
   if (session.mode === 'exam' && session.submitted) return viewSummary();
   if (session.mode !== 'exam' && session.i >= session.items.length) return viewSummary();
+  if (session.paper) return drawPaper();
   drawQuestion();
 }
 
@@ -1999,6 +2007,131 @@ const wordsKey = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[
 const sameWords = (answers, a) => answers.some(x => wordsKey(x) === wordsKey(a) && norm(x) !== norm(a));
 const shortOk = (answers, a) => answers.some(x => norm(x) === norm(a) || (/[,，、]/.test(x) && partsKey(x) === partsKey(a)));
 
+// ================= 원안지 형식 (학교 시험지 모양 그대로, A4 2단) =================
+// 치수는 실제 원안지를 재서 맞췄다 (css .paper). 문제는 새로 만들지 않고 자료의 문제를 모양만 바꿔 싣는다.
+const P_CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+const pInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/&lt;mark&gt;|&lt;\/mark&gt;/g, '');
+// 'ㄱ.', '1.', '(가)', '◦' 처럼 기호로 시작하는 줄만 내어쓰기 한다 (원안지와 같게). 그냥 글은 양쪽 맞춤
+const P_MARK = /^\s*(?:[ㄱ-ㅎ]\.|\d{1,2}[.)]|\([가-힣A-Za-z]\)|[①-⑳㉠-㉯◦•\-–·※]|제\d+조)/;
+const pLines = t => String(t || '').split('\n').filter(x => x.trim()).map(x => `<p class="pl${P_MARK.test(x) ? ' hang' : ''}"${langAttr(x)}>${pInline(x.trim())}</p>`).join('');
+const P_SUBJ = { kor: '공통국어2', eng: '공통영어2', his: '한국사2', soc: '통합사회2', sci: '통합과학2' };
+function pTable(block) {
+  const rows = block.trim().split('\n').filter(r => !/^\s*\|?[\s:|-]+\|?\s*$/.test(r)).map(r => r.trim().replace(/^\||\|$/g, '').split('|'));
+  return `<table class="ptb">${rows.map(r => `<tr>${r.map(c => `<td>${pInline(c.trim())}</td>`).join('')}</tr>`).join('')}</table>`;
+}
+function pContext(c) {
+  if (!c) return '';
+  const k = c.indexOf('<보기>');
+  const mainT = (k < 0 ? c : c.slice(0, k)).trim(), bogi = k < 0 ? '' : c.slice(k + 4).trim();
+  let h = '';
+  if (mainT) h += `<div class="psrc">${mainT.split(/((?:^\|.*\n?)+)/m).map(x => x.trimStart().startsWith('|') ? pTable(x) : pLines(x)).join('')}</div>`;
+  if (bogi) h += `<div class="pbogi"><span class="pbt">&lt; 보 기 &gt;</span>${pLines(bogi)}</div>`;
+  return h;
+}
+function paperBlocks() {
+  const blocks = [];
+  blocks.push(`<ul class="pnotice"><li>자신이 응시해야 하는 과목의 문제지인지 확인하고, 답안지에 학번, 이름, 과목명, 과목코드를 기입하시오.</li><li>문제지의 총 면수와 인쇄상태를 확인하시오.</li><li>문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</li></ul>`);
+  let nM = 0, nS = 0, secM = false, secS = false;
+  session.items.forEach((it, i) => {
+    const { pack, q } = it, a = session.answers[i];
+    // 지문 없이 윗글·(가)를 가리키는 문제는 자료의 원문을 자료 상자로 싣는다
+    const cite = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body).map(t => t.body).join('\n\n') : '';
+    const ctx = pContext(q.context || cite);
+    const stem = pInline(q.question).replace(/(옳지|적절하지|알맞지) 않은/g, '$1 <u>않은</u>');
+    if (q.type === 'mcq') {
+      if (!secM) { secM = true; blocks.push('<h2 class="psec">&lt; 선택형 문항 &gt;</h2>'); }
+      const sel = Array.isArray(a) ? a : [];
+      const m = Math.max(...q.choices.map(c => c.length));
+      const cls = m <= 5 ? ' r5' : m <= 11 ? ' r3' : '';
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"><span class="pno">${P_CIRC[j] || j + 1}</span> <span${langAttr(c)}>${pInline(c)}</span></button></li>`).join('')}</ol></section>`);
+    } else {
+      if (!secS) { secS = true; blocks.push('<h2 class="psec">&lt; 서답형(단답형, 서술형) 문항 &gt;</h2><p class="psecnote">※ 문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</p>'); }
+      const lab = `서${++nS}(${q.type === 'short' ? '단답형' : '서술형'}).`;
+      const how = q.type === 'essay' && q.limit ? `<div class="pbogi"><span class="pbt">&lt; 작성 방법 &gt;</span><p class="pl hang">◦ ${pInline(q.limit)}</p></div>` : '';
+      const field = q.type === 'short'
+        ? `<p class="pline"><input type="text" class="pans" data-pt="${i}" value="${esc(a || '')}" aria-label="서${nS} 답" autocomplete="off" autocapitalize="off" spellcheck="false"></p>`
+        : `<textarea class="pwrite" data-pt="${i}" rows="5" aria-label="서${nS} 답안">${esc(a || '')}</textarea>`;
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${how}${field}</section>`);
+    }
+  });
+  blocks.push('<p class="pend">※ 마지막 면입니다.</p>');
+  return blocks;
+}
+function drawPaper() {
+  const subs = [...new Set(session.items.map(x => x.pack.subject))];
+  const title = subs.length === 1 ? (P_SUBJ[subs[0]] || subjName(subs[0])) : '종합';
+  const ex = examInfo();
+  const term = `${(ex?.days?.[0] || String(new Date().getFullYear())).slice(0, 4)}학년도 2학기 2회고사`;
+  main.innerHTML = `<h1 class="vh">원안지 · ${esc(title)}</h1>
+    <div class="ptool"><span>남은 시간 <b class="timer" id="timer"></b></span><span id="pCount" role="status"></span><button type="button" class="btn sm ghost" id="quit">그만</button><button type="button" class="btn sm pri" id="submitAll">제출하고 채점</button></div>
+    <div class="paper-wrap" id="paperWrap"><div class="paper" id="paper"></div></div>`;
+  const paper = $('#paper');
+  const head = (n, first) => first
+    ? `<header class="ph1"><p class="pterm">${esc(term)}</p><p class="ptitle1">${esc(title)}</p><div class="pid" aria-hidden="true"><span class="plab">학번</span><span class="pboxes">${'<i></i>'.repeat(6)}</span><span class="plab">성명</span><span class="pname"></span></div><span class="ppg" data-pg="${n}"></span></header>`
+    : `<header class="ph"><p class="ptitle2">${esc(title)}</p><span class="ppg" data-pg="${n}"></span></header>`;
+  const newPage = n => {
+    const el = document.createElement('article');
+    el.className = 'ppage' + (n === 1 ? ' p1' : '');
+    el.innerHTML = `${head(n, n === 1)}<div class="pcols"></div><footer class="pf"><span>충남삼성고등학교</span><span class="pnext">&lt; 다음 면 계속 &gt;</span></footer>`;
+    paper.append(el);
+    return el.querySelector('.pcols');
+  };
+  // 한 면에 들어갈 만큼 넣고, 넘치면(단이 셋이 되면) 다음 면으로 넘긴다
+  let n = 1, cols = newPage(1);
+  const tmp = document.createElement('div');
+  for (const b of paperBlocks()) {
+    tmp.innerHTML = b;
+    const nodes = [...tmp.children];
+    nodes.forEach(x => cols.append(x));
+    if (cols.scrollWidth > cols.clientWidth + 1 && cols.children.length > nodes.length) {
+      nodes.forEach(x => x.remove());
+      cols = newPage(++n);
+      nodes.forEach(x => cols.append(x));
+    }
+    // 한 면보다 긴 문항(긴 지문)은 단을 넘어가게 풀어 준다
+    if (cols.scrollWidth > cols.clientWidth + 1) nodes.forEach(x => x.classList.add('plong'));
+  }
+  paper.querySelectorAll('.ppg').forEach(x => { x.textContent = `${x.dataset.pg}/${n}`; });
+  paper.lastElementChild.querySelector('.pnext').remove();
+  // 화면 폭에 맞춰 종이를 통째로 줄이거나 키운다 (A4 비율 그대로)
+  const fit = () => { const w = $('#paperWrap'); if (!w) return removeEventListener('resize', fit); paper.style.zoom = Math.min(1.7, Math.max(0.4, (w.clientWidth - 8) / 793.7)); };
+  fit(); addEventListener('resize', fit);
+  const count = () => {
+    const done = session.items.filter((_, i) => { const a = session.answers[i]; return !(a == null || a === '' || (Array.isArray(a) && !a.length)); }).length;
+    $('#pCount').textContent = `답한 문항 ${done}/${session.items.length}`;
+  };
+  count();
+  paper.addEventListener('click', e => {
+    const b = e.target.closest('[data-pc]');
+    if (!b) return;
+    const i = Number(b.dataset.pi), c = Number(b.dataset.pc), q = session.items[i].q;
+    const multi = Array.isArray(q.answer) && q.answer.length > 1;
+    let sel = Array.isArray(session.answers[i]) ? [...session.answers[i]] : [];
+    sel = sel.includes(c) ? sel.filter(x => x !== c) : multi ? [...sel, c].sort() : [c];
+    session.answers[i] = sel;
+    paper.querySelectorAll(`[data-pi="${i}"]`).forEach(x => x.setAttribute('aria-pressed', String(sel.includes(Number(x.dataset.pc)))));
+    count();
+  });
+  paper.addEventListener('input', e => { const t = e.target.closest('[data-pt]'); if (t) { session.answers[Number(t.dataset.pt)] = t.value; count(); } });
+  $('#submitAll').addEventListener('click', submitExam);
+  $('#quit').addEventListener('click', async () => {
+    if (!(await askConfirm('실전을 그만두면 쓴 답은 채점하지 않는다. 그만둘까?', '그만두기', '계속 풀기'))) return;
+    clearInterval(tickTimer._t); session = null; location.hash = '#/quiz';
+  });
+  ensurePaperFont();
+  // 글꼴이 늦게 오면 줄바꿈이 달라지므로 한 번 다시 앉힌다
+  document.fonts?.ready.then(() => { if ($('#paper') === paper && !paper.dataset.refit) { paper.dataset.refit = '1'; if ([...paper.querySelectorAll('.pcols')].some(c => c.scrollWidth > c.clientWidth + 1)) drawPaper(); } });
+  tickTimer();
+}
+function ensurePaperFont() {
+  if (ensurePaperFont.done) return;
+  ensurePaperFont.done = true;
+  const st = document.createElement('style');
+  st.textContent = `@font-face{font-family:'Paper Myeongjo';font-weight:400;font-display:swap;src:url(css/fonts/nanum-myeongjo/nm-400.woff2) format('woff2')}@font-face{font-family:'Paper Myeongjo';font-weight:700;font-display:swap;src:url(css/fonts/nanum-myeongjo/nm-700.woff2) format('woff2')}`;
+  document.head.append(st);
+  document.fonts?.load("8pt 'Paper Myeongjo'"); document.fonts?.load("700 8pt 'Paper Myeongjo'");
+}
+
 // i 번째 문제 채점. 결과를 session.results 에 넣고 기록한다.
 async function gradeOne(i, btn) {
   if (i === session.i) tickSpent();
@@ -2220,12 +2353,14 @@ function bindResult(i) {
 
 async function submitExam() {
   if (!session || session.submitted) return;
-  const unanswered = session.items.filter(async (_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
+  const unanswered = session.items.filter((_, i) => { const a = session.answers[i]; return a == null || a === '' || (Array.isArray(a) && !a.length); }).length;
   if (session.endAt > Date.now() && unanswered && !(await askConfirm(`안 쓴 문제가 ${unanswered}개 있다. 안 쓴 문제는 채점하지 않고 '안 푼 문제' 로 남긴다. 제출할까?`, '제출', '계속 풀기'))) return;
   tickSpent();
   session.submitted = true;
   clearInterval(tickTimer._t);
   session.usedMs = Date.now() - session.startedAt;
+  // 원안지는 문제마다 시간을 재지 않으므로 걸린 시간을 고르게 나눈다
+  if (session.paper) session.items.forEach((_, i) => { session.spent[i] = Math.round(session.usedMs / session.items.length); });
   const essays = session.items.map((it, i) => ({ it, i })).filter(x => x.it.q.type !== 'mcq' && !(session.answers[x.i] == null || session.answers[x.i] === ''));
   main.innerHTML = `<section class="card"><h2><span class="spin"></span> 채점 중</h2><p id="gprog" class="muted">객관식 채점 중…</p></section>`;
   // 안 쓴 문제는 채점하지 않는다 (오답노트·복습에 넣지 않고 결과에 '안 푼 문제' 로)
@@ -4126,6 +4261,7 @@ function viewHelp() {
 - **객관식**: 바로 채점한다.
 - **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
 - **고난도·시간 제한**: [문제](#/quiz) 에서 난이도 '어려움 이상' 이나 '최상(킬러)만' 을 고른다. '문제마다 시간 제한' 을 켜면 문제에 정한 시간(없으면 객관식 90초·단답 60초·서술 300초)이 줄어들고, 시간이 다 되면 고른 답으로 채점하거나 모르는 문제로 넘긴다. 실전 모드에서는 전체 시간이 문제 시간의 합이 된다.
+- **원안지 형식**: [문제](#/quiz) 의 방식에서 "실전 · 원안지 형식" 을 고르면 학교 시험지와 같은 모양(A4 2단, 선택형 뒤에 서답형)으로 한꺼번에 풀고 제출한다. 선지를 누르면 번호가 검게 칠해진다. 노트북·태블릿용이다.
 - **AI 키**: [설정](#/settings) 의 "AI 채점 (Gemini API)" 에 Google AI Studio(aistudio.google.com) 에서 무료로 만든 Gemini 키를 넣는다. 아래에서 말하는 "API 키" 가 이것이다.
 - **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 

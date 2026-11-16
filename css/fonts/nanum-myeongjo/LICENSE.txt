@@ -1,0 +1,3 @@
+Nanum Myeongjo (나눔명조). Copyright (c) 2010, NAVER Corporation (https://www.navercorp.com/).
+Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+nm-400.woff2, nm-700.woff2: KS X 1001 한글 2350자와 문장부호만 남긴 조각 (pyftsubset).

@@ -788,3 +788,50 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .find-list .fsub{display:block;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .find-list li[aria-selected="true"] a,.find-list a:hover{background:var(--sunk)}
 .find-hint{margin:0;padding:8px 14px;border-top:1px solid var(--rule)}
+
+/* ===== 원안지 형식. 치수는 실제 원안지를 200dpi 로 재서 맞췄다: 본문 8pt·줄 간격 12.96pt(160%), 글 영역 x 12~196mm, 윗줄 21mm, 아랫줄 277.4mm ===== */
+.ptool{position:sticky;top:57px;z-index:6;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:center;padding:8px 12px;margin:0 0 10px;background:var(--side);border:1px solid var(--rule);border-radius:10px;font-size:.88rem}
+.ptool .timer{font-variant-numeric:tabular-nums}
+.paper-wrap{overflow-x:auto;padding:4px 0 24px}
+.paper{width:210mm;margin:0 auto;color:#000;font-family:'Paper Myeongjo','NanumMyeongjo','Noto Serif KR',var(--serif)}
+.ppage{position:relative;width:210mm;height:297mm;margin:0 0 6mm;background:#fff;color:#000;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.28);font-size:8pt;line-height:12.96pt;letter-spacing:.085em;word-spacing:.12em;-webkit-text-stroke:.12pt #000}
+.ppage p{max-width:none}
+.ph{position:absolute;left:12mm;right:13.8mm;top:0;height:21mm;border-bottom:.5mm solid #333}
+.ptitle2{position:absolute;left:0;right:0;bottom:2.2mm;margin:0;text-align:center;font-weight:700;font-size:15pt;line-height:1;letter-spacing:.05em}
+.ppg{position:absolute;right:4mm;bottom:2mm;font:italic 800 15pt var(--sans);letter-spacing:.02em;-webkit-text-stroke:0}
+.ph1{position:absolute;left:12mm;right:13.8mm;top:0;height:62.6mm;border-bottom:.5mm solid #333;text-align:center}
+.pterm{margin:22.5mm 0 0;font:400 12pt var(--sans);line-height:1;letter-spacing:0;-webkit-text-stroke:0}
+.ptitle1{margin:4.2mm 0 0;font-weight:700;font-size:25pt;line-height:1;letter-spacing:.14em}
+.pid{position:absolute;left:35mm;bottom:5.6mm;display:flex;font-size:10pt;-webkit-text-stroke:0}
+.plab{width:14.5mm;height:9.4mm;border:.25mm solid #333;display:flex;align-items:center;justify-content:center}
+.pboxes{display:flex;margin-right:10.5mm}.pboxes i{width:7.6mm;height:9.4mm;border:.25mm solid #333;border-left:0}
+.pname{width:46mm;height:9.4mm;border:.25mm solid #333;border-left:0}
+.pcols{position:absolute;left:12mm;right:13.8mm;top:24.2mm;bottom:22.2mm;column-count:2;column-gap:7.6mm;column-rule:.3mm solid #333;column-fill:auto}
+.p1 .pcols{top:65.4mm}
+.pnotice{margin:0 0 3.4mm;padding:0 0 3mm 2.2mm;border-bottom:.3mm solid #333;list-style:'◦ ';font-size:7.6pt;line-height:11.4pt;break-inside:avoid}
+.paper .psec{text-align:center;font-family:inherit;font-weight:400;font-size:9.6pt;line-height:1.4;letter-spacing:.22em;margin:4.6mm 0;color:#000;break-after:avoid}
+.psecnote{font-weight:700;font-size:7.4pt;line-height:11pt;margin:-3.4mm 0 4.4mm;text-indent:1.2em}
+.pq{break-inside:avoid;margin:0 0 15mm}
+.pq.plong{break-inside:auto}
+.pstem{margin:0 0 1.6mm;padding-left:1.35em;text-indent:-1.35em}
+.psrc{border:.25mm solid #333;padding:.9mm 1.7mm 1mm;margin:0 0 2.6mm}
+.pl{margin:0;text-align:justify}
+.pl.hang{padding-left:1.3em;text-indent:-1.3em;text-align:left}
+.ppage [lang=en]{letter-spacing:.01em;word-spacing:.06em}
+.ppage [lang=ja]{letter-spacing:.03em}
+.ptb{border-collapse:collapse;width:100%;margin:.8mm 0}.ptb td{border:.25mm solid #333;padding:0 1.2mm;text-align:center}.ptb td:empty{height:12.96pt}
+.pbogi{position:relative;border:.25mm solid #333;padding:2.6mm 1.7mm 1mm;margin:3.6mm 0 2.6mm}
+.pbt{position:absolute;top:-6.6pt;left:50%;transform:translateX(-50%);background:#fff;padding:0 1.6mm;letter-spacing:.2em;white-space:nowrap}
+.pch{list-style:none;margin:1mm 0 0;padding:0}
+.pch.r5{display:grid;grid-template-columns:repeat(5,1fr)}.pch.r3{display:grid;grid-template-columns:repeat(3,1fr)}
+.paper .pch button{all:unset;display:block;box-sizing:border-box;width:100%;padding-left:1.35em;text-indent:-1.35em;cursor:pointer;border-radius:1mm}
+.paper .pch button:focus-visible{outline:.5mm solid #5645D4;outline-offset:.3mm}
+.paper .pch button[aria-pressed="true"] .pno{background:#000;color:#fff;border-radius:50%}
+.pline{margin:5mm 0 0}
+.paper input.pans{all:unset;box-sizing:border-box;width:46mm;height:12.96pt;border-bottom:.25mm solid #333;font:inherit;letter-spacing:inherit;color:#000}
+.paper textarea.pwrite{all:unset;box-sizing:border-box;display:block;width:100%;height:calc(12.96pt * 6);margin-top:2mm;font:inherit;letter-spacing:inherit;color:#000;white-space:pre-wrap;overflow-wrap:anywhere;background:repeating-linear-gradient(transparent 0 calc(12.96pt - .2mm),#999 calc(12.96pt - .2mm) 12.96pt);resize:none;overflow:hidden}
+.paper input.pans:focus-visible,.paper textarea.pwrite:focus-visible{outline:.5mm solid #5645D4;outline-offset:.4mm}
+.pend{text-align:center;font:800 13pt var(--sans);margin:30mm 0 0;letter-spacing:0;-webkit-text-stroke:0;break-inside:avoid}
+.pf{position:absolute;left:12mm;right:13.8mm;top:277.4mm;border-top:.5mm solid #333;text-align:center;padding-top:2.6mm;font:800 7pt var(--sans);letter-spacing:0;-webkit-text-stroke:0}
+.pnext{position:absolute;right:0;top:-.5mm;width:28mm;border-top:.9mm solid #333;padding-top:1.4mm;font-size:8pt;background:#fff}
+@media print{.top,.bottom,.ptool,.skip{display:none !important}.ppage{box-shadow:none;margin:0;page-break-after:always}.paper{zoom:1 !important}@page{size:A4;margin:0}}
