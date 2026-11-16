@@ -1549,7 +1549,7 @@ function viewQuizSetup() {
     <div class="grid" style="margin-top:14px">
       <label class="field"><span>개수</span><select name="count">${['5', '10', '20', '30', 'all'].map(v => `<option value="${v}"${last.count === v ? ' selected' : ''}>${v === 'all' ? '전부' : v + '문제'}</option>`).join('')}</select></label>
       <label class="field"><span>순서</span><select name="order"><option value="shuffle"${last.order === 'shuffle' ? ' selected' : ''}>섞기</option><option value="seq"${last.order === 'seq' ? ' selected' : ''}>자료 순서대로</option></select></label>
-      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="paper"${last.mode === 'paper' ? ' selected' : ''}>실전 · 원안지 형식 (노트북·태블릿)</option><option value="exam"${last.mode === 'exam' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
+      <label class="field"><span>방식</span><select name="mode"><option value="practice"${last.mode === 'practice' ? ' selected' : ''}>연습 · 바로 채점</option><option value="exam"${last.mode === 'exam' || last.mode === 'paper' ? ' selected' : ''}>실전 · 시간 재고 끝에 채점</option></select></label>
       <label class="field"><span>문제마다 시간 제한</span><select name="tl"><option value="off"${last.tl === 'off' ? ' selected' : ''}>없음</option><option value="on"${last.tl === 'on' ? ' selected' : ''}>문제에 정한 시간</option><option value="tight"${last.tl === 'tight' ? ' selected' : ''}>빠듯하게 (시간 20% 줄임)</option></select></label>
       <label class="field" id="minField"><span>제한 시간(분)</span><input type="number" name="minutes" min="1" max="180" value="${esc(last.minutes)}"></label>
     </div>
@@ -1603,12 +1603,6 @@ function viewQuizSetup() {
     if (c.count !== 'all') items = items.slice(0, Number(c.count));
     const tlf = { off: 0, on: 1, tight: 0.8 }[c.tl] || 0;
     const minutes = c.mode !== 'practice' && tlf ? Math.max(1, Math.ceil(items.reduce((t, x) => t + qLimit(x.q, tlf), 0) / 60)) : Number(c.minutes) || 30;
-    if (c.mode === 'paper') {
-      // 원안지는 선택형을 앞에, 서답형(단답형 → 서술형)을 뒤에 싣는다
-      const rank = { mcq: 0, short: 1, essay: 2 };
-      items = items.map((x, i) => [x, i]).sort((a, b) => (rank[a[0].q.type] - rank[b[0].q.type]) || (a[1] - b[1])).map(x => x[0]);
-      return startSession(items, 'exam', minutes, { tl: tlf, paper: true });
-    }
     startSession(items, c.mode, minutes, { tl: tlf });
   });
 }
@@ -1645,8 +1639,17 @@ function pickItems(c) {
 // ================= 문제 풀기 =================
 let session = null;
 
+// 노트북·태블릿에서는 문제를 학교 원안지 모양으로 싣는다. 휴대폰처럼 좁은 화면은 카드 화면 그대로
+const paperOk = () => innerWidth >= 700;
 function startSession(items, mode = 'practice', minutes = 30, opts = {}) {
+  const paper = paperOk();
+  if (paper) {
+    // 원안지는 선택형을 앞에, 서답형(단답형 → 서술형)을 뒤에 싣는다
+    const rank = { mcq: 0, short: 1, essay: 2 };
+    items = items.map((x, i) => [x, i]).sort((a, b) => (rank[a[0].q.type] - rank[b[0].q.type]) || (a[1] - b[1])).map(x => x[0]);
+  }
   session = {
+    paper,
     ...opts,
     items, mode, i: 0,
     answers: {}, results: {},
@@ -1683,7 +1686,7 @@ function viewRun() {
   if (session.viewing) return drawQuestion();
   if (session.mode === 'exam' && session.submitted) return viewSummary();
   if (session.mode !== 'exam' && session.i >= session.items.length) return viewSummary();
-  if (session.paper) return drawPaper();
+  if (session.paper && paperOk()) return drawPaper();
   drawQuestion();
 }
 
@@ -1876,7 +1879,7 @@ function drawQuestion0() {
   } else {
     // 서술형을 아직 채점하지 않았으면 '다음'은 보조 버튼으로 (채점 칸의 버튼이 주 버튼)
     const pending = res.selfGrade && !res.result;
-    acts.innerHTML = `${session.viewing ? `<a class="btn" href="#/run" id="toSum">결과 목록</a>` : ''}<button class="btn${pending ? '' : ' pri'}" id="next">${pending ? '채점 안 하고 ' : ''}${last ? '결과 보기' : '다음'}</button>`;
+    acts.innerHTML = `${session.viewing ? `<a class="btn" href="#/run" id="toSum">${session.fromPaper ? '문제지로' : '결과 목록'}</a>` : ''}<button class="btn${pending ? '' : ' pri'}" id="next">${pending ? '채점 안 하고 ' : ''}${last ? '결과 보기' : '다음'}</button>`;
   }
   syncCheck();
   $$('[data-conf]').forEach(b => b.addEventListener('click', () => {
@@ -1977,6 +1980,8 @@ document.addEventListener('keydown', e => {
 });
 
 function toSummary() {
+  // 원안지에서 '자세히' 로 들어온 경우는 문제지로 돌아간다
+  if (session.fromPaper) { session.fromPaper = false; session.viewing = false; render(); return; }
   session.viewing = false;
   if (session.mode !== 'exam') session.i = session.items.length;
   render();
@@ -2024,16 +2029,37 @@ function pContext(c) {
   const k = c.indexOf('<보기>');
   const mainT = (k < 0 ? c : c.slice(0, k)).trim(), bogi = k < 0 ? '' : c.slice(k + 4).trim();
   let h = '';
-  if (mainT) h += `<div class="psrc">${mainT.split(/((?:^\|.*\n?)+)/m).map(x => x.trimStart().startsWith('|') ? pTable(x) : pLines(x)).join('')}</div>`;
+  const box = t => `<div class="psrc">${t.split(/((?:^\|.*\n?)+)/m).map(x => x.trimStart().startsWith('|') ? pTable(x) : pLines(x)).join('')}</div>`;
+  const arrow = mainT.split(/\n\s*[⇩↓▼]\s*\n/);
+  if (arrow.length === 2) {
+    // 요약문: 빈칸 (A)·(B) 는 밑줄 위에 얹는다
+    h += box(arrow[0].trim()) + '<p class="parrow" aria-hidden="true">⇩</p>' + box(arrow[1].trim()).replace(/\(([A-D])\)/g, '<u class="pblank">($1)</u>');
+  } else if (mainT) h += box(mainT);
   if (bogi) h += `<div class="pbogi"><span class="pbt">&lt; 보 기 &gt;</span>${pLines(bogi)}</div>`;
   return h;
+}
+// 연습에서는 문제마다 아래에 확신도·채점 줄을 둔다. 채점하면 그 자리에 결과와 해설이 나온다 (실전은 줄 없음)
+function pAct(i) {
+  if (session.mode === 'exam') return '';
+  const { q } = session.items[i], r = session.results[i];
+  if (!r) {
+    const cf = (session.conf || {})[i] || '';
+    const conf = q.type === 'essay' ? '' : `<span class="pconf" role="group" aria-label="확신도">${[['sure', '확실'], ['unsure', '애매'], ['guess', '찍음']].map(([v, l]) => `<button type="button" class="chip sm${cf === v ? ' on' : ''}" data-pconf="${v}" data-pi2="${i}" aria-pressed="${cf === v}">${l}</button>`).join('')}</span>`;
+    return `<div class="pact">${conf}<button type="button" class="btn sm pri" data-pgrade="${i}">채점</button><button type="button" class="btn sm ghost" data-pskip="${i}">모르겠다</button></div>`;
+  }
+  const tag = r.skipped ? '<span class="tag">모름</span>' : r.result === 'ok' ? '<span class="tag ok">맞음</span>' : r.result === 'part' ? '<span class="tag warn">부분 정답</span>' : r.result === 'wrong' ? '<span class="tag bad">틀림</span>' : '<span class="tag warn">채점 필요</span>';
+  const ans = q.type === 'short' ? `<p><b>정답</b> ${esc(q.answers.join(' / '))}</p>` : '';
+  const why = r.ai ? `<p>${esc(r.ai)}</p>` : '';
+  const exp = q.explanation ? `<p${langAttr(q.explanation)}>${esc(q.explanation)}</p>` : '';
+  const need = !r.result ? '<p>서술형은 "자세히" 에서 모범 답안과 비교해 채점한다.</p>' : '';
+  return `<div class="pact done"><div class="pres">${tag}${ans}${why}${need}${exp}</div><button type="button" class="btn sm" data-pdetail="${i}">자세히</button></div>`;
 }
 function paperBlocks() {
   const blocks = [];
   blocks.push(`<ul class="pnotice"><li>자신이 응시해야 하는 과목의 문제지인지 확인하고, 답안지에 학번, 이름, 과목명, 과목코드를 기입하시오.</li><li>문제지의 총 면수와 인쇄상태를 확인하시오.</li><li>문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</li></ul>`);
   let nM = 0, nS = 0, secM = false, secS = false;
   session.items.forEach((it, i) => {
-    const { pack, q } = it, a = session.answers[i];
+    const { pack, q } = it, a = session.answers[i], res = session.results[i];
     // 지문 없이 윗글·(가)를 가리키는 문제는 자료의 원문을 자료 상자로 싣는다
     const cite = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body).map(t => t.body).join('\n\n') : '';
     const ctx = pContext(q.context || cite);
@@ -2042,28 +2068,38 @@ function paperBlocks() {
       if (!secM) { secM = true; blocks.push('<h2 class="psec">&lt; 선택형 문항 &gt;</h2>'); }
       const sel = Array.isArray(a) ? a : [];
       const m = Math.max(...q.choices.map(c => c.length));
-      const cls = m <= 5 ? ' r5' : m <= 11 ? ' r3' : '';
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"><span class="pno">${P_CIRC[j] || j + 1}</span> <span${langAttr(c)}>${pInline(c)}</span></button></li>`).join('')}</ol></section>`);
+      // 'influential — predict' 꼴 선지는 원안지처럼 (A) …… (B) 표로
+      const pair = q.choices.map(c => c.split(/\s*(?:—|–|……|…|\.{3,})\s*/));
+      const ab = /\(A\)/.test(q.question + (q.context || '')) && pair.every(x => x.length === pair[0].length && x.length >= 2 && x.length <= 3);
+      const cls = ab ? ' pab' : m <= 5 ? ' r5' : m <= 11 ? ' r3' : '';
+      const right = res ? (Array.isArray(q.answer) ? q.answer : [q.answer]) : [];
+      const mark = j => !res ? '' : right.includes(j + 1) ? ' data-pm="ok"' : sel.includes(j + 1) ? ' data-pm="bad"' : '';
+      const note = j => !res ? '' : right.includes(j + 1) ? '<span class="pmk"> ← 정답</span>' : sel.includes(j + 1) ? '<span class="pmk"> ← 내 답</span>' : '';
+      const body = (c, j) => ab ? pair[j].map((x, k) => `${k ? '<span class="pdots" aria-hidden="true">……</span>' : ''}<span class="pcell"${langAttr(x)}>${pInline(x)}</span>`).join('') : `<span${langAttr(c)}>${pInline(c)}</span>`;
+      const head = ab ? `<li class="pabh" aria-hidden="true"><span class="pno"></span>${pair[0].map((_, k) => `${k ? '<span class="pdots"></span>' : ''}<span class="pcell">(${'ABC'[k]})</span>`).join('')}</li>` : '';
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${head}${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"${mark(j)}${res ? ' disabled' : ''}><span class="pno">${P_CIRC[j] || j + 1}</span> ${body(c, j)}${note(j)}</button></li>`).join('')}</ol>${pAct(i)}</section>`);
     } else {
       if (!secS) { secS = true; blocks.push('<h2 class="psec">&lt; 서답형(단답형, 서술형) 문항 &gt;</h2><p class="psecnote">※ 문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</p>'); }
       const lab = `서${++nS}(${q.type === 'short' ? '단답형' : '서술형'}).`;
       const how = q.type === 'essay' && q.limit ? `<div class="pbogi"><span class="pbt">&lt; 작성 방법 &gt;</span><p class="pl hang">◦ ${pInline(q.limit)}</p></div>` : '';
       const field = q.type === 'short'
-        ? `<p class="pline"><input type="text" class="pans" data-pt="${i}" value="${esc(a || '')}" aria-label="서${nS} 답" autocomplete="off" autocapitalize="off" spellcheck="false"></p>`
-        : `<textarea class="pwrite" data-pt="${i}" rows="5" aria-label="서${nS} 답안">${esc(a || '')}</textarea>`;
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${how}${field}</section>`);
+        ? `<p class="pline"><input type="text" class="pans" data-pt="${i}" value="${esc(a || '')}" aria-label="서${nS} 답" autocomplete="off" autocapitalize="off" spellcheck="false"${res ? ' readonly' : ''}></p>`
+        : `<textarea class="pwrite" data-pt="${i}" rows="5" aria-label="서${nS} 답안"${res ? ' readonly' : ''}>${esc(a || '')}</textarea>`;
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${how}${field}${pAct(i)}</section>`);
     }
   });
   blocks.push('<p class="pend">※ 마지막 면입니다.</p>');
   return blocks;
 }
 function drawPaper() {
+  const exam = session.mode === 'exam';
+  const keepY = drawPaper.keepY; drawPaper.keepY = null;
   const subs = [...new Set(session.items.map(x => x.pack.subject))];
   const title = subs.length === 1 ? (P_SUBJ[subs[0]] || subjName(subs[0])) : '종합';
   const ex = examInfo();
   const term = `${(ex?.days?.[0] || String(new Date().getFullYear())).slice(0, 4)}학년도 2학기 2회고사`;
   main.innerHTML = `<h1 class="vh">원안지 · ${esc(title)}</h1>
-    <div class="ptool"><span>남은 시간 <b class="timer" id="timer"></b></span><span id="pCount" role="status"></span><button type="button" class="btn sm ghost" id="quit">그만</button><button type="button" class="btn sm pri" id="submitAll">제출하고 채점</button></div>
+    <div class="ptool">${exam ? '<span>남은 시간 <b class="timer" id="timer"></b></span>' : ''}<span id="pCount" role="status"></span><button type="button" class="btn sm ghost" id="quit">그만</button>${exam ? '<button type="button" class="btn sm pri" id="submitAll">제출하고 채점</button>' : '<button type="button" class="btn sm" id="pDone">결과 보기</button>'}</div>
     <div class="paper-wrap" id="paperWrap"><div class="paper" id="paper"></div></div>`;
   const paper = $('#paper');
   const head = (n, first) => first
@@ -2098,12 +2134,45 @@ function drawPaper() {
   fit(); addEventListener('resize', fit);
   const count = () => {
     const done = session.items.filter((_, i) => { const a = session.answers[i]; return !(a == null || a === '' || (Array.isArray(a) && !a.length)); }).length;
-    $('#pCount').textContent = `답한 문항 ${done}/${session.items.length}`;
+    $('#pCount').textContent = exam ? `답한 문항 ${done}/${session.items.length}` : `채점한 문항 ${Object.keys(session.results).length}/${session.items.length}`;
+  };
+  // 채점한 문제만 그 자리에서 바꾼다. 그 면이 넘칠 때만 전체를 다시 앉힌다
+  const redraw = (focusSel, i) => {
+    const old = i == null ? null : paper.querySelector(`.pq[data-pq="${i}"]`);
+    const html = old && paperBlocks().find(b => b.includes(`data-pq="${i}"`));
+    if (html) {
+      const cols = old.parentElement, long = old.classList.contains('plong');
+      old.outerHTML = html;
+      if (long) paper.querySelector(`.pq[data-pq="${i}"]`).classList.add('plong');
+      if (cols.scrollWidth <= cols.clientWidth + 1) { count(); document.querySelector(focusSel)?.focus({ preventScroll: true }); return; }
+    }
+    drawPaper.keepY = scrollY; drawPaper(); if (focusSel) document.querySelector(focusSel)?.focus({ preventScroll: true });
   };
   count();
-  paper.addEventListener('click', e => {
+  paper.addEventListener('click', async e => {
+    const t = e.target.closest('[data-pconf],[data-pgrade],[data-pskip],[data-pdetail]');
+    if (t?.dataset.pconf) {
+      const i = Number(t.dataset.pi2); session.conf = session.conf || {};
+      session.conf[i] = session.conf[i] === t.dataset.pconf ? '' : t.dataset.pconf;
+      paper.querySelectorAll(`[data-pi2="${i}"]`).forEach(x => { const on = session.conf[i] === x.dataset.pconf; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); });
+      return;
+    }
+    if (t?.dataset.pgrade || t?.dataset.pskip) {
+      const skip = !!t.dataset.pskip, i = Number(skip ? t.dataset.pskip : t.dataset.pgrade), a = session.answers[i];
+      if (t.getAttribute('aria-disabled') === 'true') return;
+      if (!skip && (a == null || a === '' || (Array.isArray(a) && !a.length))) return toast(session.items[i].q.type === 'mcq' ? '답을 먼저 고른다.' : '답을 먼저 쓴다.');
+      // 걸린 시간: 앞 문제를 채점한 뒤부터 지금까지
+      const now = Date.now(); session.spent[i] = Math.min(now - (session.lastT || session.startedAt), 20 * 60000); session.lastT = now;
+      if (skip) { session.results[i] = { result: 'wrong', skipped: true }; S.recordAnswer(session.items[i].key, 'wrong', '', null, session.spent[i], { skip: true, sess: session.id }); }
+      else { t.setAttribute('aria-disabled', 'true'); await gradeOne(i, t); }
+      if (!session || !$('#paper')) return;
+      const r = session.results[i];
+      announce(r.skipped ? '모르는 문제로 넘김' : r.result === 'ok' ? '맞음' : r.result === 'part' ? '부분 정답' : r.result === 'wrong' ? '틀림' : '채점 필요');
+      return redraw(`[data-pdetail="${i}"]`, i);
+    }
+    if (t?.dataset.pdetail) { session.i = Number(t.dataset.pdetail); session.viewing = true; session.fromPaper = true; drawPaper.backY = scrollY; drawQuestion(); scrollTo(0, 0); return; }
     const b = e.target.closest('[data-pc]');
-    if (!b) return;
+    if (!b || b.disabled) return;
     const i = Number(b.dataset.pi), c = Number(b.dataset.pc), q = session.items[i].q;
     const multi = Array.isArray(q.answer) && q.answer.length > 1;
     let sel = Array.isArray(session.answers[i]) ? [...session.answers[i]] : [];
@@ -2113,15 +2182,25 @@ function drawPaper() {
     count();
   });
   paper.addEventListener('input', e => { const t = e.target.closest('[data-pt]'); if (t) { session.answers[Number(t.dataset.pt)] = t.value; count(); } });
-  $('#submitAll').addEventListener('click', submitExam);
+  $('#submitAll')?.addEventListener('click', submitExam);
+  const finish = async () => {
+    const n = Object.keys(session.results).length, left = session.items.length - n;
+    if (!n) { session = null; location.hash = '#/quiz'; return; }
+    if (left > 0 && !(await askConfirm(`아직 ${left}문제 남았다. 그만하고 결과를 볼까?`, '결과 보기', '계속 풀기'))) return;
+    session.i = session.items.length; render();
+  };
+  $('#pDone')?.addEventListener('click', finish);
   $('#quit').addEventListener('click', async () => {
+    if (!exam) return finish();
     if (!(await askConfirm('실전을 그만두면 쓴 답은 채점하지 않는다. 그만둘까?', '그만두기', '계속 풀기'))) return;
     clearInterval(tickTimer._t); session = null; location.hash = '#/quiz';
   });
+  if (keepY != null) scrollTo(0, keepY);
+  else if (drawPaper.backY != null) { scrollTo(0, drawPaper.backY); drawPaper.backY = null; }
   ensurePaperFont();
   // 글꼴이 늦게 오면 줄바꿈이 달라지므로 한 번 다시 앉힌다
   document.fonts?.ready.then(() => { if ($('#paper') === paper && !paper.dataset.refit) { paper.dataset.refit = '1'; if ([...paper.querySelectorAll('.pcols')].some(c => c.scrollWidth > c.clientWidth + 1)) drawPaper(); } });
-  tickTimer();
+  if (exam) tickTimer();
 }
 function ensurePaperFont() {
   if (ensurePaperFont.done) return;
@@ -4261,7 +4340,7 @@ function viewHelp() {
 - **객관식**: 바로 채점한다.
 - **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
 - **고난도·시간 제한**: [문제](#/quiz) 에서 난이도 '어려움 이상' 이나 '최상(킬러)만' 을 고른다. '문제마다 시간 제한' 을 켜면 문제에 정한 시간(없으면 객관식 90초·단답 60초·서술 300초)이 줄어들고, 시간이 다 되면 고른 답으로 채점하거나 모르는 문제로 넘긴다. 실전 모드에서는 전체 시간이 문제 시간의 합이 된다.
-- **원안지 형식**: [문제](#/quiz) 의 방식에서 "실전 · 원안지 형식" 을 고르면 학교 시험지와 같은 모양(A4 2단, 선택형 뒤에 서답형)으로 한꺼번에 풀고 제출한다. 선지를 누르면 번호가 검게 칠해진다. 노트북·태블릿용이다.
+- **원안지 형식**: 노트북·태블릿에서는 문제가 늘 학교 시험지와 같은 모양(A4 2단, 선택형 뒤에 서답형)으로 나온다. 선지를 누르면 번호가 검게 칠해진다. 연습은 문제마다 아래 "채점" 을 누르면 그 자리에 정답과 해설이 나오고, "자세히" 에서 오답 원인·헷갈림 표시·서술형 채점을 한다. 실전은 다 풀고 한꺼번에 제출한다. 휴대폰처럼 좁은 화면은 카드 화면 그대로다.
 - **AI 키**: [설정](#/settings) 의 "AI 채점 (Gemini API)" 에 Google AI Studio(aistudio.google.com) 에서 무료로 만든 Gemini 키를 넣는다. 아래에서 말하는 "API 키" 가 이것이다.
 - **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 

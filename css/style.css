@@ -835,3 +835,26 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .pf{position:absolute;left:12mm;right:13.8mm;top:277.4mm;border-top:.5mm solid #333;text-align:center;padding-top:2.6mm;font:800 7pt var(--sans);letter-spacing:0;-webkit-text-stroke:0}
 .pnext{position:absolute;right:0;top:-.5mm;width:28mm;border-top:.9mm solid #333;padding-top:1.4mm;font-size:8pt;background:#fff}
 @media print{.top,.bottom,.ptool,.skip{display:none !important}.ppage{box-shadow:none;margin:0;page-break-after:always}.paper{zoom:1 !important}@page{size:A4;margin:0}}
+
+/* 원안지: 요약문 유형, (A)·(B) 선지 표, 연습 채점 줄 */
+.parrow{margin:-.6mm 0 1.4mm;text-align:center;line-height:1}
+.pblank{text-decoration:none;border-bottom:.25mm solid #000;padding:0 2.2mm}
+.psrc .pl:not(.hang)[lang=en]{text-indent:1.1em}
+.pch.pab{display:block;margin-top:2.4mm}
+.pch.pab li,.paper .pch.pab button{display:flex;align-items:baseline;text-indent:0;padding-left:0}
+.pch.pab .pno{flex:none;width:1.5em}.pch.pab .pcell{flex:0 0 24mm}.pch.pab .pdots{flex:0 0 12mm;letter-spacing:0}
+.pch.pab .pabh .pcell{padding-left:2.2mm}
+.paper .pch button[data-pm="ok"] .pno{background:#000;color:#fff;border-radius:50%}
+.paper .pch button[data-pm="bad"] .pno{background:none;color:#000;text-decoration:line-through}
+.paper .pch button[data-pm="bad"]{text-decoration:line-through}
+.paper .pch button:disabled{cursor:default}
+.pmk{font-family:var(--sans);font-size:6.6pt;font-weight:700;letter-spacing:0;-webkit-text-stroke:0;text-decoration:none;display:inline-block;text-indent:0}
+.pact{display:flex;flex-wrap:wrap;gap:1.2mm 1.6mm;align-items:center;margin-top:2.6mm;font-family:var(--sans);letter-spacing:0;word-spacing:0;-webkit-text-stroke:0;font-size:7pt;line-height:1.5}
+.paper .pact .btn,.paper .pact .chip{min-height:0;font-size:7pt;padding:1mm 2.4mm;border-radius:1.4mm;letter-spacing:0}
+.pconf{display:inline-flex;gap:1mm}
+.pact.done{align-items:flex-start;border-top:.2mm dashed #999;padding-top:1.6mm}
+.pres{flex:1;min-width:0;color:#000}.pres p{margin:.6mm 0 0}.pres .tag{font-size:6.6pt;padding:.3mm 1.6mm}
+@media print{.pact{display:none}}
+.pch.pab .pno{width:auto;margin-right:.5em}
+.paper .pch button[data-pm="bad"]{text-decoration:none}
+.paper .pch button[data-pm="bad"]>span:not(.pmk):not(.pno):not(.pdots){text-decoration:line-through}
