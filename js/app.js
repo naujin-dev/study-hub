@@ -552,7 +552,53 @@ function streakDays() {
 }
 
 // ================= 홈 =================
+// ================= 다음 할 일 (사이트가 순서를 정해 준다) =================
+// 계획 줄에 적힌 자료를 실제로 읽거나(2분 이상) 풀면(5문제 이상) 그 줄을 저절로 끝낸 것으로 한다
+function planAuto() {
+  const t = S.today(), ev = S.getEvents();
+  for (const it of planList()) {
+    if (it.done || it.hidden || !it.date || it.date > t) continue;
+    const pk = planPack(it); if (!pk) continue;
+    let read = 0, ans = 0;
+    for (const e of ev) {
+      if (S.dayOf(e.t) < it.date) continue;
+      if (e.k === 'r' && e.pack === pk.id) read += e.s || 0;
+      else if (e.k === 'a' && String(e.key).startsWith(pk.id + '::')) ans++;
+    }
+    if (read >= 120 || ans >= 5) setPlan(it.id, { done: true, doneAt: Date.now(), auto: true });
+  }
+}
+// 순서: 밀렸거나 오늘인 계획 → 복습할 때 된 문제 → 오답 → 가장 덜 한 과목의 안 푼 문제
+function nextSteps() {
+  const t = S.today(), out = [];
+  for (const it of planList()) {
+    if (it.done || it.hidden || !it.date || it.date > t) continue;
+    const pk = planPack(it);
+    out.push({ kind: it.date < t ? '밀린 계획' : '오늘 계획', text: planText(it.text), href: pk ? '#/pack?id=' + encodeURIComponent(pk.id) : '#/plan', sub: pk ? `${pk.title} 읽고 문제 풀기` : planText(typeof it.group === 'string' ? it.group : it.group?.title || '') });
+    if (out.length >= 3) break;
+  }
+  const due = dueItems().length, wrong = wrongItems().length;
+  if (due) out.push({ kind: '복습', text: `복습할 때 된 문제 ${Math.min(due, 30)}개`, href: '#/run?src=due', sub: due > 30 ? `전체 ${due}개 가운데 30개씩` : '' });
+  if (wrong) out.push({ kind: '오답', text: `틀렸던 문제 ${Math.min(wrong, 30)}개 다시`, href: '#/run?src=wrong', sub: '' });
+  if (out.length < 3) {
+    const prog = S.getProgress(), n = {};
+    for (const x of D.allQuestions()) { const o = n[x.pack.subject] || (n[x.pack.subject] = { tried: 0, fresh: null }); if (prog[x.key]?.n) o.tried++; else if (!o.fresh) o.fresh = x.pack; }
+    const weak = Object.entries(n).filter(([, o]) => o.fresh).sort((a, b) => a[1].tried - b[1].tried)[0];
+    if (weak) out.push({ kind: '덜 한 과목', text: `${subjName(weak[0])} · ${weak[1].fresh.title}`, href: '#/run?pack=' + encodeURIComponent(weak[1].fresh.id), sub: `지금까지 ${weak[1].tried}문제 풀었다` });
+  }
+  return out;
+}
+function nextCard() {
+  const st = nextSteps();
+  if (!st.length) return '';
+  const [a, ...rest] = st;
+  return `<section class="card next" aria-labelledby="nextH"><p class="small muted" style="margin:0"><span class="tag vio">${a.kind}</span> 지금 할 일</p>
+    <h2 id="nextH" class="next-t">${esc(a.text)}</h2>${a.sub ? `<p class="small muted" style="margin:0 0 10px">${esc(a.sub)}</p>` : ''}
+    <a class="btn pri" href="${a.href}">시작</a>
+    ${rest.length ? `<p class="small muted next-after">그다음: ${rest.slice(0, 2).map(r => `<a href="${r.href}">${esc(r.text.length > 34 ? r.text.slice(0, 34) + '…' : r.text)}</a>`).join(' · ')}</p>` : ''}</section>`;
+}
 function viewHome() {
+  try { planAuto(); } catch (e) { console.warn(e); }
   const ex = examInfo();
   const st = subjectStats();
   const due = dueItems();
@@ -617,6 +663,7 @@ function viewHome() {
     <h1>${tdate.getMonth() + 1}월 ${tdate.getDate()}일 ${'일월화수목금토'[tdate.getDay()]}요일</h1>
     <p class="muted">${ex.first ? `첫 시험까지 <b class="ink mono">${Math.max(0, S.daysBetween(t, ex.first))}일</b> · ${ex.days.map(d => { const subs = SUBJECTS.filter(s => ex.subjects[s.id]?.date === d); return `${Number(d.slice(5, 7))}/${Number(d.slice(8))}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})${subs.length ? ' ' + subs.map(s => s.name).join('·') : ''}`; }).join(' · ')}${ex.days.some(d => SUBJECTS.some(s => ex.subjects[s.id]?.date === d)) ? '' : ' · <a href="#/plan">과목별 날짜 넣기</a>'}` : '시험 날짜 미정'} · <a href="#/plan">일정</a></p>
   </header>
+  ${nextCard()}
 
   ${!packs.length ? `<section class="card"><h2>아직 공부자료가 없다</h2>
     <p>과목별 공부자료 Claude 에게 <a href="#/prompts">프롬프트</a> 를 복사해서 보내고 자료를 받은 뒤,</p>

@@ -862,3 +862,8 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 /* 원안지: 이어지는 조각, 화면 밖 면은 그리지 않기 */
 .pq.pcont{margin-top:0}
 .paper.pdone .ppage{content-visibility:auto;contain-intrinsic-size:210mm 297mm}
+
+/* 다음 할 일 */
+.card.next{border-color:color-mix(in srgb,var(--acc) 35%,var(--rule));margin-bottom:16px}
+.next-t{margin:6px 0 8px;font-size:1.25rem;line-height:1.4}
+.next-after{margin:12px 0 0}
