@@ -442,7 +442,15 @@ document.addEventListener('toggle', e => { if (e.target.open) ensureHanjaFont();
 const addCss = href => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l); };
 // 한자 글꼴 목록은 화면에 한자가 있을 때만 붙인다
 function ensureHanjaFont() {
-  if (ensureHanjaFont.done || !/[\u3400-\u9FFF\uF900-\uFAFF]/.test(main.innerText)) return;
+  if (ensureHanjaFont.done) return;
+  const HAN = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+  // 빠른 길: 글 전체에 한자가 없으면 끝 (innerText 는 화면을 다시 계산해서 큰 자료에서 느리다)
+  if (!HAN.test(main.textContent)) return;
+  // 한자가 든 글 조각 가운데 보이는 것이 하나라도 있는지만 본다 (접힌 칸 안의 한자는 세지 않는다)
+  const w = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, { acceptNode: n => HAN.test(n.data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  let seen = false;
+  for (let n = w.nextNode(), k = 0; n && k < 60; n = w.nextNode(), k++) { const el = n.parentElement; if (el && (el.checkVisibility ? el.checkVisibility() : el.offsetParent)) { seen = true; break; } }
+  if (!seen) return;
   ensureHanjaFont.done = true;
   addCss('css/fonts/hanja/hanja.css');
 }
@@ -459,7 +467,7 @@ function render() {
   $$('.bottom a', document).forEach(a => { const on = a.dataset.nav === (navOf[path] || 'more'); a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   main.innerHTML = '';
   fn();
-  ensureHanjaFont();
+  requestAnimationFrame(ensureHanjaFont); // 화면을 그린 뒤에 본다 (그리기 전에 보면 화면 계산을 한 번 더 시킨다)
   if (lost) main.insertAdjacentHTML('afterbegin', '<p class="note info" role="status">찾는 화면이 없어서 홈을 보여 준다. 주소를 다시 확인한다.</p>');
   updateTop();
   // 화면 제목을 탭 제목에 쓰고, 다른 화면으로 옮겨 왔으면 키보드 초점을 그 화면 제목으로
@@ -1678,6 +1686,9 @@ function viewRun() {
     }
     else items = D.allQuestions({ packs: [q.get('pack')], book: false });
     if (!items.length) { main.innerHTML = '<h1>문제 풀기</h1><p class="muted">지금 풀 문제가 없다. <a href="#/">홈으로</a></p>'; return; }
+    // 복습·오답은 한 번에 30문제씩 (수백 문제를 한 장에 펼치면 무겁고 끝이 안 보인다). 끝내면 나머지가 다시 나온다
+    const CAP = 30;
+    if ((q.get('src') === 'due' || q.get('src') === 'wrong') && items.length > CAP) { toast(`${items.length}문제 가운데 ${CAP}문제를 먼저 푼다. 끝내고 다시 누르면 나머지가 나온다.`, 4500); items = items.slice(0, CAP); }
     session = null;
     startSession(items, 'practice');
     return;
