@@ -354,3 +354,33 @@ ${(pack.notes || '').slice(0, 60000)}${textsForAI(pack) ? '\n\n' + textsForAI(pa
 [질문]
 ${question}`;
 }
+
+// ---------- AI 학습 코치: 저장된 기록(facts)만 보고 말한다 ----------
+const COACH_KINDS = {
+  weak: ['취약 단원 분석', '정답률이 낮거나 거듭 틀리거나 복습이 밀린 단원을 골라, 왜 약한지 기록으로 설명하고 각 단원에서 무엇을 먼저 할지 말한다.'],
+  causes: ['오답 원인 종합', '오답 원인(개념 부족·계산 실수 같은 것)의 분포와 확신도 기록을 보고, 어떤 종류의 실수가 많은지, 공부 방법을 어떻게 바꾸면 좋을지 말한다.'],
+  next: ['다음 학습 추천', '오늘부터 3일 동안 무엇을 어떤 순서로 공부할지 기록에 근거해 정한다. 항목마다 이유를 한 줄로 쓴다.'],
+  week: ['주간 학습 보고서', '최근 7일의 공부 양, 과목 쏠림, 정답률 변화, 복습 성공률, 계획 진행을 정리하고 다음 주에 바꿀 것 두세 가지를 말한다.'],
+};
+export const coachKinds = () => Object.entries(COACH_KINDS).map(([id, [name]]) => ({ id, name }));
+const COACH_SYSTEM = `너는 고등학생 한 명의 학습 기록을 보고 조언하는 코치다. 아래 [기록] 에 적힌 값만 근거로 쓴다.
+- 기록에 없는 숫자, 단원, 날짜, 정답률을 지어내지 않는다. 필요한 값이 기록에 없으면 "기록이 부족하다" 라고 쓴다.
+- 숫자를 말할 때는 기록의 값을 그대로 쓴다. 직접 계산한 값은 "계산하면" 이라고 밝힌다.
+- 푼 문제가 적은 단원(풀이 3번 미만)의 정답률은 믿을 수 없다고 말한다.
+- 반말로, 짧고 구체적으로. 칭찬이나 격려 문구, 인사말, 맺음말은 쓰지 않는다. 마크다운 목록은 써도 된다.
+- 비난하거나 죄책감을 주는 표현은 쓰지 않는다. 공부를 쉰 날이 있어도 사실만 말한다.`;
+export function coachPrompt(kind, factsStr) {
+  const [name, task] = COACH_KINDS[kind] || COACH_KINDS.week;
+  return { system: COACH_SYSTEM, user: `[할 일] ${name}: ${task}\n\n[기록]\n${factsStr}` };
+}
+export async function coach(kind, factsStr) {
+  const { system, user } = coachPrompt(kind, factsStr);
+  return ask({ system, user, maxTokens: 3000 });
+}
+// 답에 나온 숫자 가운데 기록에 없는 것 (계산한 값일 수도 있어서 막지 않고 알려 준다)
+export function unknownNumbers(text, factsStr) {
+  const have = new Set((factsStr.match(/\d+(?:\.\d+)?/g) || []));
+  const out = new Set();
+  for (const m of String(text).matchAll(/(\d+(?:\.\d+)?)\s*(%|퍼센트|개|번|일|분|문제|시간)/g)) if (!have.has(m[1]) && Number(m[1]) > 5) out.add(m[0].replace(/\s+/g, ''));
+  return [...out];
+}

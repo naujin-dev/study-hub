@@ -366,8 +366,41 @@ export function snapshot() {
   return { events, kv };
 }
 // 다른 곳에서 온 기록을 합친다. 바뀐 게 있으면 true.
-export function mergeIn(other) {
+const HEAVY_COLS = new Set(['packs', 'srctext', 'bookq']);
+const noU = v => { const { u, ...r } = v || {}; return JSON.stringify(r); };
+// 동기화로 합칠 때 내 쪽의 안 올린 변경이 남의 최신 값에 밀려 사라지면 목록에 적어 둔다 (설정에서 되살릴 수 있다)
+function noteConflict(col, id, mine) {
+  const list = load('conflicts', []);
+  list.unshift({ col, id, mine, t: Date.now() });
+  save('conflicts', list.slice(0, 30));
+}
+export function conflicts() { return load('conflicts', []); }
+export function dropConflict(i) { const l = load('conflicts', []); l.splice(i, 1); save('conflicts', l); }
+// 백업 파일이 들어오면 무엇이 새로 생기는지 미리 센다 (아무것도 바꾸지 않는다)
+export function previewMerge(other) {
+  const out = { events: 0, eventsSame: 0, kvNew: 0, kvNewer: 0, kvSame: 0, kvOlder: 0 };
+  const have = new Set(events.map(e => e.id));
+  for (const e of other.events || []) { if (e && e.id) { if (have.has(e.id)) out.eventsSame++; else out.events++; } }
+  for (const col in other.kv || {}) for (const id in other.kv[col]) {
+    const v = other.kv[col][id], m = kv[col] && kv[col][id];
+    if (!v || typeof v.u !== 'number') continue;
+    if (!m) out.kvNew++; else if (m.u < v.u) out.kvNewer++; else if (m.u > v.u) out.kvOlder++; else out.kvSame++;
+  }
+  return out;
+}
+// 전체 교체: 지금 기록을 지우고 파일 내용으로 바꾼다. 부르기 전에 확인과 안전 백업을 마친다
+export function replaceAll(obj) {
+  const cols = new Set([...Object.keys(kv), ...Object.keys(obj.kv || {})]);
+  events = (obj.events || []).filter(e => e && e.id);
+  for (const c of cols) kv[c] = (obj.kv && obj.kv[c]) || {};
+  save('events', events);
+  saveKv([...cols]);
+  save('syncHashes', {}); save('syncRaw', {}); save('syncEtag', '');
+  rebuild(); changed();
+}
+export function mergeIn(other, logConflicts = false) {
   let changedAny = false;
+  const since = load('syncAt', 0);
   if (Array.isArray(other.events)) {
     const have = new Set(events.map(e => e.id));
     for (const e of other.events) if (e && e.id && !have.has(e.id)) { events.push(e); have.add(e.id); changedAny = true; }
@@ -378,7 +411,10 @@ export function mergeIn(other) {
       for (const id in other.kv[col]) {
         const v = other.kv[col][id];
         if (!v || typeof v.u !== 'number') continue;
-        if (!mine[id] || mine[id].u < v.u) { mine[id] = v; changedAny = true; }
+        if (!mine[id] || mine[id].u < v.u) {
+          if (logConflicts && mine[id] && !mine[id].del && !HEAVY_COLS.has(col) && mine[id].u > since && noU(mine[id]) !== noU(v)) noteConflict(col, id, mine[id]);
+          mine[id] = v; changedAny = true;
+        }
       }
     }
   }

@@ -203,6 +203,7 @@ const routes = {
   '/plan': viewPlan,
   '/stats': viewStats,
   '/cloze': viewCloze,
+  '/coach': viewCoach,
   '/settings': viewSettings,
   '/more': viewMore,
   '/journal': viewJournal,
@@ -712,6 +713,7 @@ function viewHome() {
     <p class="muted">${ex.first ? `첫 시험까지 <b class="ink mono">${Math.max(0, S.daysBetween(t, ex.first))}일</b> · ${ex.days.map(d => { const subs = SUBJECTS.filter(s => ex.subjects[s.id]?.date === d); return `${Number(d.slice(5, 7))}/${Number(d.slice(8))}(${'일월화수목금토'[new Date(d + 'T00:00:00').getDay()]})${subs.length ? ' ' + subs.map(s => s.name).join('·') : ''}`; }).join(' · ')}${ex.days.some(d => SUBJECTS.some(s => ex.subjects[s.id]?.date === d)) ? '' : ' · <a href="#/plan">과목별 날짜 넣기</a>'}` : '시험 날짜 미정'} · <a href="#/plan">일정</a></p>
   </header>
   ${nextCard()}
+  ${backupNote()}
 
   ${!packs.length ? `<section class="card"><h2>아직 공부자료가 없다</h2>
     <p>과목별 공부자료 Claude 에게 <a href="#/prompts">프롬프트</a> 를 복사해서 보내고 자료를 받은 뒤,</p>
@@ -3336,6 +3338,67 @@ function milestones(series) {
   return out;
 }
 
+// ================= AI 학습 코치 =================
+// AI 에게는 아래에서 만든 기록(facts)만 보낸다. 화면에 그대로 보여 주고, 답의 숫자가 기록에 있는지 검사한다.
+function coachFacts() {
+  const t = S.today(), from = S.addDays(t, -6), log = S.getLog(), prog = S.getProgress(), ev = S.getEvents();
+  const days = [];
+  for (let d = from; d <= t; d = S.addDays(d, 1)) {
+    const L = log[d] || {};
+    days.push({ 날짜: d, 공부분: Math.round(((L.solve || 0) + (L.read || 0) + (L.card || 0)) / 60 + (L.min || 0) + (L.free || 0) / 60), 푼문제: L.q || 0, 맞힘: L.ok || 0 });
+  }
+  const um = unitMetrics();
+  const subj = SUBJECTS.map(sb => {
+    const us = um.filter(u => u.pack.subject === sb.id);
+    const n = us.reduce((a, u) => a + u.n, 0), ok = us.reduce((a, u) => a + u.ok, 0);
+    return us.length ? { 과목: sb.name, 단원수: us.length, 푼단원: us.filter(u => u.tried).length, 풀이횟수: n, 정답률: n >= 3 ? Math.round(ok / n * 100) + '%' : '기록 부족', 틀린문제: us.reduce((a, u) => a + u.wrong, 0), 거듭틀림: us.reduce((a, u) => a + u.rep, 0) } : null;
+  }).filter(Boolean);
+  const top = um.filter(u => u.score > 0).sort((a, b) => b.score - a.score).slice(0, 8).map(u => ({ 단원: u.pack.title, 과목: subjName(u.pack.subject), 풀이횟수: u.n, 정답률: u.rate == null ? '기록 부족' : Math.round(u.rate * 100) + '%', 밀린복습: u.late, 거듭틀림: u.rep, 마지막학습후일수: u.idle, 이해도: u.meta.und || '안 적음', 중요도: ['안 정함', '낮음', '보통', '높음'][u.meta.imp || 0] }));
+  const cname = Object.fromEntries(CAUSES), causes = {};
+  for (const x of wrongItems()) { const c = causeOf(x.key); const k = c ? cname[c] || c : '안 적음'; causes[k] = (causes[k] || 0) + 1; }
+  let overconf = 0, guessOk = 0, ans14 = 0; const f14 = S.addDays(t, -13);
+  for (const e of ev) { if (e.k !== 'a' || S.dayOf(e.t) < f14) continue; ans14++; if (e.conf === 'sure' && e.r !== 'ok') overconf++; if (e.guessed) guessOk++; }
+  const rs = S.reviewStats(f14);
+  const pl = planList().filter(x => x.date && x.date <= t && !x.hidden);
+  return { 오늘: t, 시험까지남은일: examInfo().first ? S.daysBetween(t, examInfo().first) : null, 최근7일: days, 과목별: subj, 우선단원: top, 지금틀린문제의_오답원인: causes, 최근14일: { 푼횟수: ans14, 확실하다고했는데틀림: overconf, 찍어서맞힘: guessOk, 복습횟수: rs.done, 복습성공률: rs.done ? Math.round(rs.ok / rs.done * 100) + '%' : '기록 부족' }, 계획: { 오늘까지줄수: pl.length, 완료: pl.filter(x => x.done).length } };
+}
+function viewCoach() {
+  const last = S.load('coachLast', {});
+  const facts = JSON.stringify(coachFacts(), null, 1);
+  const kinds = AI.coachKinds();
+  main.innerHTML = `<div class="narrow"><h1>AI 학습 코치</h1>
+  <p class="small muted">AI 는 아래 "보낸 기록" 만 보고 말한다. 기록에 없는 것은 지어내지 않게 시켰고, 답에 기록에 없는 숫자가 있으면 표시한다. AI 가 안 돼도 다른 기능은 그대로 된다.</p>
+  ${AI.hasKey() ? '' : `<p class="note info">Gemini 키가 없다. <a href="#/settings">설정</a> 에서 넣거나, 아래 "프롬프트 복사" 로 다른 AI 챗에 붙여 넣는다.</p>`}
+  <div class="chips" role="group" aria-label="무엇을 물을까">${kinds.map(k => `<button type="button" class="chip" data-coach="${k.id}">${k.name}</button>`).join('')}</div>
+  <div id="coachOut" aria-live="polite" style="margin-top:12px">${Object.keys(last).length ? '<p class="small muted">지난번에 받은 답이 있다. 위 버튼을 누르면 새로 받는다.</p>' : ''}</div>
+  <details style="margin-top:14px"><summary>보낸 기록 보기</summary><pre class="prompt" style="max-height:340px;overflow:auto">${esc(facts)}</pre></details>
+  <p class="small" style="margin-top:10px"><a href="#/gen">단원별 추가 문제 만들기</a> · <a href="#/stats">취약점 지도</a></p></div>`;
+  const out = $('#coachOut');
+  const show = (kind, text, at) => {
+    const bad = AI.unknownNumbers(text, facts);
+    out.innerHTML = `<section class="card notes"><p class="small muted">${esc(kinds.find(k => k.id === kind).name)} · ${esc(at)}</p>${md(text)}${bad.length ? `<p class="note warn small">기록에서 못 찾은 숫자: ${bad.map(esc).join(', ')}. AI 가 계산했거나 잘못 말했을 수 있으니 위 "보낸 기록" 과 대조한다.</p>` : ''}</section>`;
+  };
+  $$('[data-coach]').forEach(b => b.addEventListener('click', async () => {
+    const kind = b.dataset.coach;
+    if (!AI.hasKey()) {
+      const { system, user } = AI.coachPrompt(kind, facts);
+      out.innerHTML = `<p class="small muted">아래 글을 복사해서 AI 챗에 붙여 넣는다.</p><pre class="prompt" id="coachPre" style="max-height:260px;overflow:auto">${esc(system + '\n\n' + user)}</pre><button class="btn" id="coachCopy">프롬프트 복사</button>`;
+      $('#coachCopy').addEventListener('click', () => copyText(system + '\n\n' + user, $('#coachPre')));
+      return;
+    }
+    $$('[data-coach]').forEach(x => { x.setAttribute('aria-disabled', 'true'); });
+    out.innerHTML = '<p class="muted" role="status"><span class="spin"></span> 기록을 보고 있다</p>';
+    try {
+      const text = await AI.coach(kind, facts);
+      const at = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      S.save('coachLast', { ...last, [kind]: { text, at } });
+      if ($('#coachOut') === out) show(kind, text, at);
+    } catch (err) {
+      if ($('#coachOut') === out) out.innerHTML = `<p class="note warn">${esc(errText(err, 'AI 답을 받지'))} 기록과 다른 화면은 그대로 쓸 수 있다.</p>`;
+    }
+    $$('[data-coach]').forEach(x => x.removeAttribute('aria-disabled'));
+  }));
+}
 // 취약점 지도: 과목별로 단원을 우선순위 순으로. 색은 정답률 (공부 시간이 아니라 성취도)
 function weakMapHtml() {
   const all = unitMetrics();
@@ -3712,6 +3775,33 @@ function viewQuestion() {
 
 // ================= 설정·가져오기 =================
 let pendingImport = null;
+function downloadBackup(tag) {
+  const blob = new Blob([JSON.stringify(S.exportAll())], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `study-hub-백업${tag ? '-' + tag : ''}-${S.today()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  S.save('lastBackup', Date.now());
+}
+// 마지막으로 백업한 지 오래됐으면 알린다 (기록이 어느 정도 쌓인 뒤에만)
+function backupNote() {
+  const n = S.getEvents().length, lb = S.load('lastBackup', 0);
+  if (n < 50) return '';
+  const days = lb ? Math.floor((Date.now() - lb) / 864e5) : null;
+  if (days != null && days < 7) return '';
+  return `<p class="note info small">${days == null ? '백업 파일을 아직 한 번도 안 받았다.' : `마지막 백업이 ${days}일 전이다.`} <a href="#/settings">설정에서 받는다</a>. (동기화를 켜 두었다면 Gist 에도 올라간다.)</p>`;
+}
+// 동기화 충돌: 내 변경이 남의 최신 값에 밀려 바뀐 것
+function conflictHtml() {
+  const list = S.conflicts();
+  if (!list.length) return '';
+  return `<details class="note warn small" style="margin-top:10px"><summary>다른 기기의 값으로 바뀐 내 변경 ${list.length}개 (되살릴 수 있다)</summary><ul class="plain">${list.map((c, i) => {
+    const m = c.mine || {}; const label = c.col === 'plan' ? '계획 체크' : c.col === 'hl' ? '형광펜·메모' : c.col === 'wcause' ? '오답 원인' : c.col;
+    const val = m.text || m.note || m.cause || m.ans || (m.done != null ? (m.done ? '완료로 체크' : '체크 해제') : JSON.stringify(m).slice(0, 60));
+    return `<li>${esc(label)} · ${esc(String(val).slice(0, 50))} <button type="button" class="btn sm ghost" data-conf-restore="${i}">되살리기</button> <button type="button" class="btn sm ghost" data-conf-drop="${i}">지우기</button></li>`;
+  }).join('')}</ul></details>`;
+}
 function viewSettings() {
   const s = AI.settings();
   const localList = D.localPacks();
@@ -3743,6 +3833,7 @@ function viewSettings() {
     ${SYNC.isOn() ? `
       <p>연결됨: <b>${esc(sc.login || '')}</b> · <a href="${SYNC.gistUrl()}" target="_blank" rel="noopener">Gist 보기</a></p>
       <p class="small" id="syncState">${syncText(st)}</p>
+      ${conflictHtml()}
       <label class="row small"><input type="checkbox" id="syncAuto"${sc.auto ? ' checked' : ''}> 자동 동기화 (기록이 생기면 15초 뒤, 앱을 다시 열 때, 화면이 켜져 있으면 1분마다)</label>
       <div class="row" style="margin-top:8px"><button class="btn pri" id="syncNow">지금 동기화</button><button class="btn ghost bad" id="syncOff">연결 끊기</button></div>
       <details class="fold" style="margin-top:10px"><summary class="small">다른 기기에 넣을 토큰 꺼내기</summary>
@@ -3779,6 +3870,7 @@ function viewSettings() {
     <p class="small muted">기록 전체를 파일로 받는다. 동기화를 쓰더라도 시험 전에 한 번씩 받아 두면 안전하다. 불러오면 지금 기록에 합쳐진다 (덮어쓰지 않는다). API 키와 토큰은 들어가지 않는다.</p>
     <p class="small">이 기기에 쌓인 기록 ${S.getEvents().length.toLocaleString()}건 · 기록 저장 공간 ${(S.storageBytes() / 1048576).toFixed(2)}MB / 약 5MB (가져온 자료·원문은 따로 저장해서 여기 안 들어간다)</p>
     <p class="small muted">사이트 버전 ${esc(window.SH_VERSION || '-')} · <span id="offState">오프라인 모드 확인 중</span> <button class="btn sm ghost" id="updBtn">새 버전 확인</button></p>
+    <p class="small muted">마지막 백업: ${S.load('lastBackup', 0) ? new Date(S.load('lastBackup', 0)).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음'}</p>
     <div class="row"><button class="btn" id="exp">백업 파일 받기</button><button type="button" class="btn" data-file="impBk">백업 불러오기</button><input type="file" id="impBk" accept=".json" hidden></div>
     <p style="margin:18px 0 0"><button class="btn sm bad ghost" id="reset">기록 초기화</button></p>
   </section>`;
@@ -3931,23 +4023,46 @@ function viewSettings() {
   })();
   // 백업
   $('#exp').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(S.exportAll())], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `study-hub-백업-${S.today()}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    downloadBackup('');
+    render.keepScroll = true; render();
   });
+  // 백업 불러오기: 파일 검사 → 미리 보기(새로 생기는 것, 이미 있는 것) → 병합 / 전체 교체 / 취소
   $('#impBk').addEventListener('change', async e => {
     const f = e.target.files[0];
+    e.target.value = '';
     if (!f) return;
+    let obj;
+    try { obj = JSON.parse(await f.text()); }
+    catch (err) { return toast('백업 파일이 아니거나 깨진 파일이다. 설정의 "백업 파일 받기" 로 만든 .json 파일을 고른다.', 5500); }
+    if (!obj || obj.app !== 'study-hub') return toast('이 사이트에서 받은 백업 파일이 아니다.', 5000);
+    if (obj.v !== 2) { if (!obj.data) return toast(`지원하지 않는 백업 버전이다 (v${obj.v}).`, 5000); S.importAll(obj); await D.loadAll(); toast('예전 형식 백업을 합쳤다.'); return render(); }
+    if (!Array.isArray(obj.events) || !obj.kv || typeof obj.kv !== 'object') return toast('백업 파일의 구조가 맞지 않는다 (기록 목록이 없다).', 5000);
+    const pv = S.previewMerge(obj);
+    const when = obj.exportedAt ? new Date(obj.exportedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '날짜 모름';
+    const choice = await new Promise(res => {
+      const d = document.createElement('dialog'), opener = document.activeElement;
+      d.className = 'dlg'; d.setAttribute('aria-labelledby', 'rsT');
+      d.innerHTML = `<form method="dialog"><h2 id="rsT" style="margin-top:0">백업 불러오기</h2>
+        <p class="small">${esc(f.name)} · ${esc(when)}에 받은 파일</p>
+        <ul class="small"><li>풀이·공부 기록: 새로 들어올 것 <b>${pv.events}</b>개, 이미 있어서 건너뛸 것 ${pv.eventsSame}개</li>
+        <li>자료·계획·메모 같은 항목: 새 것 <b>${pv.kvNew}</b>개, 파일이 더 최신 ${pv.kvNewer}개, 지금이 더 최신 ${pv.kvOlder}개 (지금 것을 유지), 같은 것 ${pv.kvSame}개</li></ul>
+        <p class="small"><b>병합</b>은 지금 기록을 지우지 않고 파일에서 새것만 더한다. <b>전체 교체</b>는 지금 기록을 지우고 파일 내용으로 바꾼다.</p>
+        <div class="row dlg-acts"><button class="btn ghost" value="no">취소</button><button class="btn bad ghost" value="replace">전체 교체</button><button class="btn pri" value="merge">병합 (권장)</button></div></form>`;
+      document.body.append(d);
+      d.addEventListener('close', () => { const v = d.returnValue; d.remove(); refocus(opener); res(v === 'merge' || v === 'replace' ? v : null); });
+      d.showModal(); d.querySelector('[value=merge]').focus();
+    });
+    if (!choice) return;
     try {
-      S.importAll(JSON.parse(await f.text()));
-      await D.loadAll();
-      toast('불러와서 합쳤다.');
-      render();
-    } catch (err) { toast(err instanceof SyntaxError ? '백업 파일이 아니거나 깨진 파일이다. 설정의 "백업 내보내기" 로 만든 .json 파일을 고른다.' : errText(err, '불러오기'), 5000); }
+      if (choice === 'merge') { S.importAll(obj); await D.loadAll(); toast(`병합했다. 새 기록 ${pv.events}개.`, 4000); return render(); }
+      if (SYNC.isOn()) return toast('동기화 중에는 교체해도 Gist 에서 예전 기록이 다시 합쳐진다. 먼저 동기화 연결을 끊는다.', 6000);
+      if (!(await askConfirm(`지금 기록 ${S.getEvents().length}개를 지우고 파일 내용으로 바꾼다. 먼저 지금 기록을 백업 파일로 받아 둔다. 계속할까?`, '받아 두고 교체', '취소'))) return;
+      downloadBackup('교체전');
+      S.replaceAll(obj); await D.loadAll(); toast('전체 교체했다. 교체 전 기록은 방금 받은 백업 파일에 있다.', 6000); render();
+    } catch (err) { toast(errText(err, '불러오기'), 5000); }
   });
+  $$('[data-conf-restore]').forEach(b => b.addEventListener('click', () => { const c = S.conflicts()[Number(b.dataset.confRestore)]; if (!c) return; const { u, ...v } = c.mine; S.kvSet(c.col, c.id, v); S.dropConflict(Number(b.dataset.confRestore)); toast('되살렸다. 다음 동기화 때 다른 기기에도 간다.'); render.keepScroll = true; render(); }));
+  $$('[data-conf-drop]').forEach(b => b.addEventListener('click', () => { S.dropConflict(Number(b.dataset.confDrop)); render.keepScroll = true; render(); }));
   $('#reset').addEventListener('click', async () => {
     if (SYNC.isOn()) return toast('동기화 중에는 지워도 Gist 에서 다시 돌아온다. 먼저 연결을 끊는다.', 4500);
     if (!(await askConfirm('이 기기의 푼 기록, 풀이 이력, 카드·읽기·타이머 기록을 모두 지울까? 자료, 계획, 형광펜·메모, API 키는 남는다.'))) return;
@@ -4581,6 +4696,7 @@ const SCREENS = [
     ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기', '타이머 스톱워치 뽀모도로 시간'],
     ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장', 'pdf 원본 파일'],
     ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고', '일기 회고 기록 날짜'],
+    ['#/coach', 'AI 학습 코치', '기록을 보고 취약점·다음 공부·주간 보고서를 말해 준다', '분석 보고서 추천 제미나이 gemini 코치'],
     ['#/cloze', '빈칸 연습', '자료에서 고른 글자를 가리고 직접 써서 확인', '빈칸 클로즈 암기 회상'],
     ['#/blank', '백지 복습', '자료를 덮고 기억나는 걸 다 써 본 뒤 비교', '백지 파인만 써 보기'],
     ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로', '직전 요약 한 장 최종'],
@@ -4622,6 +4738,10 @@ function viewHelp() {
 - **단답형**: 정답 목록과 띄어쓰기·문장부호를 빼고 비교한다. 다르면 API 키가 있을 때 AI 가 뜻이 같은지 본다. 키가 없으면 "Claude 채팅으로 확인 (무료)" 로 물어보거나 "내 답도 맞다" 로 고친다.
 - **고난도·시간 제한**: [문제](#/quiz) 에서 난이도 '어려움 이상' 이나 '최상(킬러)만' 을 고른다. '문제마다 시간 제한' 을 켜면 문제에 정한 시간(없으면 객관식 90초·단답 60초·서술 300초)이 줄어들고, 시간이 다 되면 고른 답으로 채점하거나 모르는 문제로 넘긴다. 실전 모드에서는 전체 시간이 문제 시간의 합이 된다.
 - **원안지 형식**: 노트북·태블릿에서는 문제가 늘 학교 시험지와 같은 모양(A4 2단, 선택형 뒤에 서답형)으로 나온다. 선지를 누르면 번호가 검게 칠해진다. 연습은 문제마다 아래 "채점" 을 누르면 그 자리에 정답과 해설이 나오고, "자세히" 에서 오답 원인·헷갈림 표시·서술형 채점을 한다. 실전은 다 풀고 한꺼번에 제출한다. 휴대폰처럼 좁은 화면은 카드 화면 그대로다.
+- **오답 복습 규칙**: 틀린 문제는 1·3·7·14·30일 간격으로 다시 나온다. 확실하게 맞히면 한 단계를 건너뛰고, 맞혔어도 애매했으면 내일 다시, 틀리면 1단계로 돌아간다. [오답노트](#/wrong) 맨 위에 오늘 복습할 것과 취약 단원이 있다.
+- **빈칸 연습**: 자료에서 글자를 골라 뜨는 띠의 "빈칸" 을 누르면 그 글자가 빈칸 문제가 된다. [빈칸 연습](#/cloze) 에서 직접 쓰고, 복습 일정은 암기카드와 같다.
+- **AI 학습 코치**: [코치](#/coach) 는 내 기록만 AI 에 보내 취약점·다음 공부·주간 보고서를 받는다. 보낸 기록이 화면에 그대로 보이고, 답에 기록에 없는 숫자가 있으면 표시한다.
+- **백업 불러오기**: 파일을 고르면 새로 생기는 기록 수를 먼저 보여 주고, 병합(기본)이나 전체 교체를 고른다. 교체 전에는 지금 기록을 백업 파일로 받는다.
 - **AI 키**: [설정](#/settings) 의 "AI 채점 (Gemini API)" 에 Google AI Studio(aistudio.google.com) 에서 무료로 만든 Gemini 키를 넣는다. 아래에서 말하는 "API 키" 가 이것이다.
 - **서술형**: API 키가 있으면 AI 가 바로 채점한다. 키가 없으면 **무료로** "채점 요청 복사" → claude.ai(무료 계정 가능)나 공부 Claude 채팅에 붙여넣기 → Claude 가 준 코드 블록을 사이트에 붙여넣기. 기준별 점수, 빠진 점, 고친 답안이 똑같이 들어가고 기록에 남는다. 스스로 채점도 된다.
 

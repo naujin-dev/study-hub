@@ -104,6 +104,7 @@ export function syncNow() {
     try {
       const changed = await pullMerge();
       await push();
+      S.save('syncAt', Date.now());
       setStatus('ok');
       return changed;
     } catch (err) {
@@ -169,7 +170,7 @@ async function pullMerge() {
     // 예전 한 덩어리 파일(study-hub-state.json)과 새 조각 파일 모두 kv 를 담고 있다
     for (const col in data.kv || {}) Object.assign(incoming.kv[col] || (incoming.kv[col] = {}), data.kv[col]);
   });
-  const changed = S.mergeIn(incoming);
+  const changed = S.mergeIn(incoming, true);
   S.save('syncRaw', now);
   S.save('syncRemote', names);
   S.save('syncEtag', g.__etag || '');
