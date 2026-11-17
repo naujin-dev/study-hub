@@ -2023,7 +2023,7 @@ function drawQuestion0() {
   const locked = !!res || (exam && session.submitted);
 
   // 지문 없이 (가)·(나)·㉠·윗글을 가리키는 문제는 자료의 원문을 옆에 펼쳐 준다
-  const citeAll = CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body) : [];
+  const citeAll = citeTexts(pack, q);
   const citeSrc = citeAll.length ? citeAll : null;
   const citeMissing = !q.context && !citeSrc && CITE_RE.test(q.question);
   let body = '';
@@ -2155,6 +2155,32 @@ function drawQuestion0() {
 
 // (가)·(나)·㉠·윗글 처럼 지문을 가리키는 말
 const CITE_RE = /\([가-하]\)|[㉠-㉭]|윗글|위 글|밑줄 친|이 시에|이 글에/;
+// 문제가 가리키는 원문만 고른다. 문제 자체에 지문이 들어 있으면 다른 원문을 곁들이지 않는다.
+// (가)·(나) 처럼 기호로 가리키면 그 기호의 원문, 윗글이면 자료의 주된 원문 하나, 못 정하면 같이 나온 글은 뺀다.
+function citeTexts(pack, q) {
+  const all = SRC.textsOf(pack).filter(t => t.body);
+  if (!all.length || !CITE_RE.test(q.question)) return [];
+  const cx = String(q.context || '');
+  if (cx && !/^\s*<보기>/.test(cx) && cx.replace(/\s/g, '').length >= 80) return [];
+  const lab = t => (/^\s*\(([가-하])\)/.exec(t.title || '') || /^\s*\(([가-하])\)/.exec(t.body) || [])[1];
+  const labs = [...new Set([...q.question.matchAll(/\(([가-하])\)/g)].map(m => m[1]))];
+  if (labs.length) {
+    // 원문이 기호로 시작하거나, 한 원문 안에 (가)(나)(다) 가 줄 머리마다 들어 있는 경우
+    const has = (t, l) => lab(t) === l || new RegExp('(^|\\n)\\s*\\(' + l + '\\)').test(t.body);
+    const sel = all.filter(t => labs.some(l => has(t, l)));
+    if (sel.length) return sel;
+    // 기호가 붙은 원문이 있는데 가리킨 기호는 없다 = 다른 글이다. 엉뚱한 원문을 보여 주지 않는다.
+    if (all.some(t => /^\s*\([가-하]\)/.test(t.title || '') || /^\s*\([가-하]\)/.test(t.body))) return [];
+  }
+  const marks = q.question.match(/[㉠-㉭]/g);
+  if (marks) { const sel = all.filter(t => marks.some(m => t.body.includes(m))); if (sel.length) return sel; }
+  if (all.length === 1) return all;
+  const qn = coreTitle(q.question);
+  const named = all.filter(t => { const c = coreTitle(String(t.title || '').replace(/\(같이 나온 글\)/, '').replace(/^\s*\([가-하]\)\s*/, '').split(' - ')[0]); return c.length >= 2 && qn.includes(c); });
+  if (named.length) return named;
+  const main = all.filter(t => !/같이 나온 글/.test(t.title || ''));
+  return main.length ? main : all;
+}
 // 문제 글에 표(| 칸 | 칸 |)가 있으면 정리 노트처럼 표로 그린다. 나머지는 쓴 그대로.
 function qHtml(t) {
   const text = String(t || '');
@@ -2297,8 +2323,8 @@ function paperBlocks() {
   session.items.forEach((it, i) => {
     const { pack, q } = it, a = session.answers[i], res = session.results[i];
     // 지문 없이 윗글·(가)를 가리키는 문제는 자료의 원문을 자료 상자로 싣는다
-    const cite = !q.context && CITE_RE.test(q.question) ? SRC.textsOf(pack).filter(t => t.body).map(t => t.body).join('\n\n').slice(0, 6000) : '';
-    const ctx = pContext(q.context || cite);
+    const cite = citeTexts(pack, q).map(t => t.body).join('\n\n').slice(0, 6000);
+    const ctx = pContext(q.context && !cite ? q.context : [q.context, cite].filter(Boolean).join('\n\n'));
     // 배점 표시([3.4점])는 싣지 않는다
     const stem = pInline(q.question.replace(/\s*\[\d+(?:\.\d+)?점\]/g, '')).replace(/(옳지|적절하지|알맞지) 않은/g, '$1 <u>않은</u>');
     if (q.type === 'mcq') {
