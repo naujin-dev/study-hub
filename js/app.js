@@ -542,6 +542,44 @@ function unitStats() {
     return { pack: p, n, ok, tried, total: (p.questions || []).length, rate: n ? ok / n : null };
   });
 }
+// 단원(자료) 하나의 학습 지표와 우선순위. 저장하지 않고 이벤트에서 계산한다.
+// 점수 = 복습 밀림(최대 35) + 낮은 정답률(최대 30) + 거듭 틀림(최대 20) + 오래 안 봄(최대 15) + 중요도(0/5/10) + 이해도 낮음(최대 8)
+// 근거가 부족한 항목(푼 문제 3개 미만 등)은 점수를 주지 않고 이유에도 쓰지 않는다.
+const UNIT_META = pid => S.kvGet('punit', pid) || {};
+function unitMetrics() {
+  const prog = S.getProgress(), t = S.today(), last = {};
+  for (const e of S.getEvents()) {
+    const pid = e.k === 'r' ? e.pack : e.k === 'a' ? String(e.key).split('::')[0] : null;
+    if (pid) { const d = S.dayOf(e.t); if (!last[pid] || d > last[pid]) last[pid] = d; }
+  }
+  return D.db().packs.filter(pk => (pk.questions || []).length).map(pk => {
+    let n = 0, ok = 0, tried = 0, wrong = 0, rep = 0, late = 0, due = 0, rN = 0, rOk = 0;
+    for (const q of pk.questions) {
+      const k = D.qkey(pk, q), r = prog[k];
+      if (!r || !r.n) continue;
+      tried++; n += r.n; ok += r.ok;
+      if (r.wrong) wrong++;
+      if ((r.wn || 0) >= 2) rep++;
+      if (r.due && r.due <= t) { due++; if (r.due < t) late++; }
+      S.attemptsOf(k).forEach((e, i) => { if (i) { rN++; if (e.r === 'ok') rOk++; } });
+    }
+    const meta = UNIT_META(pk.id), la = last[pk.id] || null;
+    const idle = la ? S.daysBetween(la, t) : null;
+    const rate = n >= 3 ? ok / n : null;
+    const why = []; let score = 0;
+    if (late) { score += Math.min(35, 10 + late * 3); why.push(`복습 예정일이 지난 문제 ${late}개`); }
+    if (rate != null && rate < 0.85) { score += Math.round((0.85 - rate) / 0.85 * 30); why.push(`정답률 ${Math.round(rate * 100)}% (${n}번 풀이)`); }
+    if (rep) { score += Math.min(20, rep * 8); why.push(`같은 문제를 거듭 틀림 ${rep}개`); }
+    if (idle != null && idle >= 5) { score += Math.min(15, idle); why.push(`마지막 학습 후 ${idle}일 지남`); }
+    if (!la && tried === 0 && (meta.imp || 0) >= 2) { score += 8; why.push('아직 한 번도 안 풀었는데 중요도가 높음'); }
+    if (meta.imp === 3) { score += 10; why.push('중요도 높음으로 표시함'); } else if (meta.imp === 2) score += 5;
+    if (meta.und && meta.und <= 2) { score += (3 - meta.und) * 4; why.push(`이해도를 ${meta.und}점으로 적음`); }
+    return { pack: pk, n, ok, tried, total: pk.questions.length, wrong, rep, late, due, rate, last: la, idle, meta, score, why, review: rN ? rOk / rN : null, rN };
+  });
+}
+function priorities(sel) {
+  return unitMetrics().filter(u => u.score > 0 && (!sel || u.pack.subject === sel)).sort((a, b) => b.score - a.score);
+}
 const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60 || l.free >= 60));
 function streakDays() {
   const log = S.getLog();
@@ -587,6 +625,13 @@ function nextSteps() {
     if (weak) out.push({ kind: '덜 한 과목', text: `${subjName(weak[0])} · ${weak[1].fresh.title}`, href: '#/run?pack=' + encodeURIComponent(weak[1].fresh.id), sub: `지금까지 ${weak[1].tried}문제 풀었다` });
   }
   return out;
+}
+function priorityCard() {
+  const list = priorities().slice(0, 5);
+  if (!list.length) return '';
+  return `<section class="card flat prio" aria-labelledby="prioH"><div class="row between"><h2 id="prioH" style="margin:0">공부 우선순위</h2><a class="small" href="#/stats">취약점 지도</a></div>
+    <p class="small muted" style="margin:4px 0 8px">복습이 밀렸는지, 정답률, 거듭 틀림, 오래 안 본 정도, 중요도로 계산한다. 이유는 기록에 있는 것만 적는다.</p>
+    <ol class="prio-l">${list.map(u => `<li><a class="item" href="#/run?pack=${encodeURIComponent(u.pack.id)}&focus=1"><span class="grow">${subjDot(u.pack.subject)} <b>${esc(u.pack.title)}</b><br><span class="small muted">${u.why.slice(0, 3).map(esc).join(' · ')}</span></span><span class="tag">풀기</span></a></li>`).join('')}</ol></section>`;
 }
 function nextCard() {
   const st = nextSteps();
@@ -733,7 +778,7 @@ function viewHome() {
       </ul>
     </section>
 
-    ${weak.length ? `<section class="card flat"><div class="row between"><h2 style="margin:0">약한 단원</h2><span class="small muted">정답률 낮은 순</span></div><ul class="list">${weak.map(u => `<li><a class="item" href="#/pack?id=${encodeURIComponent(u.pack.id)}">${subjDot(u.pack.subject)}<span class="grow">${esc(u.pack.title)}</span><span class="small mono"${u.rate < 0.7 ? ' style="color:var(--bad)"' : ''}>${Math.round(u.rate * 100)}%</span></a></li>`).join('')}</ul></section>` : ''}
+    ${priorityCard()}
   </aside>
   </div>
   `;
@@ -1089,6 +1134,7 @@ function viewPack() {
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' && D.db().packs.some(x => x._src === 'repo') ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
+  <label class="small noprint" style="display:inline-flex;gap:8px;align-items:center"><span class="muted">이 단원의 중요도</span><select data-imp="${esc(p.id)}" aria-label="중요도"><option value="">정하지 않음</option>${[[1, '낮음'], [2, '보통'], [3, '높음']].map(([n, l]) => `<option value="${n}"${UNIT_META(p.id).imp === n ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
   <p class="small noprint" id="packPdfs" hidden></p>
   ${(p._mergedFrom || []).length ? `<p class="small muted noprint">합친 자료: ${p._mergedFrom.map(m => `${esc(m.title)}${m.auto ? ' (같은 단원이라 저절로)' : ''} <button class="btn sm ghost" data-unmerge="${esc(m.id)}">따로 보기</button>`).join(' · ')}</p>` : ''}
 
@@ -1731,7 +1777,15 @@ function viewRun() {
       items = bp ? (bp.book || []).map(qq => ({ pack: bp, q: qq, key: D.qkey(bp, qq), book: true })) : [];
       if (items.length) { session = null; startSession(items, 'practice', 30, { bookPack: bp.id }); return; }
     }
-    else items = D.allQuestions({ packs: [q.get('pack')], book: false });
+    else {
+      items = D.allQuestions({ packs: [q.get('pack')], book: false });
+      if (q.get('focus')) {
+        const prog = S.getProgress(), t = S.today();
+        const rk = x => { const r = prog[x.key]; return !r || !r.n ? 2 : r.wrong ? 0 : r.due && r.due <= t ? 1 : 3; };
+        items = items.map((x, i) => [x, i]).sort((a, b) => rk(a[0]) - rk(b[0]) || a[1] - b[1]).map(x => x[0]).filter(x => rk(x) < 3).slice(0, 30);
+        if (!items.length) items = D.allQuestions({ packs: [q.get('pack')], book: false }).slice(0, 30);
+      }
+    }
     if (!items.length) { main.innerHTML = '<h1>문제 풀기</h1><p class="muted">지금 풀 문제가 없다. <a href="#/">홈으로</a></p>'; return; }
     // 복습·오답은 한 번에 30문제씩 (수백 문제를 한 장에 펼치면 무겁고 끝이 안 보인다). 끝내면 나머지가 다시 나온다
     const CAP = 30;
@@ -3268,6 +3322,31 @@ function milestones(series) {
   return out;
 }
 
+// 취약점 지도: 과목별로 단원을 우선순위 순으로. 색은 정답률 (공부 시간이 아니라 성취도)
+function weakMapHtml() {
+  const all = unitMetrics();
+  if (!all.some(u => u.tried)) return '';
+  const col = r => r == null ? 'na' : r < 0.6 ? 'r1' : r < 0.75 ? 'r2' : r < 0.9 ? 'r3' : 'r4';
+  const rows = SUBJECTS.map(sb => {
+    const us = all.filter(u => u.pack.subject === sb.id).sort((a, b) => b.score - a.score || (a.rate ?? 2) - (b.rate ?? 2));
+    if (!us.length) return '';
+    return `<details class="wm-sub"${us.some(u => u.score > 0) ? ' open' : ''}><summary><b>${subjDot(sb.id)} ${sb.name}</b> <span class="small muted">단원 ${us.length}개 · 푼 단원 ${us.filter(u => u.tried).length}개</span></summary>
+      <div class="tbl-wrap"><table class="wm"><thead><tr><th scope="col">단원</th><th scope="col">푼 문제</th><th scope="col">정답률</th><th scope="col">오답</th><th scope="col">거듭 틀림</th><th scope="col">복습 성공률</th><th scope="col">최근</th><th scope="col">이해도</th></tr></thead><tbody>${us.map(u => `<tr>
+        <th scope="row"><a href="#/wrong?u=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a>${u.score > 0 ? ' <span class="tag warn">우선</span>' : ''}</th>
+        <td class="mono">${u.tried}/${u.total}</td>
+        <td><span class="wm-bar ${col(u.rate)}" role="img" aria-label="정답률 ${u.rate == null ? '기록 부족' : Math.round(u.rate * 100) + '%'}"><i style="width:${u.rate == null ? 0 : Math.round(u.rate * 100)}%"></i></span> <span class="mono small">${u.rate == null ? '–' : Math.round(u.rate * 100) + '%'}</span></td>
+        <td class="mono">${u.wrong || '–'}</td><td class="mono">${u.rep || '–'}</td>
+        <td class="mono">${u.rN >= 3 ? Math.round(u.review * 100) + '%' : '–'}</td>
+        <td class="small">${u.last ? S.fmtDate(u.last) : '–'}</td>
+        <td><select class="wm-und" data-und="${esc(u.pack.id)}" aria-label="${esc(u.pack.title)} 이해도"><option value="">–</option>${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${u.meta.und === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></details>`;
+  }).join('');
+  return `<section class="card" id="weakmap"><h2 style="margin-top:0">취약점 지도</h2><p class="small muted">정답률이 낮을수록 빨갛다. 푼 문제가 3개 미만이면 정답률을 계산하지 않는다. 이해도는 내가 적는 값(1~5)이고, 낮을수록 우선순위가 올라간다.</p>${rows}</section>`;
+}
+document.addEventListener('change', e => {
+  const u = e.target.closest?.('[data-und]'), m = e.target.closest?.('[data-imp]');
+  if (u) { const id = u.dataset.und, v = Number(u.value) || 0; S.kvSet('punit', id, { ...UNIT_META(id), und: v || undefined }); toast('이해도를 저장했다.', 1500); }
+  if (m) { const id = m.dataset.imp, v = Number(m.value) || 0; S.kvSet('punit', id, { ...UNIT_META(id), imp: v || undefined }); toast('중요도를 저장했다.', 1500); }
+});
 function viewStats() {
   const series = dailySeries();
   const last = series[series.length - 1];
@@ -3296,8 +3375,10 @@ function viewStats() {
   });
   const ms = milestones(series);
 
+  const weakMap = weakMapHtml();
   main.innerHTML = `
   <div class="row between"><h1 style="margin:0">공부 기록</h1><a class="btn sm" href="#/journal">공부 일지 보기</a></div>
+  ${weakMap}
   <p class="result-line" style="margin:12px 0 14px">지금까지 <b>${S.fmtDur(last.cs)}</b> 공부했다 · 문제 <b>${total.q}</b>개 (정답률 ${pct(total.ok, total.q)}%) · 공부한 날 <b>${studiedDays}</b>일${streakDays() ? ` · ${streakDays()}일째 이어서` : ''} · 형광펜·메모 ${Object.keys(S.kvAll('hl')).length}개</p>
 
   <section class="card">

@@ -874,3 +874,14 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .rb-c{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--card)}
 .rb-c b{font-size:1.4rem;line-height:1.2}
 .rb-c.warn b{color:var(--warn)}
+
+/* 공부 우선순위, 취약점 지도 */
+.prio-l{list-style:none;margin:0;padding:0}.prio-l li+li{border-top:1px solid var(--rule)}
+.prio-l .item{display:flex;gap:10px;align-items:center;padding:9px 2px;text-decoration:none;color:var(--ink)}
+.wm-sub{margin:8px 0}.wm-sub>summary{padding:6px 0;cursor:pointer}
+.wm{width:100%;border-collapse:collapse;font-size:.86rem}.wm th,.wm td{padding:6px 8px;border-top:1px solid var(--rule);text-align:left;vertical-align:middle}
+.wm thead th{font-weight:500;color:var(--ink3);font-size:.78rem;border-top:0}.wm tbody th{font-weight:500;min-width:11em}
+.wm-bar{display:inline-block;width:64px;height:8px;border-radius:4px;background:var(--sunk);vertical-align:middle;overflow:hidden}
+.wm-bar i{display:block;height:100%}
+.wm-bar.r1 i{background:var(--bad)}.wm-bar.r2 i{background:var(--warn)}.wm-bar.r3 i{background:#B08900}.wm-bar.r4 i{background:var(--ok)}
+.wm-und{min-height:0;padding:2px 4px;font-size:.82rem}
