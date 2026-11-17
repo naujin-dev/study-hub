@@ -885,3 +885,8 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .wm-bar i{display:block;height:100%}
 .wm-bar.r1 i{background:var(--bad)}.wm-bar.r2 i{background:var(--warn)}.wm-bar.r3 i{background:#B08900}.wm-bar.r4 i{background:var(--ok)}
 .wm-und{min-height:0;padding:2px 4px;font-size:.82rem}
+
+/* 빈칸 연습 */
+.cz-ctx{font-family:var(--serif);font-size:1.15rem;line-height:1.9;margin:0}
+.cz-blank{display:inline-block;min-width:4em;padding:0 .4em;border-bottom:2px solid var(--ink);text-align:center;font-weight:700}
+#czIn{flex:1;min-width:10em}

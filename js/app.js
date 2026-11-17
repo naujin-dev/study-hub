@@ -202,6 +202,7 @@ const routes = {
   '/gen': viewGen,
   '/plan': viewPlan,
   '/stats': viewStats,
+  '/cloze': viewCloze,
   '/settings': viewSettings,
   '/more': viewMore,
   '/journal': viewJournal,
@@ -217,7 +218,7 @@ const routes = {
   '/speed': viewSpeed,
 };
 // 아래 메뉴에서 켜질 칸. 암기카드·계획·시간 재기는 더보기에 들어 있으므로 더보기가 켜진다.
-const navOf = { '/speed': 'quiz', '/cards': 'quiz', '/flash': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
+const navOf = { '/cloze': 'study', '/speed': 'quiz', '/cards': 'quiz', '/flash': 'quiz', '/blank': 'study', '/': 'home', '/study': 'study', '/pack': 'study', '/pdf': 'study', '/quiz': 'quiz', '/run': 'quiz', '/wrong': 'wrong' };
 
 let onLeave = null;
 // 화면의 글에서 일본어(가나·한자 덩어리)는 lang="ja" 로 감싸고, 영어가 대부분인 문단은 lang="en" 으로.
@@ -432,7 +433,7 @@ function syncTitle() {
   document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · Folio` : 'Folio';
 }
 // 명조(원문)와 한자 글꼴 목록은 크다. 원문·문제를 보여 주는 화면에 처음 갈 때만 붙인다
-const READ_ROUTES = new Set(['/pack', '/run', '/blank', '/final', '/q', '/wrong', '/flash', '/marks', '/check', '/journal']);
+const READ_ROUTES = new Set(['/cloze', '/pack', '/run', '/blank', '/final', '/q', '/wrong', '/flash', '/marks', '/check', '/journal']);
 function ensureReadFonts() {
   if (ensureReadFonts.done) return;
   ensureReadFonts.done = true;
@@ -616,6 +617,8 @@ function nextSteps() {
     if (out.length >= 3) break;
   }
   const due = dueItems().length, wrong = wrongItems().length;
+  const cd = czDue(czAll()).length;
+  if (cd) out.push({ kind: '빈칸', text: `복습할 빈칸 ${Math.min(cd, 20)}개`, href: '#/cloze', sub: '' });
   if (due) out.push({ kind: '복습', text: `복습할 때 된 문제 ${Math.min(due, 30)}개`, href: '#/run?src=due', sub: due > 30 ? `전체 ${due}개 가운데 30개씩` : '' });
   if (wrong) out.push({ kind: '오답', text: `틀렸던 문제 ${Math.min(wrong, 30)}개 다시`, href: '#/run?src=wrong', sub: '' });
   if (out.length < 3) {
@@ -1134,7 +1137,7 @@ function viewPack() {
   ${book.length ? `<p class="small">${bookDone && !bookDone.skipped ? `책 문제 <b>${bookDone.ok}/${bookDone.n}</b> 맞힘 · ${S.fmtDate(S.dayOf(bookDone.t))} · ` : ''}<a href="#/run?book=${encodeURIComponent(p.id)}">책 문제 ${book.length}개 ${bookDone ? '다시 ' : ''}풀기</a></p>` : ''}
   <div class="row small muted" style="margin-bottom:10px">${subjDot(p.subject)} ${subjName(p.subject)}${p.unit ? ' · ' + esc(p.unit) : ''}${p.updated ? ' · ' + esc(String(p.updated).slice(0, 10)) : ''}${p._src === 'local' && D.db().packs.some(x => x._src === 'repo') ? ' <span class="tag vio">내 기기에 가져온 자료</span>' : ''}</div>
   ${p.summary ? `<p class="note info">${esc(p.summary)}</p>` : ''}
-  <label class="small noprint" style="display:inline-flex;gap:8px;align-items:center"><span class="muted">이 단원의 중요도</span><select data-imp="${esc(p.id)}" aria-label="중요도"><option value="">정하지 않음</option>${[[1, '낮음'], [2, '보통'], [3, '높음']].map(([n, l]) => `<option value="${n}"${UNIT_META(p.id).imp === n ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+  <label class="small noprint" style="display:inline-flex;gap:8px;align-items:center"><a class="btn sm" href="#/cloze?pack=${encodeURIComponent(p.id)}${czAll(p.id).length ? '' : '" aria-disabled="true'}">빈칸 연습 ${czAll(p.id).length}개</a> <span class="muted">이 단원의 중요도</span><select data-imp="${esc(p.id)}" aria-label="중요도"><option value="">정하지 않음</option>${[[1, '낮음'], [2, '보통'], [3, '높음']].map(([n, l]) => `<option value="${n}"${UNIT_META(p.id).imp === n ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
   <p class="small noprint" id="packPdfs" hidden></p>
   ${(p._mergedFrom || []).length ? `<p class="small muted noprint">합친 자료: ${p._mergedFrom.map(m => `${esc(m.title)}${m.auto ? ' (같은 단원이라 저절로)' : ''} <button class="btn sm ghost" data-unmerge="${esc(m.id)}">따로 보기</button>`).join(' · ')}</p>` : ''}
 
@@ -1490,7 +1493,7 @@ function bindSelection(roots, pack) {
   if (!selBar) {
     selBar = document.createElement('div');
     selBar.className = 'selbar noprint';
-    selBar.innerHTML = `${HL.COLORS.map(c => `<button type="button" data-c="${c.id}" class="hl-btn hl-${c.id}" aria-label="${c.name} 형광펜">${c.name}</button>`).join('')}<button type="button" data-memo class="btn sm">메모</button><button type="button" data-quick class="btn sm ghost" title="켜면 글자를 고르기만 해도 칠해진다">바로 칠하기</button><button type="button" data-x class="btn sm ghost" aria-label="닫기">✕</button>`;
+    selBar.innerHTML = `${HL.COLORS.map(c => `<button type="button" data-c="${c.id}" class="hl-btn hl-${c.id}" aria-label="${c.name} 형광펜">${c.name}</button>`).join('')}<button type="button" data-memo class="btn sm">메모</button><button type="button" data-cloze class="btn sm" title="고른 글자를 빈칸 문제로 만든다 (자료 원문은 그대로)">빈칸</button><button type="button" data-quick class="btn sm ghost" title="켜면 글자를 고르기만 해도 칠해진다">바로 칠하기</button><button type="button" data-x class="btn sm ghost" aria-label="닫기">✕</button>`;
     document.body.appendChild(selBar);
     quickPill = document.createElement('button');
     quickPill.type = 'button';
@@ -1548,6 +1551,17 @@ function bindSelection(roots, pack) {
       paint(f, c, false);
       toast('바로 칠하기를 켰다. 이제 글자를 고르기만 하면 칠해진다. 끌 때는 아래 띠를 누른다.');
       syncQuick();
+      return;
+    }
+    if (b.hasAttribute('data-cloze')) {
+      const t = f.a.text.trim();
+      if (t.length < 2 || t.length > 40) return toast('빈칸은 2~40자로 고른다.');
+      // 문맥 = 앞뒤 글자 + 고른 글자. 원문은 건드리지 않고 따로 저장한다
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      S.kvSet('cloze', id, { id, pack: pack.id, subject: pack.subject, ans: t, pre: f.a.prefix, suf: f.a.suffix, c: Date.now() });
+      window.getSelection().removeAllRanges(); hideSelBar();
+      toast('빈칸 문제를 만들었다.', 5000, { label: '되돌리기', fn: () => { S.kvDel('cloze', id); render.keepScroll = true; render(); } });
+      render.keepScroll = true; render();
       return;
     }
     const color = b.dataset.c || S.load('hlLast', 'y');
@@ -3351,6 +3365,53 @@ document.addEventListener('change', e => {
   if (u) { const id = u.dataset.und, v = Number(u.value) || 0; S.kvSet('punit', id, { ...UNIT_META(id), und: v || undefined }); toast('이해도를 저장했다.', 1500); }
   if (m) { const id = m.dataset.imp, v = Number(m.value) || 0; S.kvSet('punit', id, { ...UNIT_META(id), imp: v || undefined }); toast('중요도를 저장했다.', 1500); }
 });
+// ================= 빈칸 연습 (능동적 회상) =================
+// 자료에서 고른 글자를 가리고 직접 쓴다. 결과는 암기카드와 같은 복습 일정으로 기록된다 (키: cz::아이디).
+const czKey = id => 'cz::' + id;
+// 앞뒤 글자에 섞인 표 선·줄바꿈·마크다운 기호를 걷어 낸다 (저장된 원문은 그대로)
+const czTidy = t => String(t || '').replace(/[|#*>`]+/g, ' ').replace(/\s+/g, ' ');
+const czAll = pid => Object.values(S.kvAll('cloze')).filter(c => c.ans && (!pid || c.pack === pid)).sort((a, b) => a.c - b.c);
+function czDue(list) { const t = S.today(); return list.filter(c => { const r = S.cp(czKey(c.id)); return !r || !r.n || (r.due && r.due <= t); }); }
+let cz = null;
+function viewCloze() {
+  const { q } = params(), pid = q.get('pack') || '';
+  const all = czAll(pid);
+  if (!all.length) { main.innerHTML = `<div class="narrow"><h1>빈칸 연습</h1><p class="muted">아직 빈칸이 없다. 자료 화면에서 글자를 고르면 나오는 띠의 <b>빈칸</b> 을 누르면 만들어진다.</p><p><a class="btn" href="#/study">자료 보기</a></p></div>`; return; }
+  if (!cz || cz.pid !== pid || q.get('again')) {
+    const list = q.get('all') ? all : czDue(all);
+    const order = q.get('again') && cz ? cz.missed : null;
+    cz = { pid, items: (order || list).map(c => c.id), i: 0, ok: 0, missed: [], shown: false, t0: Date.now() };
+  }
+  const left = czAll(pid).filter(c => cz.items.includes(c.id));
+  if (!cz.items.length) { main.innerHTML = `<div class="narrow"><h1>빈칸 연습</h1><p class="muted">오늘 복습할 빈칸이 없다. 빈칸 ${all.length}개 모두 다음 복습일이 남았다.</p><p><a class="btn" href="#/cloze?${pid ? 'pack=' + encodeURIComponent(pid) + '&' : ''}all=1">전부 다시 풀기</a></p></div>`; return; }
+  if (cz.i >= cz.items.length) {
+    const n = cz.items.length;
+    main.innerHTML = `<div class="narrow"><h1>빈칸 연습 결과</h1><p class="result-line"><b>${cz.ok}/${n}</b> 맞힘 (${Math.round(cz.ok / n * 100)}%)</p>${cz.missed.length ? `<p><a class="btn pri" href="#/cloze?${pid ? 'pack=' + encodeURIComponent(pid) + '&' : ''}again=1">틀린 ${cz.missed.length}개 다시</a></p>` : '<p class="muted">전부 맞혔다. 다음 복습일에 다시 나온다.</p>'}<p><a class="btn" href="#/${pid ? 'pack?id=' + encodeURIComponent(pid) : 'study'}">자료로</a></p></div>`;
+    return;
+  }
+  const c = all.find(x => x.id === cz.items[cz.i]) || czAll().find(x => x.id === cz.items[cz.i]);
+  if (!c) { cz.i++; return viewCloze(); }
+  const pk = D.db().byId[c.pack];
+  main.innerHTML = `<div class="narrow"><div class="row between"><h1 style="margin:0">빈칸 연습</h1><span class="small muted" role="status">${cz.i + 1} / ${cz.items.length}</span></div>
+  <p class="small muted">${pk ? esc(pk.title) : ''}</p>
+  <section class="card"><p class="cz-ctx" data-cz="${esc(c.id)}"${langAttr(c.pre + c.ans + c.suf)}>…${esc(czTidy(c.pre))}<span class="cz-blank" id="czB">${cz.shown ? esc(c.ans) : '＿＿＿＿'}</span>${esc(czTidy(c.suf))}…</p>
+  <form id="czF" class="row" style="margin-top:10px"><input type="text" id="czIn" aria-label="빈칸에 들어갈 말" autocomplete="off" autocapitalize="off" spellcheck="false" ${cz.shown ? 'disabled' : ''} placeholder="빈칸에 들어갈 말"><button class="btn pri" ${cz.shown ? 'hidden' : ''}>확인</button><button type="button" class="btn ghost" id="czSkip" ${cz.shown ? 'hidden' : ''}>모르겠다</button></form>
+  <div id="czR" role="status">${cz.shown ? cz.msg : ''}</div>
+  <div class="row" style="margin-top:10px">${cz.shown ? `<button class="btn pri" id="czNext">${cz.i === cz.items.length - 1 ? '결과 보기' : '다음'}</button>${cz.last === 'wrong' ? '<button class="btn ghost" id="czOk">내 답도 맞다</button>' : ''}` : ''}<button class="btn ghost" id="czQuit">그만</button></div></section></div>`;
+  const inp = $('#czIn'); if (!cz.shown) inp.focus(); else $('#czNext').focus();
+  const done = (okk, typed) => {
+    S.recordCard(czKey(c.id), okk, Date.now() - cz.t0); cz.t0 = Date.now();
+    cz.shown = true; cz.last = okk ? 'ok' : 'wrong';
+    if (okk) cz.ok++; else cz.missed.push(c);
+    cz.msg = okk ? '<p><span class="tag ok">맞음</span></p>' : `<p><span class="tag bad">틀림</span> 정답: <b>${esc(c.ans)}</b>${typed ? ` · 내 답: ${esc(typed)}` : ''}</p>`;
+    render.keepScroll = true; viewCloze();
+  };
+  $('#czF').addEventListener('submit', e => { e.preventDefault(); const v = inp.value.trim(); if (!v) return toast('답을 쓴다.'); done(norm(v) === norm(c.ans), v); });
+  $('#czSkip')?.addEventListener('click', () => done(false, ''));
+  $('#czNext')?.addEventListener('click', () => { cz.i++; cz.shown = false; viewCloze(); });
+  $('#czOk')?.addEventListener('click', () => { S.recordCard(czKey(c.id), true, 0); cz.ok++; cz.missed = cz.missed.filter(x => x.id !== c.id); cz.last = 'ok'; cz.msg = '<p><span class="tag ok">맞음으로 고쳤다</span></p>'; viewCloze(); });
+  $('#czQuit').addEventListener('click', () => { cz.i = cz.items.length; viewCloze(); });
+}
 function viewStats() {
   const series = dailySeries();
   const last = series[series.length - 1];
@@ -4520,6 +4581,7 @@ const SCREENS = [
     ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기', '타이머 스톱워치 뽀모도로 시간'],
     ['#/pdf', 'PDF 모아보기', '공부 Claude 에게 받은 PDF 원본. 이 기기에만 저장', 'pdf 원본 파일'],
     ['#/journal', '공부 일지', '날짜별로 쌓인 공부 흔적과 한 줄 회고', '일기 회고 기록 날짜'],
+    ['#/cloze', '빈칸 연습', '자료에서 고른 글자를 가리고 직접 써서 확인', '빈칸 클로즈 암기 회상'],
     ['#/blank', '백지 복습', '자료를 덮고 기억나는 걸 다 써 본 뒤 비교', '백지 파인만 써 보기'],
     ['#/final', '시험 전 정리', '과목별 단원 메모·형광펜·오답·헷갈린 문제를 한 장으로', '직전 요약 한 장 최종'],
     ['#/check', '자료 점검', '공부자료에 표시 오류나 형식 문제가 있는지 찾기', '오류 검사'],
