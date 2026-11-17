@@ -107,7 +107,7 @@ function planList() {
   const kv = S.kvAll('plan');
   const nis = notionItems();
   const ids = new Set(nis.map(n => n.id));
-  const merged = nis.map(n => (kv[n.id] ? { ...n, ...kv[n.id], notion: true, text: n.text, group: n.group, date: n.date, done: !!(kv[n.id].done || n.done) } : n));
+  const merged = nis.map(n => (kv[n.id] ? { ...n, ...kv[n.id], notion: true, text: n.text, group: n.group, date: kv[n.id].moved || n.date, orig: n.date, done: !!(kv[n.id].done || n.done) } : n));
   const mine = Object.values(kv).filter(x => !ids.has(x.id) && !x.notion).map(p => ({ ...p }));
   return [...merged, ...mine].sort((a, b) => ((a.date || '9') + a.id).localeCompare((b.date || '9') + b.id));
 }
@@ -115,7 +115,7 @@ function setPlan(id, patch) {
   const cur = S.kvGet('plan', id) || notionItems().find(n => n.id === id);
   if (!cur) return;
   const { u, ...rest } = cur;
-  S.kvSet('plan', id, rest.notion ? { id, notion: true, done: rest.done, ...patch } : { ...rest, ...patch });
+  S.kvSet('plan', id, rest.notion ? { id, notion: true, done: rest.done, ...(rest.moved ? { moved: rest.moved } : {}), ...(rest.hidden ? { hidden: true } : {}), ...patch } : { ...rest, ...patch });
 }
 // 계획 글의 자료 id(kor-02-sokmiingok, (eng-03) 등)는 '자료 →' 버튼이 대신하므로 글에서 뺀다
 const PID = '[a-z]{3}-(?:n)?\\d+[a-z]?(?:-[a-z0-9]+)*';
@@ -582,6 +582,62 @@ function unitMetrics() {
 function priorities(sel) {
   return unitMetrics().filter(u => u.score > 0 && (!sel || u.pack.subject === sel)).sort((a, b) => b.score - a.score);
 }
+// ===== 단원 숙달 5단계 (공부 시간이나 열람만으로는 올리지 않는다) =====
+// 0 미학습 / 1 학습 중 (읽었거나 문제를 풀기 시작) / 2 기억 확인 (백지 복습 70% 이상 또는 빈칸 3개를 복습 2단계 이상으로 회상)
+// 3 문제 적용 (문제의 60%(최대 10개) 이상 풀고 정답률 80%+, 풀이 절반 이상이 '확신 있게 연속 2번 정답', 밀린 복습 없음)
+// 4 실전 검증 (3단계 조건 + 시간 제한 있는 시험에서 5문제 이상 풀어 확신 있는 정답 85%+)
+const STAGES = ['미학습', '학습 중', '기억 확인', '문제 적용', '실전 검증'];
+const isUnitPack = pk => (pk.questions || []).length && !/^(kor-n0|his-n0|soc-n0|eng-1[789]-|eng-20-|eng-rp-)|mock|-ai$/.test(pk.id);
+const sureOk = (r, e) => (e ? e.r === 'ok' : r.last === 'ok') && ((e ? e.conf : r.cf) !== 'unsure') && ((e ? e.conf : r.cf) !== 'guess');
+function unitMastery() {
+  const prog = S.getProgress(), bl = Object.values(S.kvAll('blank')), czs = czAll(), out = {};
+  for (const u of unitMetrics()) {
+    const pk = u.pack; if (!isUnitPack(pk)) continue;
+    let mastered = 0, eN = 0, eOk = 0;
+    for (const q of pk.questions) {
+      const k = D.qkey(pk, q), r = prog[k]; if (!r || !r.n) continue;
+      if ((r.streak || 0) >= 2 && sureOk(r)) mastered++;
+      for (const e of S.attemptsOf(k)) if (e.exam) { eN++; if (sureOk(null, e)) eOk++; }
+    }
+    const blankBest = Math.max(0, ...bl.filter(b => b.pack === pk.id).map(b => b.cov || 0));
+    const czP = czs.filter(c => c.pack === pk.id), czRec = czP.filter(c => (S.cp('cz::' + c.id)?.box || 0) >= 2).length;
+    const read = S.readTimeOf(pk.id);
+    const recall = blankBest >= 70 || czRec >= 3;
+    const apply = u.tried >= Math.min(10, Math.ceil(u.total * 0.6)) && u.rate != null && u.rate >= 0.8 && mastered >= Math.ceil(u.tried * 0.5) && u.late === 0;
+    const exam = apply && eN >= 5 && eOk / eN >= 0.85;
+    let st = 0;
+    if (read >= 60 || u.tried || blankBest || czP.some(c => S.cp('cz::' + c.id)?.n)) st = 1;
+    if (st && recall) st = 2;
+    if (apply) st = 3;
+    if (exam) st = 4;
+    out[pk.id] = { ...u, stage: st, mastered, eN, eOk, blankBest, czRec, czN: czP.length, read, recall, apply, exam, noRecall: apply && !recall };
+  }
+  return out;
+}
+// 과목별 다음 학습 활동 (단계 0~3 에서 다음 단계로 가려면 무엇을 하는가)
+const STRAT = {
+  kor: ['교과서 작품·개념을 읽고 갈래, 시어, 인물, 표현상 특징을 자료 노트로 정리한다', '작품 원문을 덮고 시어 뜻과 표현상 특징을 빈칸·백지 복습으로 쓴다', '<보기> 적용·선지 판단 문제를 풀고, 틀린 선지는 근거 문장을 찾아 적는다', '지문 변형 문제와 서술형을 시간 재고 풀어 조건(문장 수·포함할 말)을 지켰는지 본다'],
+  eng: ['지문을 읽고 어휘와 구문을 정리한다 (단어장·카드)', '지문의 구조(주제·흐름)와 핵심 구문을 덮고 한국어로 설명하거나 빈칸으로 쓴다', '어법·어휘·순서·삽입 변형 문제를 풀고, 틀린 것은 근거 문장에 표시한다', '서술형 조건 영작과 요약문 (A)(B) 를 시간 재고 직접 쓴다'],
+  soc: ['핵심 개념을 개념 간 관계(원인·결과·비교)로 정리한다', '개념 정의와 비교표를 가리고 빈칸으로 쓴다', '자료·표·그래프 해석 문제와 사례 적용 문제를 푼다 (계산 문제는 손으로 풀이)', '서술형(작성 방법 조건)을 시간 재고 직접 쓴다'],
+  sci: ['과학 원리를 읽고 개념 간 관계를 도식으로 그린다', '원리와 식을 덮고 말로 설명한다', '자료 분석·응용 문제를 풀고 풀이 근거를 적는다', '서술형과 고난도 응용을 시간 재고 푼다'],
+  his: ['시대 흐름을 연표로 정리하고 사건·인물을 연결한다', '연표와 사건·인물 연결을 덮고 빈칸으로 쓴다', '사료 제시형·순서 배열·합답형 문제를 푼다', '서술형 ("첫째, 둘째" 조건)을 시간 재고 직접 쓴다'],
+  lab: ['실험의 목적, 변인, 과정, 결과를 정리한다', '변인 통제와 과정을 덮고 순서대로 쓴다', '결과 해석과 오차 분석 문제를 푼다', '실험 서술형 (변인·결과·오차 원인) 을 시간 재고 쓴다'],
+  jpn: ['어휘와 문형을 읽고 카드로 정리한다', '활용표와 문형을 덮고 빈칸으로 쓴다', '문법 활용·문장 구성·독해 문제를 푼다', '표현 서술형과 문장 만들기를 시간 재고 쓴다'],
+  math: ['개념과 공식을 정리하고 예제를 따라 푼다', '공식과 증명을 덮고 직접 유도해 본다', '유형별 문제를 풀고 풀이 과정까지 검증한다', '고난도 문제와 반복 오답을 시간 재고 푼다'],
+};
+const stratOf = (sub, stage) => (STRAT[sub] || STRAT.kor)[Math.min(stage, 3)];
+// 실전(시간 제한) 시험 기록: 시험 모드로 푼 풀이를 세션별로 묶는다
+function examSessions() {
+  const by = {};
+  for (const e of S.getEvents()) {
+    if (e.k !== 'a' || !e.exam || !e.sess) continue;
+    const pid = String(e.key).split('::')[0], sub = D.db().byId[pid]?.subject || '';
+    const o = by[e.sess] || (by[e.sess] = { sess: e.sess, t: e.t, n: 0, ok: 0, part: 0, subs: {} });
+    o.n++; if (e.r === 'ok') o.ok++; else if (e.r === 'part') o.part++;
+    o.t = Math.min(o.t, e.t); o.subs[sub] = (o.subs[sub] || 0) + 1;
+  }
+  return Object.values(by).sort((a, b) => b.t - a.t).map(o => ({ ...o, sub: Object.entries(o.subs).sort((a, b) => b[1] - a[1])[0]?.[0] || '', day: S.dayOf(o.t), pct: Math.round(o.ok / o.n * 100) }));
+}
 const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60 || l.free >= 60));
 // 쉬는 요일로 정한 날은 공부를 안 해도 연속이 끊기지 않는다 (센 날수에는 안 넣는다)
 const restDays = () => S.kvGet('prefs', 'rest')?.days || [];
@@ -642,6 +698,41 @@ function nextSteps() {
     if (weak) out.push({ kind: '덜 한 과목', text: `${subjName(weak[0])} · ${weak[1].fresh.title}`, href: '#/run?pack=' + encodeURIComponent(weak[1].fresh.id), sub: `지금까지 ${weak[1].tried}문제 풀었다` });
   }
   return out;
+}
+// 홈: 과목별 학습 상태. 기록이 없는 칸은 '미기록'으로 둔다 (만들어 낸 숫자는 없다)
+function learnBoard() {
+  const M = unitMastery(), ex = examSessions(), mlog = mathMastery();
+  const causes = {}, cname = Object.fromEntries(CAUSES);
+  for (const x of wrongItems()) { const c = causeOf(x.key); if (c) { const sub = x.pack.subject; (causes[sub] || (causes[sub] = {}))[c] = (causes[sub][c] || 0) + 1; } }
+  const wrongBy = {}, dueBy = {};
+  for (const x of wrongItems()) wrongBy[x.pack.subject] = (wrongBy[x.pack.subject] || 0) + 1;
+  for (const x of dueItems()) dueBy[x.pack.subject] = (dueBy[x.pack.subject] || 0) + 1;
+  const cards = SUBJECTS.map(sb => {
+    const us = Object.values(M).filter(u => u.pack.subject === sb.id);
+    if (!us.length) return `<li class="lb-c"><h3>${subjDot(sb.id)} ${sb.name}</h3><p class="small muted">자료·문제 미기록</p></li>`;
+    const cnt = [0, 0, 0, 0, 0]; us.forEach(u => cnt[u.stage]++);
+    const hi = us.filter(u => u.stage >= 3).length;
+    const lastEx = ex.find(e => e.sub === sb.id);
+    const weak = us.filter(u => u.score > 0).sort((a, b) => b.score - a.score).slice(0, 2);
+    const cs = Object.entries(causes[sb.id] || {}).sort((a, b) => b[1] - a[1])[0];
+    const next = us.filter(u => u.stage < 4).sort((a, b) => b.score - a.score || a.stage - b.stage)[0];
+    return `<li class="lb-c"><h3>${subjDot(sb.id)} ${sb.name} <span class="small muted">숙달 ${hi}/${us.length}단원</span></h3>
+      <div class="lb-bar" role="img" aria-label="${STAGES.map((n, i) => n + ' ' + cnt[i] + '개').join(', ')}">${cnt.map((n, i) => n ? `<i class="st${i}" style="flex:${n}" title="${STAGES[i]} ${n}"></i>` : '').join('')}</div>
+      <p class="small muted lb-leg">${cnt.map((n, i) => n ? `${STAGES[i]} ${n}` : '').filter(Boolean).join(' · ')}</p>
+      <dl class="lb-d"><dt>복습·오답</dt><dd>${dueBy[sb.id] ? `복습 ${dueBy[sb.id]}` : '복습 0'} · ${wrongBy[sb.id] ? `<a href="#/wrong?s=${sb.id}">오답 ${wrongBy[sb.id]}</a>` : '오답 0'}</dd>
+      <dt>최근 실전</dt><dd>${lastEx ? `${lastEx.pct}% (${lastEx.ok}/${lastEx.n}) · ${S.fmtDate(lastEx.day)}` : '미기록'}</dd>
+      <dt>취약 개념</dt><dd>${weak.length ? weak.map(u => `<a href="#/run?pack=${encodeURIComponent(u.pack.id)}&focus=1">${esc(u.pack.title.slice(0, 22))}</a>`).join(', ') : '미기록'}</dd>
+      <dt>반복 감점 원인</dt><dd>${cs ? `${cname[cs[0]] || cs[0]} ${cs[1]}개` : '원인을 안 적음'}</dd></dl>
+      ${next ? `<p class="small lb-next"><b>다음:</b> ${esc(stratOf(sb.id, next.stage))} <a href="#/pack?id=${encodeURIComponent(next.pack.id)}">${esc(next.pack.title.slice(0, 16))}</a></p>` : '<p class="small lb-next">모든 단원이 실전 검증 단계다.</p>'}</li>`;
+  }).join('');
+  const ml = mlog.rows.length ? `<li class="lb-c"><h3>수학 <span class="small muted">문제 해결 기록</span></h3><p class="small muted">유형 ${mlog.rows.length}개 · 푼 문제 ${mlog.rows.reduce((a, r) => a + r.n, 0)}개 · 정답률 ${Math.round(mlog.rows.reduce((a, r) => a + r.ok, 0) / Math.max(1, mlog.rows.reduce((a, r) => a + r.n, 0)) * 100)}%</p><p class="small"><a href="#/math">수학 기록</a></p></li>` : '';
+  const last = S.load('coachLast', {}).next;
+  const exRows = ex.slice(0, 3).map(e => `<li>${S.fmtDate(e.day)} · ${e.sub ? subjName(e.sub) : '여러 과목'} · ${e.n}문제 중 ${e.ok}개 (${e.pct}%)</li>`).join('');
+  return `<section class="card flat lb" aria-labelledby="lbH"><div class="row between"><h2 id="lbH" style="margin:0">학습 상태</h2><span class="small muted">단계: ${STAGES.join(' → ')}</span></div>
+    <p class="small muted" style="margin:4px 0 10px">단계는 문제 풀이 결과·백지 복습·빈칸·시험 기록으로만 올라간다. 읽기만 해서는 오르지 않는다.</p>
+    <ul class="lb-g">${cards}${ml}</ul>
+    <div class="lb-f"><div><h3>최근 실전 시험</h3>${exRows ? `<ul class="plain small">${exRows}</ul>` : '<p class="small muted">미기록. 문제 풀기에서 방식을 "실전"으로 풀면 기록된다.</p>'}</div>
+    <div><h3>AI 추천 (${last ? esc(last.at) : '아직 없음'})</h3>${last ? `<p class="small">${esc(last.text.replace(/[#*]/g, '').split('\n').filter(Boolean).slice(0, 3).join(' ').slice(0, 220))}…</p>` : '<p class="small muted">아직 받은 추천이 없다.</p>'}<a class="btn sm" href="#/coach">${last ? '자세히 보기' : '추천 받기'}</a></div></div></section>`;
 }
 function priorityCard() {
   const list = priorities().slice(0, 5);
@@ -727,6 +818,7 @@ function viewHome() {
   </header>
   ${nextCard()}
   ${backupNote()}
+  ${learnBoard()}
 
   ${!packs.length ? `<section class="card"><h2>아직 공부자료가 없다</h2>
     <p>과목별 공부자료 Claude 에게 <a href="#/prompts">프롬프트</a> 를 복사해서 보내고 자료를 받은 뒤,</p>
@@ -2714,7 +2806,7 @@ function viewSummary() {
 
 // ================= 오답노트 =================
 // 키는 예전 기록과 같게 두고(concept·memo·mistake·read·time), 새 원인만 더한다
-const CAUSES = [['concept', '개념 부족'], ['confuse', '개념 혼동'], ['calc', '계산 실수'], ['read', '문제 해석 오류'], ['memo', '암기 부족'], ['time', '시간 부족'], ['mistake', '단순 실수'], ['other', '기타']];
+const CAUSES = [['concept', '개념 부족'], ['confuse', '개념 혼동'], ['calc', '계산·표기 실수'], ['read', '문제 해석 오류'], ['memo', '암기 부족'], ['time', '시간 부족'], ['mistake', '단순 실수'], ['other', '기타']];
 const causeOf = key => S.kvGet('wcause', key)?.cause || '';
 // 오늘의 복습 요약 + 취약 단원 (기록에서 매번 계산한다. 따로 저장하지 않는다)
 function reviewBoard(sel, un) {
@@ -3414,11 +3506,11 @@ function viewCoach() {
 }
 // 취약점 지도: 과목별로 단원을 우선순위 순으로. 색은 정답률 (공부 시간이 아니라 성취도)
 function weakMapHtml() {
-  const all = unitMetrics();
+  const all = unitMetrics(), MS = unitMastery();
   if (!all.some(u => u.tried)) return '';
   const col = r => r == null ? 'na' : r < 0.6 ? 'r1' : r < 0.75 ? 'r2' : r < 0.9 ? 'r3' : 'r4';
   const row = u => `<tr>
-        <th scope="row"><a href="#/wrong?u=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a>${u.score > 0 ? ' <span class="tag warn">우선</span>' : ''}</th>
+        <th scope="row"><a href="#/wrong?u=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a>${MS[u.pack.id] ? ` <span class="tag">${STAGES[MS[u.pack.id].stage]}</span>` : ''}${u.score > 0 ? ' <span class="tag warn">우선</span>' : ''}</th>
         <td class="mono">${u.tried}/${u.total}</td>
         <td><span class="wm-bar ${col(u.rate)}" role="img" aria-label="정답률 ${u.rate == null ? '기록 부족' : Math.round(u.rate * 100) + '%'}"><i style="width:${u.rate == null ? 0 : Math.round(u.rate * 100)}%"></i></span> <span class="mono small">${u.rate == null ? '–' : Math.round(u.rate * 100) + '%'}</span></td>
         <td class="mono">${u.wrong || '–'}</td><td class="mono">${u.rep || '–'}</td>
@@ -3488,6 +3580,35 @@ function viewCloze() {
   $('#czOk')?.addEventListener('click', () => { S.recordCard(czKey(c.id), true, 0); cz.ok++; cz.missed = cz.missed.filter(x => x.id !== c.id); cz.last = 'ok'; cz.msg = '<p><span class="tag ok">맞음으로 고쳤다</span></p>'; viewCloze(); });
   $('#czQuit').addEventListener('click', () => { cz.i = cz.items.length; viewCloze(); });
 }
+// 수학 문제 해결 기록: 유형별로 푼 수·맞힌 수·풀이 과정 검증·고난도 여부를 남긴다 (시간 기록과 별개)
+function mathMastery() {
+  const by = {};
+  for (const r of Object.values(S.kvAll('mlog'))) { const o = by[r.topic] || (by[r.topic] = { topic: r.topic, n: 0, ok: 0, ver: 0, hard: 0, wrong: {} }); o.n += r.n; o.ok += r.ok; if (r.verified) o.ver += r.n; if (r.hard) o.hard += r.n; if (r.ok < r.n && r.cause) o.wrong[r.cause] = (o.wrong[r.cause] || 0) + (r.n - r.ok); }
+  const rows = Object.values(by).map(o => ({ ...o, rate: o.n ? o.ok / o.n : null, stage: o.n >= 10 && o.ok / o.n >= 0.85 && o.ver / o.n >= 0.5 ? (o.hard >= 3 ? 4 : 3) : 1 })).sort((a, b) => a.rate - b.rate);
+  return { rows };
+}
+function mathLogCard() {
+  const { rows } = mathMastery(), cname = Object.fromEntries(CAUSES);
+  const topics = rows.map(r => r.topic);
+  return `<section class="card flat" id="mlog"><h2 style="margin-top:0">문제 해결 기록</h2>
+    <p class="small muted">푼 문제를 유형별로 적는다. 풀이 과정까지 검증한 문제만 숙달로 센다 (유형당 10문제 이상, 정답률 85%+, 절반 이상 검증).</p>
+    <form id="mlogF" class="grid" style="align-items:end"><label class="field"><span>유형</span><input name="topic" list="mlogT" required placeholder="예: 등차수열의 합"><datalist id="mlogT">${topics.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
+    <label class="field"><span>푼 문제</span><input type="number" name="n" min="1" max="200" required value="5"></label>
+    <label class="field"><span>맞힌 문제</span><input type="number" name="ok" min="0" max="200" required value="5"></label>
+    <label class="field"><span>틀린 주된 이유</span><select name="cause"><option value="">-</option>${CAUSES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label></form>
+    <div class="row small"><label><input type="checkbox" name="verified" form="mlogF"> 풀이 과정까지 검증함</label><label><input type="checkbox" name="hard" form="mlogF"> 고난도 문제</label><button class="btn pri sm" form="mlogF">기록</button></div>
+    ${rows.length ? `<div class="tbl-wrap"><table class="wm"><thead><tr><th>유형</th><th>푼 문제</th><th>정답률</th><th>검증</th><th>주된 오답 이유</th><th>단계</th></tr></thead><tbody>${rows.map(r => { const w = Object.entries(r.wrong).sort((a, b) => b[1] - a[1])[0]; return `<tr><th scope="row">${esc(r.topic)}</th><td class="mono">${r.n}</td><td class="mono">${Math.round(r.rate * 100)}%</td><td class="mono">${Math.round(r.ver / r.n * 100)}%</td><td>${w ? `${cname[w[0]] || w[0]} ${w[1]}` : '–'}</td><td><span class="tag">${STAGES[r.stage]}</span></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="small muted">아직 기록이 없다.</p>'}</section>`;
+}
+document.addEventListener('submit', e => {
+  const f = e.target.closest?.('#mlogF');
+  if (!f) return;
+  e.preventDefault();
+  const n = Number(f.n.value), ok = Number(f.ok.value);
+  if (!f.topic.value.trim() || !(n > 0) || ok < 0 || ok > n) return toast('푼 문제와 맞힌 문제를 확인한다.');
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  S.kvSet('mlog', id, { id, topic: f.topic.value.trim(), n, ok, cause: f.cause.value, verified: !!document.querySelector('input[name="verified"][form="mlogF"]:checked'), hard: !!document.querySelector('input[name="hard"][form="mlogF"]:checked'), t: Date.now() });
+  toast('기록했다.', 1500); render.keepScroll = true; render();
+});
 function viewStats() {
   const series = dailySeries();
   const last = series[series.length - 1];
@@ -4493,6 +4614,7 @@ function viewMath() {
   const days = Array.from({ length: 7 }, (_, i) => S.addDays(today, -i));
   main.innerHTML = `
   <h1>공부 시간 재기</h1>
+  ${mathLogCard()}
   <p class="small muted">수학은 공부자료 없이 공부한 시간만 잰다. 다른 과목도 책으로 공부할 때 여기서 잴 수 있다. 잰 시간은 공부 일지, 기록 그래프, 과목별 시간에 들어간다.</p>
 
   <section class="card">

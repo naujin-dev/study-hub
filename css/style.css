@@ -892,3 +892,15 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 #czIn{flex:1;min-width:10em}
 
 .no-anim *,.no-anim *::before,.no-anim *::after{transition:none !important;animation:none !important;scroll-behavior:auto !important}
+
+/* 학습 상태 대시보드 */
+.lb-g{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.lb-c{border:1px solid var(--rule);border-radius:10px;padding:12px;background:var(--card)}
+.lb-c h3{margin:0 0 8px;font-size:1rem}
+.lb-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--sunk);gap:1px}
+.lb-bar i{display:block;min-width:4px}
+.lb-bar .st0{background:var(--rule2)}.lb-bar .st1{background:color-mix(in srgb,var(--acc) 30%,var(--card))}.lb-bar .st2{background:color-mix(in srgb,var(--acc) 55%,var(--card))}.lb-bar .st3{background:color-mix(in srgb,var(--acc) 80%,var(--card))}.lb-bar .st4{background:var(--ok)}
+.lb-leg{margin:4px 0 8px}
+.lb-d{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:.85rem}.lb-d dt{color:var(--ink3)}.lb-d dd{margin:0}
+.lb-next{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--rule)}
+.lb-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:14px}.lb-f h3{margin:0 0 6px;font-size:.95rem}
