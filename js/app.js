@@ -191,6 +191,7 @@ themeBtn.addEventListener('click', () => {
 
 // ---------- 라우터 ----------
 const routes = {
+  '/mock': viewMock,
   '/': viewHome,
   '/study': viewStudy,
   '/pack': viewPack,
@@ -2770,7 +2771,7 @@ function examBlock(items, res) {
     ${unsure ? `<p class="small muted">맞혔지만 확신이 없던 문제가 ${unsure}개다. 이것은 숙달로 세지 않고 복습에 다시 나온다.</p>` : ''}
     <div class="tbl-wrap"><table class="wm"><thead><tr><th>단원</th><th>맞힘/푼 문제</th></tr></thead><tbody>${units.map(u => `<tr><th scope="row">${esc(u.pack.title.slice(0, 28))}</th><td class="mono">${u.ok}/${u.n}</td></tr>`).join('')}</tbody></table></div>
     ${Object.keys(cs).length ? `<p class="small">감점 원인: ${Object.entries(cs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</p>` : ''}
-    ${weak.length ? `<p class="small"><b>다음에 할 일:</b> ${weak.slice(0, 3).map(u => `<a href="#/run?pack=${encodeURIComponent(u.pack.id)}&focus=1">${esc(u.pack.title.slice(0, 16))} 다시 풀기</a>`).join(' · ')}. 끝난 기준은 그 단원 정답률 80% 이상이다.</p>` : '<p class="small">틀린 문제가 없다.</p>'}</section>`;
+    ${weak.length ? `<p class="small"><a class="btn sm" href="#/mock">취약 단원 모의고사 만들기</a></p><p class="small"><b>다음에 할 일:</b> ${weak.slice(0, 3).map(u => `<a href="#/run?pack=${encodeURIComponent(u.pack.id)}&focus=1">${esc(u.pack.title.slice(0, 16))} 다시 풀기</a>`).join(' · ')}. 끝난 기준은 그 단원 정답률 80% 이상이다.</p>` : '<p class="small">틀린 문제가 없다.</p>'}</section>`;
 }
 function viewSummary() {
   const items = session.items;
@@ -2867,6 +2868,7 @@ function viewWrong() {
   const un = q.get('u') || '';
   const prog = S.getProgress();
   const items = wrongItems().filter(x => (!sel || x.pack.subject === sel) && (!un || x.pack.id === un) && (!cz || (cz === 'none' ? !causeOf(x.key) : causeOf(x.key) === cz)));
+  items.sort((a, b) => (S.qp(b.key)?.wn || 0) - (S.qp(a.key)?.wn || 0));
   const unitList = [...new Map(wrongItems().filter(x => !sel || x.pack.subject === sel).map(x => [x.pack.id, x.pack])).values()];
   const subjects = SUBJECTS.filter(s => wrongItems().some(x => x.pack.subject === s.id));
   main.innerHTML = `
@@ -2898,7 +2900,8 @@ function viewWrong() {
       ${r.fb?.missing ? `<p><b>AI 피드백</b> ${esc(r.fb.missing)}</p>` : ''}
       ${r.fb?.reason ? `<p><b>AI 피드백</b> ${esc(r.fb.reason)}</p>` : ''}
       ${qq.explanation ? `<p><b>해설</b> ${esc(qq.explanation)}</p>` : ''}
-      <p class="small muted">${esc(x.pack.title)} · 마지막 ${esc(r.at || '')}</p>
+      <p class="small muted">${esc(x.pack.title)} · 마지막 ${esc(r.at || '')}${r.cf === 'unsure' || r.cf === 'guess' ? ' · <span class="tag warn">확신 없이 푼 기록</span>' : ''}</p>
+      <p class="small"><a href="#/pack?id=${encodeURIComponent((packsOfKey(x.key)[0] || x.pack).id)}">개념·자료 보기</a> · <button type="button" class="btn sm ghost" data-sim="${esc(x.key)}">비슷한 문제 5개 풀기</button> <span class="muted">확신 있게 두 번 맞히면 숙달로 센다</span></p>
       <div class="chips" style="margin:6px 0"><span class="small muted" style="align-self:center">왜 틀렸나</span>${CAUSES.map(([v, l]) => `<button type="button" class="chip${causeOf(x.key) === v ? ' on' : ''}" data-cause="${v}" data-ck="${esc(x.key)}">${l}</button>`).join('')}</div>
       <div class="row"><button class="btn sm" data-one="${esc(x.key)}">이 문제 풀기</button><a class="btn sm ghost" href="#/q?key=${encodeURIComponent(x.key)}">풀이 이력 ${r.n}번</a><button class="btn sm ghost" data-done="${esc(x.key)}">이제 안다 (빼기)</button></div>
     </details>`;
@@ -2906,6 +2909,15 @@ function viewWrong() {
   $$('input[name="ws"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/wrong' + (r.value ? '?s=' + r.value : ''); }));
   $('#wUnit')?.addEventListener('change', e => { const u = new URLSearchParams({ ...(sel ? { s: sel } : {}), ...(cz ? { c: cz } : {}), ...(e.target.value ? { u: e.target.value } : {}) }).toString(); location.hash = '#/wrong' + (u ? '?' + u : ''); });
   $('#retry')?.addEventListener('click', () => startSession(shuffle(items), 'practice'));
+  $$('[data-sim]').forEach(b => b.addEventListener('click', () => {
+    const src = items.find(x => x.key === b.dataset.sim) || D.allQuestions().find(x => x.key === b.dataset.sim); if (!src) return;
+    const prog = S.getProgress();
+    const w = k => (prog[k]?.wrong ? 2 : 0) + (prog[k]?.n ? 0 : 1);
+    const pool = D.allQuestions().filter(x => x.key !== src.key && x.pack.id === src.pack.id && x.q.type === src.q.type);
+    const pick = pool.sort((a, b2) => w(b2.key) - w(a.key)).slice(0, 5);
+    if (!pick.length) return toast('같은 단원에 비슷한 유형의 다른 문제가 없다.');
+    startSession([src, ...pick], 'practice');
+  }));
   $$('[data-one]').forEach(b => b.addEventListener('click', () => startSession(items.filter(x => x.key === b.dataset.one), 'practice')));
   $$('[data-done]').forEach(b => b.addEventListener('click', () => { S.setFlag(b.dataset.done, 'wrong', false); toast('오답노트에서 뺐다.'); render.keepScroll = true; render(); }));
 }
@@ -3355,6 +3367,19 @@ function planProposals() {
   // 4) 이미 숙달한 단원의 앞으로 남은 계획은 숨김 제안 (숨김은 되돌릴 수 있다)
   const hide = list.filter(p => !p.done && p.date && p.date >= t && p.notion).filter(p => { const pk = planPack(p); return pk && (M[pk.id]?.stage ?? 0) >= 3; }).slice(0, 6);
   if (hide.length) out.push({ key: 'hide', title: `이미 '문제 적용' 이상인 단원의 앞으로 계획 ${hide.length}개를 숨기기`, why: '푼 결과가 기준을 넘긴 단원이다. 숨겨도 Notion 계획은 그대로고, 되돌리기로 다시 보인다.', changes: hide.map(p => ({ kind: 'hide', id: p.id, prev: false, text: planText(p.text) })) });
+  // 5) 하루에 5개를 넘는 날은 넘치는 것을 다음 날로 (여유 시간을 남긴다)
+  const byDay = {};
+  for (const p of list) if (!p.done && p.date && p.date >= t) (byDay[p.date] || (byDay[p.date] = [])).push(p);
+  const over = [];
+  for (const d of Object.keys(byDay).sort()) { const l = byDay[d]; if (l.length > 5) for (const p of l.slice(5)) over.push({ kind: 'move', id: p.id, to: S.addDays(d, 1), notion: !!p.notion, prev: p.notion ? (S.kvGet('plan', p.id)?.moved || '') : p.date, text: planText(p.text) }); }
+  if (over.length) out.push({ key: 'load', title: `하루 5개가 넘는 날의 ${Math.min(over.length, 8)}개를 다음 날로 넘기기`, why: '한 날에 너무 많이 몰리면 복습과 쉬는 시간이 먼저 밀린다. 첫 5개는 그대로 두고 나머지만 하루 뒤로 옮긴다.', changes: over.slice(0, 8) });
+  // 6) 시험이 4주 안으로 들어오면 모의고사(시간 재고 풀기)를 계획에 넣는다
+  const first = examInfo().first, dl = first ? S.daysBetween(t, first) : null;
+  if (dl != null && dl >= 0 && dl <= 28) {
+    const stg = {}; for (const u of Object.values(M)) (stg[u.pack.subject] || (stg[u.pack.subject] = [])).push(u.stage);
+    const subs = Object.entries(stg).map(([sb, a]) => [sb, a.reduce((x, y) => x + y, 0) / a.length]).sort((a, b) => a[1] - b[1]).slice(0, 2).map(x => x[0]).filter(sb => !list.some(p => p.id === `ai-mock-${t}-${sb}`));
+    if (subs.length) out.push({ key: 'mock', title: `시험 ${dl}일 전: 모의고사 ${subs.map(subjName).join(', ')} 1회씩 넣기`, why: '시험이 가까워지면 단원별 공부보다 시간 재고 푸는 연습의 비중을 늘린다. 단계가 가장 낮은 과목부터 넣는다.', changes: subs.map((sb, i) => ({ kind: 'add', id: `ai-mock-${t}-${sb}`, item: { id: `ai-mock-${t}-${sb}`, date: S.addDays(t, 2 + i * 2), subject: sb, text: `${subjName(sb)} 모의고사 1회 — 모의고사 만들기에서 시간 재고 풀기 (완료: 시험 분석 확인, 틀린 단원 다시 풀기)`, done: false, c: Date.now(), ai: true }, text: `${subjName(sb)} 모의고사 1회` })) });
+  }
   return out;
 }
 function planReviewCard() {
@@ -3646,6 +3671,40 @@ const czTidy = t => String(t || '').replace(/[|#*>`]+/g, ' ').replace(/\s+/g, ' 
 const czAll = pid => Object.values(S.kvAll('cloze')).filter(c => c.ans && (!pid || c.pack === pid)).sort((a, b) => a.c - b.c);
 function czDue(list) { const t = S.today(); return list.filter(c => { const r = S.cp(czKey(c.id)); return !r || !r.n || (r.due && r.due <= t); }); }
 let cz = null;
+// 모의고사 만들기: 범위(단원)와 단원별 문제 수, 유형별 문제 수, 난이도, 시간을 내가 정한다.
+// 처음 값만 취약도 순서로 채우고, 비중이나 난이도를 지어내지 않는다 (학교에서 받은 정보는 직접 고친다).
+function viewMock() {
+  const sel = new URLSearchParams(location.hash.split('?')[1] || '').get('s') || '';
+  const M = unitMastery(), prog = S.getProgress();
+  const us = Object.values(M).filter(u => !sel || u.pack.subject === sel).sort((a, b) => b.score - a.score || a.stage - b.stage);
+  const top = new Set(us.filter(u => u.score > 0).slice(0, 4).map(u => u.pack.id));
+  main.innerHTML = `<div class="narrow"><h1>모의고사 만들기</h1>
+  <p class="small muted">범위로 고른 단원에서 문제를 뽑아 시간 제한이 있는 시험으로 푼다. 단원별 문제 수는 취약한 단원부터 채워 놓았고 직접 고칠 수 있다. 시험 모드로 푼 결과는 실전 기록과 숙달 단계에 반영된다.</p>
+  <div class="chips" role="group" aria-label="과목">${[['', '전체'], ...SUBJECTS.map(x => [x.id, x.name])].map(([v, l]) => `<a class="chip${sel === v ? ' on' : ''}" href="#/mock${v ? '?s=' + v : ''}">${l}</a>`).join('')}</div>
+  ${us.length ? `<form id="mockF"><div class="tbl-wrap"><table class="wm"><thead><tr><th>단원</th><th>단계</th><th>문제 수</th></tr></thead><tbody>${us.map(u => `<tr><th scope="row">${subjDot(u.pack.subject)} ${esc(u.pack.title.slice(0, 30))}${u.score > 0 ? ' <span class="tag warn">취약</span>' : ''}</th><td class="small">${STAGES[u.stage]}</td><td><input type="number" min="0" max="${u.total}" value="${top.has(u.pack.id) ? Math.min(5, u.total) : 0}" data-mu="${esc(u.pack.id)}" aria-label="${esc(u.pack.title)} 문제 수" style="width:5em"></td></tr>`).join('')}</tbody></table></div>
+  <div class="grid2" style="margin-top:12px"><label class="field"><span>난이도</span><select name="lv"><option value="">전체</option><option value="hard">어려움 이상</option><option value="killer">최상</option></select></label>
+  <label class="field"><span>시간(분)</span><input type="number" name="min" min="1" max="180" value="20"></label>
+  <label class="field"><span>선택형 최대</span><input type="number" name="tm" min="0" placeholder="제한 없음"></label>
+  <label class="field"><span>서답형 최대</span><input type="number" name="ts" min="0" placeholder="제한 없음"></label></div>
+  <p class="small muted" id="mockCnt"></p><button class="btn pri" id="mockGo">시험 시작</button></form>` : '<p class="muted">이 과목에는 단원 자료가 없다.</p>'}</div>`;
+  const cnt = () => { const n = $$('[data-mu]').reduce((a, i) => a + Number(i.value || 0), 0); $('#mockCnt').textContent = `단원에서 ${n}문제를 고른다.`; };
+  $$('[data-mu]').forEach(i => i.addEventListener('input', cnt)); if ($('#mockCnt')) cnt();
+  $('#mockF')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target, lv = f.lv.value, left = { mcq: f.tm.value === '' ? 1e9 : Number(f.tm.value), other: f.ts.value === '' ? 1e9 : Number(f.ts.value) };
+    let items = [];
+    for (const i of $$('[data-mu]')) {
+      const n = Number(i.value || 0); if (!n) continue;
+      let pool = D.allQuestions().filter(x => x.pack.id === i.dataset.mu);
+      if (lv === 'hard') pool = pool.filter(x => (x.q.difficulty || 0) >= 3); else if (lv === 'killer') pool = pool.filter(x => (x.q.difficulty || 0) >= 4);
+      const w = x => (prog[x.key]?.wrong ? 3 : 0) + (prog[x.key]?.n ? 0 : 2) + Math.random();
+      items.push(...pool.sort((a, b) => w(b) - w(a)).slice(0, n));
+    }
+    items = items.filter(x => { const k = x.q.type === 'mcq' ? 'mcq' : 'other'; if (left[k] <= 0) return false; left[k]--; return true; });
+    if (!items.length) return toast('고른 조건에 맞는 문제가 없다.');
+    startSession(items, 'exam', Math.max(1, Number(f.min.value) || 20));
+  });
+}
 function viewCloze() {
   const { q } = params(), pid = q.get('pack') || '';
   const all = czAll(pid);
@@ -4940,6 +4999,7 @@ const SCREENS = [
     ['#/', '홈', '오늘 할 일, 복습할 문제, 과목별 진도', '오늘 처음 대시보드'],
     ['#/study', '자료', '과목별 공부자료 읽기', '노트 정리 단원 원문'],
     ['#/quiz', '문제 풀기', '과목·단원·난이도를 골라 풀기, 실전 모드', '퀴즈 시험 킬러 고난도 시간 제한 연습'],
+    ['#/mock', '모의고사 만들기', '범위·단원별 문제 수·시간을 정해 실전처럼 풀기', '모의 시험 실전 범위 취약 단원'],
     ['#/wrong', '오답노트', '틀린 문제 다시 보기', '틀린 오답 복습'],
     ['#/run?src=due', '복습할 문제 풀기', '오늘 다시 풀 때가 된 문제만', '복습 간격'],
     ['#/math', '공부 시간 재기 (수학)', '자료 없이 시간만 잰다. 스톱워치, 집중 타이머, 빈 시간 채우기', '타이머 스톱워치 뽀모도로 시간'],
