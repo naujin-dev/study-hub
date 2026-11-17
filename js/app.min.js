@@ -2748,6 +2748,30 @@ async function submitExam() {
   if (params().path === '/run') render();
 }
 
+// 실전(시험 모드) 결과 분석: 단원별 감점, 원인, 지난 시험과 비교, 약한 단원 다시 풀기
+function examBlock(items, res) {
+  const done = items.map((it, i) => [it, res[i]]).filter(([, r]) => r?.result);
+  if (!done.length) return '';
+  const by = {}, cn = Object.fromEntries(CAUSES), cs = {};
+  let unsure = 0;
+  for (const [it, r] of done) {
+    const o = by[it.pack.id] || (by[it.pack.id] = { pack: it.pack, n: 0, ok: 0 });
+    o.n++; if (r.result === 'ok') o.ok++;
+    if (r.result !== 'ok') { const c = causeOf(it.key); const k = c ? cn[c] || c : '원인 안 적음'; cs[k] = (cs[k] || 0) + 1; }
+    else if (r.conf === 'unsure' || r.conf === 'guess') unsure++;
+  }
+  const units = Object.values(by).sort((a, b) => a.ok / a.n - b.ok / b.n);
+  const weak = units.filter(u => u.ok < u.n);
+  const prev = examSessions().filter(e => e.sess !== session.id)[0];
+  const ok = done.filter(([, r]) => r.result === 'ok').length, pct = Math.round(ok / done.length * 100);
+  const cmp = prev ? `지난 시험(${S.fmtDate(prev.day)}, ${prev.n}문제)은 ${prev.pct}%였다. 이번은 ${pct}%로 ${pct > prev.pct ? (pct - prev.pct) + '점 올랐다' : pct < prev.pct ? (prev.pct - pct) + '점 내렸다' : '같다'}. 문제 수와 단원이 달라서 숫자만 비교한다.` : '비교할 지난 시험 기록이 없다 (미기록).';
+  return `<section class="card flat" id="examBlock"><h2 style="margin-top:0">시험 분석</h2>
+    <p class="small">${done.length}문제 중 ${ok}개 (${pct}%) · 비교: ${cmp}</p>
+    ${unsure ? `<p class="small muted">맞혔지만 확신이 없던 문제가 ${unsure}개다. 이것은 숙달로 세지 않고 복습에 다시 나온다.</p>` : ''}
+    <div class="tbl-wrap"><table class="wm"><thead><tr><th>단원</th><th>맞힘/푼 문제</th></tr></thead><tbody>${units.map(u => `<tr><th scope="row">${esc(u.pack.title.slice(0, 28))}</th><td class="mono">${u.ok}/${u.n}</td></tr>`).join('')}</tbody></table></div>
+    ${Object.keys(cs).length ? `<p class="small">감점 원인: ${Object.entries(cs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</p>` : ''}
+    ${weak.length ? `<p class="small"><b>다음에 할 일:</b> ${weak.slice(0, 3).map(u => `<a href="#/run?pack=${encodeURIComponent(u.pack.id)}&focus=1">${esc(u.pack.title.slice(0, 16))} 다시 풀기</a>`).join(' · ')}. 끝난 기준은 그 단원 정답률 80% 이상이다.</p>` : '<p class="small">틀린 문제가 없다.</p>'}</section>`;
+}
 function viewSummary() {
   const items = session.items;
   const res = session.results;
@@ -2775,6 +2799,7 @@ function viewSummary() {
   ${bookMsg}
   <p class="result-line"><b>${items.length - nSkip - nLeft}문제 풀어서 ${count('ok')}개 맞음</b>${nLeft ? ` · 안 푼 문제 ${nLeft}` : ''}${nSkip ? ` · 원문 없어서 건너뜀 ${nSkip}` : ''}${count('part') ? ` · 부분 점수 ${count('part')}` : ''}${count('wrong') ? ` · 틀림 ${count('wrong')}` : ''}${eMax ? ` · 서술형 ${eScore}/${eMax}점` : ''}${session.usedMs ? ` · ${Math.round(session.usedMs / 60000)}분` : ''}</p>
   <p class="small muted" style="margin-top:-4px">${count('wrong') + count('part') ? `틀리거나 부분 점수인 ${count('wrong') + count('part')}문제는 오답노트에 넣었다. ` : '다 맞혔다. '}오늘 푼 문제는 모두 ${(S.getLog()[S.today()] || {}).q || 0}개다.</p>
+  ${session.mode === 'exam' ? examBlock(items, res) : ''}
   <div class="row" style="margin:12px 0 16px">
     ${nLeft && session.mode !== 'exam' ? '<button class="btn pri" id="resume">이어 풀기</button>' : ''}
     ${count('wrong') + count('part') ? `<button class="btn${nLeft ? '' : ' pri'}" id="retryWrong">틀린 것만 다시</button>` : ''}
@@ -3299,6 +3324,81 @@ function viewGen() {
 }
 
 // ================= 일정·계획 =================
+// ===== 계획 점검 · 조정 제안 =====
+// 내 계획은 AI 가 마음대로 지우거나 바꾸지 않는다. 제안을 보여 주고, 내가 누르면 적용하고, 되돌릴 수 있다.
+const planSubj = p => p.subject || SUBJECTS.find(sb => (p.label || '') .includes(sb.name) || (p.group || '').includes(sb.name))?.id || '';
+function planStats() {
+  const t = S.today(), items = planList().filter(p => !p.hidden), ev = S.getEvents(), since = S.addDays(t, -13);
+  const rows = {}, row = id => rows[id] || (rows[id] = { id, plan: 0, done: 0, late: 0, ans: 0 });
+  for (const p of items) { const o = row(planSubj(p)); o.plan++; if (p.done) o.done++; else if (p.date && p.date < t) o.late++; }
+  const byPack = D.db().byId;
+  for (const e of ev) if (e.k === 'a' && S.dayOf(e.t) >= since) { const sb = byPack[String(e.key).split('::')[0]]?.subject; if (sb) row(sb).ans++; }
+  const totPlan = Object.values(rows).reduce((a, r) => a + r.plan, 0), totAns = Object.values(rows).reduce((a, r) => a + r.ans, 0);
+  return { rows: Object.values(rows).filter(r => r.id), unlinked: rows['']?.plan || 0, totPlan, totAns };
+}
+function planProposals() {
+  const t = S.today(), tm = S.addDays(t, 1), M = unitMastery(), out = [];
+  const list = planList().filter(p => !p.hidden);
+  // 1) 밀린 계획: 오늘부터 하루 3개씩 뒤로
+  const late = list.filter(p => !p.done && p.date && p.date < t && !/이미 끝낸 것|\(기록\)/.test(p.text || ''));
+  if (late.length) {
+    const ch = late.slice(0, 12).map((p, i) => ({ kind: 'move', id: p.id, to: S.addDays(t, Math.floor(i / 3)), notion: !!p.notion, prev: p.notion ? (S.kvGet('plan', p.id)?.moved || '') : p.date, text: planText(p.text) }));
+    out.push({ key: 'late', title: `밀린 계획 ${late.length}개를 오늘부터 하루 3개씩 옮기기${late.length > 12 ? ' (먼저 12개)' : ''}`, why: '지난 날짜에 남아 있으면 오늘 할 일이 가려진다. 날짜만 옮기고 내용과 체크 상태는 그대로 둔다.', changes: ch });
+  }
+  // 2) 복습: 오늘 풀 분량을 계획에 넣기 (과목별 상위 2)
+  const due = {}; for (const x of dueItems()) due[x.pack.subject] = (due[x.pack.subject] || 0) + 1;
+  const rv = Object.entries(due).sort((a, b) => b[1] - a[1]).slice(0, 2).filter(([sb]) => !list.some(p => p.id === `ai-rev-${t}-${sb}`));
+  if (rv.length) out.push({ key: 'rev', title: `복습 ${rv.map(([sb, n]) => `${subjName(sb)} ${n}개`).join(', ')} 를 오늘 계획에 넣기`, why: '복습은 정한 날에 해야 기억이 이어진다. 끝내면 다음 복습 날짜는 자동으로 잡힌다.', changes: rv.map(([sb, n]) => ({ kind: 'add', id: `ai-rev-${t}-${sb}`, item: { id: `ai-rev-${t}-${sb}`, date: t, subject: sb, text: `${subjName(sb)} 복습 ${Math.min(n, 30)}개 — 복습 목록에서 풀기 (완료: 모두 풀고 틀린 것은 원인 적기)`, done: false, c: Date.now(), ai: true }, text: `${subjName(sb)} 복습 ${n}개` })) });
+  // 3) 취약 단원: 단계 3 미만이고 우선순위가 높은 단원 최대 3개
+  const wk = priorities().filter(u => (M[u.pack.id]?.stage ?? 0) < 3 && u.tried).slice(0, 3).filter(u => !list.some(p => p.id === `ai-weak-${u.pack.id}-${t}`));
+  if (wk.length) out.push({ key: 'weak', title: `취약 단원 ${wk.length}개 다시 풀기를 넣기`, why: wk.map(u => `${u.pack.title.slice(0, 18)}: ${u.why[0] || '우선순위가 높음'}`).join(' / '), changes: wk.map((u, i) => ({ kind: 'add', id: `ai-weak-${u.pack.id}-${t}`, item: { id: `ai-weak-${u.pack.id}-${t}`, date: i ? tm : t, subject: u.pack.subject, text: `${u.pack.title.slice(0, 30)} (${u.pack.id}) 취약 문제 풀기 — 완료: 정답률 80% 이상, 틀린 문제 원인 적기`, done: false, c: Date.now(), ai: true }, text: u.pack.title.slice(0, 24) })) });
+  // 4) 이미 숙달한 단원의 앞으로 남은 계획은 숨김 제안 (숨김은 되돌릴 수 있다)
+  const hide = list.filter(p => !p.done && p.date && p.date >= t && p.notion).filter(p => { const pk = planPack(p); return pk && (M[pk.id]?.stage ?? 0) >= 3; }).slice(0, 6);
+  if (hide.length) out.push({ key: 'hide', title: `이미 '문제 적용' 이상인 단원의 앞으로 계획 ${hide.length}개를 숨기기`, why: '푼 결과가 기준을 넘긴 단원이다. 숨겨도 Notion 계획은 그대로고, 되돌리기로 다시 보인다.', changes: hide.map(p => ({ kind: 'hide', id: p.id, prev: false, text: planText(p.text) })) });
+  return out;
+}
+function planReviewCard() {
+  const st = planStats(), props = planProposals(), logs = Object.values(S.kvAll('planlog')).sort((a, b) => b.t - a.t);
+  const lastLog = logs.find(l => !l.undone);
+  const rowHtml = st.rows.map(r => {
+    const planShare = st.totPlan ? Math.round(r.plan / st.totPlan * 100) : 0, ansShare = st.totAns ? Math.round(r.ans / st.totAns * 100) : 0;
+    const flag = !r.plan && r.ans ? '계획에 없음' : r.plan && !r.ans ? '최근 풀이 없음' : r.late ? `밀림 ${r.late}` : '';
+    return `<tr><th scope="row">${subjDot(r.id)} ${subjName(r.id)}</th><td class="mono">${r.done}/${r.plan}</td><td class="mono">${r.late || '0'}</td><td class="mono">${planShare}%</td><td class="mono">${st.totAns ? ansShare + '%' : '미기록'}</td><td class="small">${flag ? `<span class="tag warn">${flag}</span>` : '–'}</td></tr>`;
+  }).join('');
+  return `<section class="card flat" id="planrev"><h2 style="margin-top:0">계획 점검</h2>
+    <p class="small muted">계획에 적은 비중과 최근 2주 실제 풀이 비중을 비교한다. 값이 없는 칸은 "미기록"이다.</p>
+    ${st.rows.length ? `<div class="tbl-wrap"><table class="wm"><thead><tr><th>과목</th><th>끝냄/계획</th><th>밀림</th><th>계획 비중</th><th>풀이 비중(2주)</th><th>확인</th></tr></thead><tbody>${rowHtml}</tbody></table></div>` : '<p class="small muted">과목이 정해진 계획 항목이 없다.</p>'}
+    ${st.unlinked ? `<p class="small muted">과목을 알 수 없는 계획 ${st.unlinked}개는 비교에서 뺐다. 확인 필요.</p>` : ''}
+    <h3>조정 제안 <span class="small muted">누르기 전에는 아무것도 바뀌지 않는다</span></h3>
+    ${props.length ? props.map(pr => `<div class="prop"><div class="row between"><b>${esc(pr.title)}</b><button class="btn sm pri" data-pplan="${pr.key}">적용</button></div><p class="small muted" style="margin:4px 0">${esc(pr.why)}</p><ul class="plain small">${pr.changes.slice(0, 6).map(c => `<li>${c.kind === 'move' ? `${esc(c.text.slice(0, 40))} → ${S.fmtDate(c.to)}` : esc(c.text.slice(0, 50))}</li>`).join('')}${pr.changes.length > 6 ? `<li class="muted">외 ${pr.changes.length - 6}개</li>` : ''}</ul></div>`).join('') : '<p class="small muted">지금 제안할 조정이 없다.</p>'}
+    ${lastLog ? `<p class="small" style="margin-top:10px">마지막 적용: ${esc(lastLog.label)} (${new Date(lastLog.t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}) <button class="btn sm ghost" data-pundo="${lastLog.id}">되돌리기</button></p>` : ''}
+    </section>`;
+}
+document.addEventListener('click', e => {
+  const ap = e.target.closest?.('[data-pplan]'), un = e.target.closest?.('[data-pundo]');
+  if (!ap && !un) return;
+  if (ap) {
+    const pr = planProposals().find(x => x.key === ap.dataset.pplan); if (!pr) return;
+    for (const c of pr.changes) {
+      if (c.kind === 'move') setPlan(c.id, c.notion ? { moved: c.to } : { date: c.to });
+      else if (c.kind === 'add') S.kvSet('plan', c.id, c.item);
+      else if (c.kind === 'hide') setPlan(c.id, { hidden: true });
+    }
+    const id = Date.now().toString(36);
+    S.kvSet('planlog', id, { id, t: Date.now(), label: pr.title, changes: pr.changes.map(({ item, ...c }) => c), undone: false });
+    toast('계획을 조정했다. 되돌릴 수 있다.', 2200);
+  } else {
+    const lg = S.kvGet('planlog', un.dataset.pundo); if (!lg) return;
+    for (const c of lg.changes) {
+      if (c.kind === 'move') setPlan(c.id, c.notion ? { moved: c.prev || undefined } : { date: c.prev });
+      else if (c.kind === 'add') S.kvDel('plan', c.id);
+      else if (c.kind === 'hide') setPlan(c.id, { hidden: false });
+    }
+    const { u, ...rest } = lg; S.kvSet('planlog', lg.id, { ...rest, undone: true });
+    toast('되돌렸다.', 1800);
+  }
+  render.keepScroll = true; render();
+});
 function viewPlan() {
   const ex = examInfo();
   const all = planList().filter(p => !p.hidden);
@@ -3347,6 +3447,7 @@ function viewPlan() {
   })() : '';
   main.innerHTML = `
   <h1>시험 일정과 계획</h1>
+  ${planReviewCard()}
   ${weeksHtml ? `<div class="sec-title"><h2>주간 공부 계획</h2><span class="small muted">Notion · 6시간마다 업데이트 · 사이트에서 체크한 것은 그대로</span></div>${weeksHtml}` : `<p class="note info">${NT.getKey() ? 'Notion 주간 계획을 기다리는 중이다. 6시간마다 들어온다.' : 'Notion 주간 계획과 시험 범위 현황이 6시간마다 저절로 들어오게 하려면 <a href="#/settings?go=notionSync">설정 → Notion 자동 업데이트</a> 에 비밀번호를 한 번 넣는다.'}</p>`}
   ${notionHtml}
   <details class="card fold">
@@ -3465,7 +3566,11 @@ function coachFacts() {
   for (const e of ev) { if (e.k !== 'a' || S.dayOf(e.t) < f14) continue; ans14++; if (e.conf === 'sure' && e.r !== 'ok') overconf++; if (e.guessed) guessOk++; }
   const rs = S.reviewStats(f14);
   const pl = planList().filter(x => x.date && x.date <= t && !x.hidden);
-  return { 오늘: t, 시험까지남은일: examInfo().first ? S.daysBetween(t, examInfo().first) : null, 최근7일: days, 과목별: subj, 우선단원: top, 지금틀린문제의_오답원인: causes, 최근14일: { 푼횟수: ans14, 확실하다고했는데틀림: overconf, 찍어서맞힘: guessOk, 복습횟수: rs.done, 복습성공률: rs.done ? Math.round(rs.ok / rs.done * 100) + '%' : '기록 부족' }, 계획: { 오늘까지줄수: pl.length, 완료: pl.filter(x => x.done).length } };
+  const MS = unitMastery(), stageBy = {};
+  for (const u of Object.values(MS)) { const k = subjName(u.pack.subject); (stageBy[k] || (stageBy[k] = { 미학습: 0, '학습 중': 0, '기억 확인': 0, '문제 적용': 0, '실전 검증': 0 }))[STAGES[u.stage]]++; }
+  const exs = examSessions().slice(0, 3).map(e => ({ 날짜: e.day, 과목: e.sub ? subjName(e.sub) : '여러 과목', 푼문제: e.n, 정답률: e.pct }));
+  const ps = planStats();
+  return { 단원숙달단계: stageBy, 최근실전시험: exs.length ? exs : '기록 없음', 계획이행: { 계획항목: ps.totPlan, 밀린항목: ps.rows.reduce((a, r) => a + r.late, 0), 끝낸항목: ps.rows.reduce((a, r) => a + r.done, 0) }, 오늘: t, 시험까지남은일: examInfo().first ? S.daysBetween(t, examInfo().first) : null, 최근7일: days, 과목별: subj, 우선단원: top, 지금틀린문제의_오답원인: causes, 최근14일: { 푼횟수: ans14, 확실하다고했는데틀림: overconf, 찍어서맞힘: guessOk, 복습횟수: rs.done, 복습성공률: rs.done ? Math.round(rs.ok / rs.done * 100) + '%' : '기록 부족' }, 계획: { 오늘까지줄수: pl.length, 완료: pl.filter(x => x.done).length } };
 }
 function viewCoach() {
   const last = S.load('coachLast', {});

@@ -904,3 +904,5 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .lb-d{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:.85rem}.lb-d dt{color:var(--ink3)}.lb-d dd{margin:0}
 .lb-next{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--rule)}
 .lb-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:14px}.lb-f h3{margin:0 0 6px;font-size:.95rem}
+
+.prop{border-top:1px solid var(--rule);padding:10px 0}.prop ul{margin:4px 0 0;padding-left:18px}
