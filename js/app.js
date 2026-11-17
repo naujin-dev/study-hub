@@ -3327,18 +3327,22 @@ function weakMapHtml() {
   const all = unitMetrics();
   if (!all.some(u => u.tried)) return '';
   const col = r => r == null ? 'na' : r < 0.6 ? 'r1' : r < 0.75 ? 'r2' : r < 0.9 ? 'r3' : 'r4';
-  const rows = SUBJECTS.map(sb => {
-    const us = all.filter(u => u.pack.subject === sb.id).sort((a, b) => b.score - a.score || (a.rate ?? 2) - (b.rate ?? 2));
-    if (!us.length) return '';
-    return `<details class="wm-sub"${us.some(u => u.score > 0) ? ' open' : ''}><summary><b>${subjDot(sb.id)} ${sb.name}</b> <span class="small muted">단원 ${us.length}개 · 푼 단원 ${us.filter(u => u.tried).length}개</span></summary>
-      <div class="tbl-wrap"><table class="wm"><thead><tr><th scope="col">단원</th><th scope="col">푼 문제</th><th scope="col">정답률</th><th scope="col">오답</th><th scope="col">거듭 틀림</th><th scope="col">복습 성공률</th><th scope="col">최근</th><th scope="col">이해도</th></tr></thead><tbody>${us.map(u => `<tr>
+  const row = u => `<tr>
         <th scope="row"><a href="#/wrong?u=${encodeURIComponent(u.pack.id)}">${esc(u.pack.title)}</a>${u.score > 0 ? ' <span class="tag warn">우선</span>' : ''}</th>
         <td class="mono">${u.tried}/${u.total}</td>
         <td><span class="wm-bar ${col(u.rate)}" role="img" aria-label="정답률 ${u.rate == null ? '기록 부족' : Math.round(u.rate * 100) + '%'}"><i style="width:${u.rate == null ? 0 : Math.round(u.rate * 100)}%"></i></span> <span class="mono small">${u.rate == null ? '–' : Math.round(u.rate * 100) + '%'}</span></td>
         <td class="mono">${u.wrong || '–'}</td><td class="mono">${u.rep || '–'}</td>
         <td class="mono">${u.rN >= 3 ? Math.round(u.review * 100) + '%' : '–'}</td>
         <td class="small">${u.last ? S.fmtDate(u.last) : '–'}</td>
-        <td><select class="wm-und" data-und="${esc(u.pack.id)}" aria-label="${esc(u.pack.title)} 이해도"><option value="">–</option>${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${u.meta.und === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></details>`;
+        <td><select class="wm-und" data-und="${esc(u.pack.id)}" aria-label="${esc(u.pack.title)} 이해도"><option value="">–</option>${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${u.meta.und === n ? ' selected' : ''}>${n}</option>`).join('')}</select></td></tr>`;
+  const head = '<thead><tr><th scope="col">단원</th><th scope="col">푼 문제</th><th scope="col">정답률</th><th scope="col">오답</th><th scope="col">거듭 틀림</th><th scope="col">복습 성공률</th><th scope="col">최근</th><th scope="col">이해도</th></tr></thead>';
+  const rows = SUBJECTS.map(sb => {
+    const us = all.filter(u => u.pack.subject === sb.id).sort((a, b) => b.score - a.score || (a.rate ?? 2) - (b.rate ?? 2));
+    if (!us.length) return '';
+    const shown = us.filter(u => u.tried || u.score > 0), rest = us.filter(u => !(u.tried || u.score > 0));
+    return `<details class="wm-sub"${shown.length ? ' open' : ''}><summary><b>${subjDot(sb.id)} ${sb.name}</b> <span class="small muted">단원 ${us.length}개 · 푼 단원 ${us.filter(u => u.tried).length}개</span></summary>
+      ${shown.length ? `<div class="tbl-wrap"><table class="wm">${head}<tbody>${shown.map(row).join('')}</tbody></table></div>` : ''}
+      ${rest.length ? `<details class="wm-rest"><summary class="small muted">아직 안 푼 단원 ${rest.length}개</summary><div class="tbl-wrap"><table class="wm">${head}<tbody>${rest.map(row).join('')}</tbody></table></div></details>` : ''}</details>`;
   }).join('');
   return `<section class="card" id="weakmap"><h2 style="margin-top:0">취약점 지도</h2><p class="small muted">정답률이 낮을수록 빨갛다. 푼 문제가 3개 미만이면 정답률을 계산하지 않는다. 이해도는 내가 적는 값(1~5)이고, 낮을수록 우선순위가 올라간다.</p>${rows}</section>`;
 }
