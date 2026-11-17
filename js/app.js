@@ -2630,24 +2630,56 @@ function viewSummary() {
 }
 
 // ================= 오답노트 =================
-const CAUSES = [['concept', '개념 부족'], ['memo', '암기 부족'], ['mistake', '실수'], ['read', '문제 잘못 읽음'], ['time', '시간 부족']];
+// 키는 예전 기록과 같게 두고(concept·memo·mistake·read·time), 새 원인만 더한다
+const CAUSES = [['concept', '개념 부족'], ['confuse', '개념 혼동'], ['calc', '계산 실수'], ['read', '문제 해석 오류'], ['memo', '암기 부족'], ['time', '시간 부족'], ['mistake', '단순 실수'], ['other', '기타']];
 const causeOf = key => S.kvGet('wcause', key)?.cause || '';
+// 오늘의 복습 요약 + 취약 단원 (기록에서 매번 계산한다. 따로 저장하지 않는다)
+function reviewBoard(sel, un) {
+  const prog = S.getProgress(), t = S.today();
+  const inScope = x => (!sel || x.pack.subject === sel) && (!un || x.pack.id === un);
+  const due = dueItems().filter(inScope);
+  const late = due.filter(x => prog[x.key].due < t).length;
+  const fresh = wrongItems().filter(x => inScope(x) && prog[x.key].fw === t).length;
+  const rs = S.reviewStats(S.addDays(t, -13)), rt = S.reviewStats(t);
+  // 취약 단원: 틀린 문제가 3개 이상이거나, 두 번 이상 틀린 문제가 2개 이상
+  const by = {};
+  for (const x of wrongItems()) {
+    if (sel && x.pack.subject !== sel) continue;
+    const o = by[x.pack.id] || (by[x.pack.id] = { pack: x.pack, n: 0, rep: 0, causes: {} });
+    o.n++; if ((prog[x.key].wn || 0) >= 2) o.rep++;
+    const c = causeOf(x.key); if (c) o.causes[c] = (o.causes[c] || 0) + 1;
+  }
+  const weak = Object.values(by).filter(o => o.n >= 3 || o.rep >= 2).sort((a, b) => (b.rep - a.rep) || (b.n - a.n)).slice(0, 6);
+  const cname = Object.fromEntries(CAUSES);
+  const cell = (n, l, cls = '') => `<div class="rb-c${cls}"><b class="mono">${n}</b><span class="small muted">${l}</span></div>`;
+  return `<section class="card flat rb" aria-label="오늘의 복습">
+    <div class="rb-g">${cell(due.length - late, '오늘 복습할 문제')}${cell(late, '복습이 밀린 문제', late ? ' warn' : '')}${cell(fresh, '오늘 새로 틀린 문제')}${cell(rt.doneToday, '오늘 복습 완료')}${cell(rs.done ? Math.round(rs.ok / rs.done * 100) + '%' : '–', `복습 성공률 (14일 · ${rs.done}번)`)}</div>
+    ${due.length ? `<p style="margin:10px 0 0"><a class="btn pri sm" href="#/run?src=due">오늘 복습 시작 (${Math.min(due.length, 30)}문제)</a></p>` : '<p class="small muted" style="margin:10px 0 0">오늘 복습할 문제가 없다.</p>'}
+    ${weak.length ? `<h2 class="h3" style="margin:14px 0 6px">취약 단원 <span class="small muted">(틀린 문제가 많거나 같은 문제를 거듭 틀린 곳)</span></h2><ul class="list">${weak.map(o => {
+      const top = Object.entries(o.causes).sort((a, b) => b[1] - a[1])[0];
+      return `<li><a class="item" href="#/wrong?u=${encodeURIComponent(o.pack.id)}">${subjDot(o.pack.subject)}<span class="grow">${esc(o.pack.title)}<br><span class="small muted">틀린 문제 ${o.n}개${o.rep ? ` · 거듭 틀림 ${o.rep}개` : ''}${top ? ` · 주된 원인 ${cname[top[0]] || top[0]} ${top[1]}개` : ''}</span></span><span class="go" aria-hidden="true"></span></a></li>`;
+    }).join('')}</ul>` : ''}</section>`;
+}
 function viewWrong() {
   const { q } = params();
   const sel = q.get('s') || '';
   const cz = q.get('c') || '';
+  const un = q.get('u') || '';
   const prog = S.getProgress();
-  const items = wrongItems().filter(x => (!sel || x.pack.subject === sel) && (!cz || (cz === 'none' ? !causeOf(x.key) : causeOf(x.key) === cz)));
+  const items = wrongItems().filter(x => (!sel || x.pack.subject === sel) && (!un || x.pack.id === un) && (!cz || (cz === 'none' ? !causeOf(x.key) : causeOf(x.key) === cz)));
+  const unitList = [...new Map(wrongItems().filter(x => !sel || x.pack.subject === sel).map(x => [x.pack.id, x.pack])).values()];
   const subjects = SUBJECTS.filter(s => wrongItems().some(x => x.pack.subject === s.id));
   main.innerHTML = `
   <div class="row between"><h1 style="margin:0">오답노트</h1>${items.length ? `<button class="btn pri sm" id="retry">${items.length}문제 다시 풀기</button>` : ''}</div>
-  <p class="small muted">틀리거나 부분 점수를 받은 문제가 모인다. 두 번 연속 맞히면 빠진다.</p>
+  <p class="small muted">틀리거나 부분 점수를 받은 문제가 모인다. 두 번 연속 맞히면 빠진다. 복습은 1·3·7·14·30일 간격이고, 확실하게 맞히면 한 단계를 건너뛰고 자신 없게 맞히면 내일 다시 나온다.</p>
+  ${reviewBoard(sel, un)}
+  ${unitList.length > 1 ? `<label class="field" style="max-width:420px"><span>단원</span><select id="wUnit"><option value="">전체 단원</option>${unitList.map(k => `<option value="${esc(k.id)}"${k.id === un ? ' selected' : ''}>${esc(k.title)}</option>`).join('')}</select></label>` : ''}
   ${subjects.length ? chipGroup('ws', [{ value: '', label: '전체' }, ...subjects.map(s => ({ value: s.id, label: s.name, dot: true }))], [sel], false) : ''}
   ${wrongItems().length ? `<div class="chips" style="margin-top:6px"><span class="small muted" style="align-self:center">원인</span>${(() => {
     // 원인 칩은 해당 문제가 있는 것만, 개수를 붙여서
     const all = wrongItems().filter(x => !sel || x.pack.subject === sel);
     const n = v => v === '' ? all.length : all.filter(x => (causeOf(x.key) || 'none') === v).length;
-    return [['', '전체'], ...CAUSES, ['none', '안 적음']].filter(([v]) => v === '' || v === cz || n(v)).map(([v, l]) => `<a class="chip${cz === v ? ' on' : ''}" href="#/wrong?${new URLSearchParams({ ...(sel ? { s: sel } : {}), ...(v ? { c: v } : {}) })}">${l} <span class="muted">${n(v)}</span></a>`).join('');
+    return [['', '전체'], ...CAUSES, ['none', '안 적음']].filter(([v]) => v === '' || v === cz || n(v)).map(([v, l]) => `<a class="chip${cz === v ? ' on' : ''}" href="#/wrong?${new URLSearchParams({ ...(sel ? { s: sel } : {}), ...(un ? { u: un } : {}), ...(v ? { c: v } : {}) })}">${l} <span class="muted">${n(v)}</span></a>`).join('');
   })()}</div>` : ''}
   <div class="stack" style="margin-top:12px">${items.map(x => {
     const r = prog[x.key];
@@ -2658,7 +2690,7 @@ function viewWrong() {
     if (qq.type === 'essay') right = esc(qq.model_answer);
     let mine = r.ans;
     if (qq.type === 'mcq' && Array.isArray(mine)) mine = mine.map(n => `${'①②③④⑤⑥'[n - 1]} ${qq.choices[n - 1] || ''}`).join('\n');
-    return `<details class="card flat"><summary class="wsum"><span class="q-head" style="margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n} 맞음</span>${r.star ? '<span class="tag warn">헷갈림</span>' : ''}<span class="small muted">${esc(packsOfKey(x.key).map(p => p.title).join(' · '))}</span></span><span class="wq">${esc(qq.question)}</span></summary>
+    return `<details class="card flat"><summary class="wsum"><span class="q-head" style="margin:0">${subjDot(x.pack.subject)}<span class="tag">${TYPE_NAME[qq.type]}</span><span class="tag bad">${r.ok}/${r.n} 맞음</span>${(r.wn || 0) >= 2 ? '<span class="tag bad">거듭 틀림</span>' : ''}${r.due ? `<span class="tag${r.due < S.today() ? ' warn' : ''}">${r.due < S.today() ? '복습 밀림' : '다음 복습'} ${Number(r.due.slice(5, 7))}/${Number(r.due.slice(8))} · ${r.box}단계</span>` : ''}${r.star ? '<span class="tag warn">헷갈림</span>' : ''}<span class="small muted">${esc(packsOfKey(x.key).map(p => p.title).join(' · '))}</span></span><span class="wq">${esc(qq.question)}</span></summary>
       ${qq.context ? `<div class="q-ctx">${ctxHtml(qq.context)}</div>` : ''}
       ${qq.type === 'mcq' ? `<ul class="small plain">${qq.choices.map((c, i) => `<li>${'①②③④⑤⑥'[i] || i + 1} ${esc(c)}</li>`).join('')}</ul>` : ''}
       <p><b>내 답</b> <span style="white-space:pre-wrap">${esc(mine || '(안 씀)')}</span></p>
@@ -2672,6 +2704,7 @@ function viewWrong() {
     </details>`;
   }).join('') || '<p class="muted">오답이 없다.</p>'}</div>`;
   $$('input[name="ws"]').forEach(r => r.addEventListener('change', () => { location.hash = '#/wrong' + (r.value ? '?s=' + r.value : ''); }));
+  $('#wUnit')?.addEventListener('change', e => { const u = new URLSearchParams({ ...(sel ? { s: sel } : {}), ...(cz ? { c: cz } : {}), ...(e.target.value ? { u: e.target.value } : {}) }).toString(); location.hash = '#/wrong' + (u ? '?' + u : ''); });
   $('#retry')?.addEventListener('click', () => startSession(shuffle(items), 'practice'));
   $$('[data-one]').forEach(b => b.addEventListener('click', () => startSession(items.filter(x => x.key === b.dataset.one), 'practice')));
   $$('[data-done]').forEach(b => b.addEventListener('click', () => { S.setFlag(b.dataset.done, 'wrong', false); toast('오답노트에서 뺐다.'); render.keepScroll = true; render(); }));

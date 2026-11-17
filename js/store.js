@@ -88,7 +88,20 @@ function changed() { listeners.forEach(fn => { try { fn(); } catch (e) {} }); }
 //  g 문제 만들기 { pack, n }
 //  s 자료 없이 잰 과목 시간 { sub, s(초), from(시작 ms) }  sx 그 기록 취소 { ref }
 let events = load('events', []);
-const BOX_DAYS = [0, 1, 2, 4, 7, 14];
+const BOX_DAYS = [0, 1, 2, 4, 7, 14]; // 암기카드용
+// 문제 복습 간격: 1·3·7·14·30일. 결과와 확신도에 따라 단계를 옮긴다 (reviewStep 참고)
+export const REVIEW_DAYS = [0, 1, 3, 7, 14, 30];
+// 입력: 지금 단계(box 0~5), 결과(ok/part/wrong), 확신도(sure/unsure/guess/없음)
+// 출력: { box, days }  — 예) (0,'ok','sure')→{2,3}  (2,'ok','unsure')→{2,1}  (4,'wrong')→{1,1}  (3,'part')→{2,3}
+export function reviewStep(box, result, conf) {
+  let b;
+  if (result === 'ok') {
+    if (conf === 'unsure' || conf === 'guess') return { box: Math.max(1, box), days: 1 }; // 맞혔지만 자신 없음: 단계는 그대로, 내일 다시
+    b = Math.min(5, box + (conf === 'sure' ? 2 : 1)); // 확실했으면 한 단계 건너뛴다
+  } else if (result === 'part') b = Math.max(1, box - 1);
+  else b = 1; // 오답: 처음부터
+  return { box: b, days: REVIEW_DAYS[b] };
+}
 
 let D = null; // 다시 계산한 결과
 function emptyDay() { return { q: 0, ok: 0, part: 0, c: 0, min: 0, read: 0, solve: 0, card: 0, free: 0, fs: {} }; }
@@ -100,14 +113,16 @@ function applyEvent(e) {
     const p = D.progress[e.key] || (D.progress[e.key] = { n: 0, ok: 0, box: 0, streak: 0 });
     p.n += 1; p.at = day; p.last = e.r; p.ans = e.ans; p.fb = e.fb || null;
     if (e.r === 'ok') {
-      p.ok += 1; p.streak += 1; p.box = Math.min(5, p.box + 1);
+      p.ok += 1; p.streak += 1;
       if (p.wrong && p.streak >= 2) p.wrong = false;
-    } else if (e.r === 'part') {
-      p.streak = 0; p.box = Math.max(1, p.box); p.wrong = true;
     } else {
-      p.streak = 0; p.box = 1; p.wrong = true;
+      p.streak = 0; p.wrong = true;
+      p.wn = (p.wn || 0) + 1; // 틀린 횟수 (2번 이상이면 반복 오답)
+      if (!p.fw) p.fw = day;  // 처음 틀린 날
     }
-    p.due = addDays(day, BOX_DAYS[p.box] || 1);
+    const st = reviewStep(p.box, e.r === 'ok' ? 'ok' : e.r === 'part' ? 'part' : 'wrong', e.conf);
+    p.box = st.box; p.cf = e.conf || '';
+    p.due = addDays(day, st.days);
     (D.attempts[e.key] || (D.attempts[e.key] = [])).push(e);
     L.q += 1; if (e.r === 'ok') L.ok += 1; if (e.r === 'part') L.part += 1;
     L.solve += Math.min(900, (e.ms || 0) / 1000);
@@ -116,7 +131,7 @@ function applyEvent(e) {
     if (p && p.last !== 'ok') {
       p.ok += 1; p.last = 'ok'; p.streak += 1;
       p.box = Math.min(5, Math.max(1, p.box) + 1);
-      p.due = addDays(day, BOX_DAYS[p.box]); p.wrong = false;
+      p.due = addDays(day, REVIEW_DAYS[p.box]); p.wrong = false;
       L.ok += 1;
       const at = D.attempts[e.key]; if (at && at.length) at[at.length - 1] = { ...at[at.length - 1], r: 'ok', overridden: true };
     }
@@ -159,6 +174,18 @@ function addEvent(k, data) {
 
 export function getEvents() { return events; }
 export function getProgress() { return D.progress; }
+// 복습 통계: 두 번째 이후의 풀이를 '복습' 으로 본다. fromDay(yyyy-mm-dd) 이후만
+export function reviewStats(fromDay) {
+  const t = today(); let done = 0, ok = 0, doneToday = 0;
+  for (const k in D.attempts) D.attempts[k].forEach((e, i) => {
+    if (!i) return;
+    const d = dayOf(e.t);
+    if (fromDay && d < fromDay) return;
+    done++; if (e.r === 'ok') ok++;
+    if (d === t) doneToday++;
+  });
+  return { done, ok, doneToday };
+}
 export function qp(key) { return D.progress[key] || null; }
 export function cp(key) { return D.cards[key] || null; }
 export function getLog() { return D.log; }

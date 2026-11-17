@@ -867,3 +867,10 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .card.next{border-color:color-mix(in srgb,var(--acc) 35%,var(--rule));margin-bottom:16px}
 .next-t{margin:6px 0 8px;font-size:1.25rem;line-height:1.4}
 .next-after{margin:12px 0 0}
+
+/* 오늘의 복습 요약 */
+.rb{margin:10px 0 14px}
+.rb-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.rb-c{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--card)}
+.rb-c b{font-size:1.4rem;line-height:1.2}
+.rb-c.warn b{color:var(--warn)}
