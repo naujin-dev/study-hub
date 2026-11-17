@@ -583,13 +583,26 @@ function priorities(sel) {
   return unitMetrics().filter(u => u.score > 0 && (!sel || u.pack.subject === sel)).sort((a, b) => b.score - a.score);
 }
 const studied = l => !!(l && (l.q || l.c || l.min || l.read >= 60 || l.free >= 60));
+// 쉬는 요일로 정한 날은 공부를 안 해도 연속이 끊기지 않는다 (센 날수에는 안 넣는다)
+const restDays = () => S.kvGet('prefs', 'rest')?.days || [];
+const isRest = d => restDays().includes(new Date(d + 'T00:00:00').getDay());
 function streakDays() {
   const log = S.getLog();
   let d = S.today(), n = 0;
   if (!studied(log[d])) d = S.addDays(d, -1);
-  while (studied(log[d])) { n++; d = S.addDays(d, -1); }
+  for (let guard = 0; guard < 800; guard++) {
+    if (studied(log[d])) n++;
+    else if (!isRest(d)) break;
+    d = S.addDays(d, -1);
+  }
   return n;
 }
+// 글자 크기·움직임 효과 (이 기기에만 저장)
+function applyPrefs() {
+  document.documentElement.style.fontSize = Math.round(S.load('fontScale', 1) * 100) + '%';
+  document.documentElement.classList.toggle('no-anim', !!S.load('noAnim', false));
+}
+applyPrefs();
 
 // ================= 홈 =================
 // ================= 다음 할 일 (사이트가 순서를 정해 준다) =================
@@ -3854,6 +3867,12 @@ function viewSettings() {
   </section>
 
   <section class="card">
+    <h2>화면과 습관</h2>
+    <label class="field" style="max-width:260px"><span>글자 크기</span><select id="fontScale">${[[1, '보통'], [1.1, '조금 크게'], [1.25, '크게']].map(([v, l]) => `<option value="${v}"${S.load('fontScale', 1) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="row small"><input type="checkbox" id="noAnim"${S.load('noAnim', false) ? ' checked' : ''}> 움직임 효과 끄기</label>
+    <fieldset style="border:0;padding:0;margin:12px 0 0"><legend class="small">쉬는 요일 <span class="muted">(공부를 안 해도 연속 학습일이 끊기지 않는다)</span></legend><div class="chips">${'일월화수목금토'.split('').map((l, i) => `<label class="chip"><input type="checkbox" name="rest" value="${i}"${restDays().includes(i) ? ' checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
+  </section>
+  <section class="card">
     <h2>AI 채점 (Gemini API)</h2>
     <p class="small">서술형 채점, 단답형 유사 답 확인, 자료 질문, 문제 만들기에 쓴다. 키는 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 에서 구글 계정으로 무료로 만든다 (카드 등록 없음). 키는 <b>이 기기의 브라우저에만</b> 저장되고, 요청은 이 브라우저에서 Google 로 바로 간다.</p>
     <p class="small muted">무료 등급은 분당·하루 횟수 한도가 있고, 보낸 내용을 Google 이 서비스 개선에 쓸 수 있다.</p>
@@ -4061,6 +4080,9 @@ function viewSettings() {
       S.replaceAll(obj); await D.loadAll(); toast('전체 교체했다. 교체 전 기록은 방금 받은 백업 파일에 있다.', 6000); render();
     } catch (err) { toast(errText(err, '불러오기'), 5000); }
   });
+  $('#fontScale')?.addEventListener('change', e => { S.save('fontScale', Number(e.target.value)); applyPrefs(); });
+  $('#noAnim')?.addEventListener('change', e => { S.save('noAnim', e.target.checked); applyPrefs(); });
+  $$('input[name="rest"]').forEach(i => i.addEventListener('change', () => { S.kvSet('prefs', 'rest', { days: $$('input[name="rest"]:checked').map(x => Number(x.value)) }); toast('쉬는 요일을 저장했다.', 1500); }));
   $$('[data-conf-restore]').forEach(b => b.addEventListener('click', () => { const c = S.conflicts()[Number(b.dataset.confRestore)]; if (!c) return; const { u, ...v } = c.mine; S.kvSet(c.col, c.id, v); S.dropConflict(Number(b.dataset.confRestore)); toast('되살렸다. 다음 동기화 때 다른 기기에도 간다.'); render.keepScroll = true; render(); }));
   $$('[data-conf-drop]').forEach(b => b.addEventListener('click', () => { S.dropConflict(Number(b.dataset.confDrop)); render.keepScroll = true; render(); }));
   $('#reset').addEventListener('click', async () => {

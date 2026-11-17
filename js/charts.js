@@ -86,7 +86,7 @@ export function line(pts, { fmt = v => String(v), area = true, height = 170, yMa
   const Y = v => T + (1 - v / top) * (H - T - B);
   // 화면 낭독기용: 그래프 이름 + 마지막 값 + 가장 높은 값
   const lastP = [...pts].reverse().find(p => p.y != null), maxP = pts.filter(p => p.y != null).reduce((a, b) => (b.y > a.y ? b : a), lastP);
-  const said = p => (p.tip || '').replace(/\n/g, ' ');
+  const said = p => (p?.tip || '').replace(/\n/g, ' ');
   let s = `<svg class="chart line" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}. 마지막: ${esc(said(lastP))}. 가장 높은 날: ${esc(said(maxP))}">`;
   // 가로 눈금 4개
   for (let k = 0; k <= 4; k++) {
