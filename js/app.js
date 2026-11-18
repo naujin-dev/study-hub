@@ -2159,7 +2159,9 @@ const CITE_RE = /\([가-하]\)|[㉠-㉭]|윗글|위 글|밑줄 친|이 시에|�
 // (가)·(나) 처럼 기호로 가리키면 그 기호의 원문, 윗글이면 자료의 주된 원문 하나, 못 정하면 같이 나온 글은 뺀다.
 function citeTexts(pack, q) {
   const all = SRC.textsOf(pack).filter(t => t.body);
-  if (!all.length || !CITE_RE.test(q.question)) return [];
+  // 문학·비문학 작품 자료(문법·화법과 작문·모의고사 제외)는 지문 없는 문제에도 그 작품 원문을 같이 보여 준다
+  const lit = pack.subject === 'kor' && !/^kor-(0[6-9]|26|n\d)/.test(pack.id);
+  if (!all.length || !(CITE_RE.test(q.question) || lit)) return [];
   const cx = String(q.context || '');
   if (cx && !/^\s*<보기>/.test(cx) && cx.replace(/\s/g, '').length >= 80) return [];
   const lab = t => (/^\s*\(([가-하])\)/.exec(t.title || '') || /^\s*\(([가-하])\)/.exec(t.body) || [])[1];
