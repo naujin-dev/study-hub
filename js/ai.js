@@ -24,12 +24,12 @@ export function hasKey() {
 }
 
 // 한 번 묻고 답을 받는다. schema 가 있으면 JSON 객체로 돌려준다.
-async function ask({ system, user, schema, maxTokens = 8000, key = '' }) {
+async function ask({ system, user, schema, maxTokens = 8000, key = '', images = [] }) {
   const s = { ...settings(), ...(key ? { geminiKey: key } : {}) };
   if (!s.geminiKey) throw new Error('설정에서 Gemini API 키를 먼저 넣어 줘.');
   const body = {
     systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: 'user', parts: [{ text: user }] }],
+    contents: [{ role: 'user', parts: [{ text: user }, ...images.map(im => ({ inlineData: { mimeType: im.mime || 'image/png', data: im.data } }))] }],
     generationConfig: { maxOutputTokens: maxTokens },
   };
   if (schema) Object.assign(body.generationConfig, { responseMimeType: 'application/json', responseJsonSchema: schema });
@@ -383,4 +383,16 @@ export function unknownNumbers(text, factsStr) {
   const out = new Set();
   for (const m of String(text).matchAll(/(\d+(?:\.\d+)?)\s*(%|퍼센트|개|번|일|분|문제|시간)/g)) if (!have.has(m[1]) && Number(m[1]) > 5) out.add(m[0].replace(/\s+/g, ''));
   return [...out];
+}
+
+// 손글씨 사진(캔버스 PNG)을 읽는다. 맞게 고쳐 읽지 않고 쓴 그대로 옮기게 시킨다.
+export async function readHandwriting(dataUrl) {
+  const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(dataUrl || '');
+  if (!m) throw new Error('손글씨 그림을 읽지 못했다.');
+  const t = await ask({
+    system: '너는 손글씨 판독기다. 이미지에 적힌 일본어를 글자 하나하나 그대로 옮긴다. 문법이나 맞춤법이 틀려도 고치지 않는다. 보이는 글자만 쓰고 설명, 따옴표, 줄바꿈은 쓰지 않는다. 글자가 하나도 안 보이면 빈 답을 준다.',
+    user: '이 그림에 손으로 쓴 글자를 그대로 옮겨라. 히라가나, 가타카나, 한자를 쓴 모양 그대로 구분해서 쓴다.',
+    images: [{ mime: m[1], data: m[2] }], maxTokens: 400,
+  });
+  return String(t || '').replace(/[\r\n]+/g, '').trim();
 }

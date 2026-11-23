@@ -906,3 +906,18 @@ dialog.dlg.find[open]{display:flex;flex-direction:column}
 .lb-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:14px}.lb-f h3{margin:0 0 6px;font-size:.95rem}
 
 .prop{border-top:1px solid var(--rule);padding:10px 0}.prop ul{margin:4px 0 0;padding-left:18px}
+
+/* 일본어 형용사 활용 수행평가 */
+.ink-host{margin:6px 0}
+canvas.ink{display:block;width:100%;max-width:640px;aspect-ratio:900/220;background:#fff;border:1.5px solid var(--rule2);border-radius:8px;touch-action:none;cursor:crosshair;background-image:linear-gradient(to bottom,transparent 69%,#cdd 69%,#cdd 70%,transparent 70%)}
+.jp-bank{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:8px}
+.jp-w.used{opacity:.4;text-decoration:line-through}
+.jp-diff{font-size:1.6rem;display:flex;flex-wrap:wrap;gap:2px;margin:6px 0}
+.jc{display:inline-flex;flex-direction:column;align-items:center;min-width:1.2em;padding:0 2px;border-radius:4px}
+.jc.bad{background:color-mix(in srgb,var(--bad) 18%,var(--card));color:var(--bad);font-weight:700}
+.jc small{font-size:.6em;color:var(--ink);font-weight:400}
+.jc.ex{text-decoration:line-through}
+.jp-ok{color:var(--ok);margin:6px 0}
+.jp-bad{border-left:3px solid var(--bad);padding-left:10px;margin:8px 0}
+.jp-hint{margin:2px 0}
+#jpT{font-size:1.2rem}#jpT.bad{color:var(--bad)}
