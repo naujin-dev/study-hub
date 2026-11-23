@@ -62,6 +62,52 @@ export function forms(w, id) {
   return { main: f[id] || [], extra: [] };
 }
 
+// ---- 우리말 활용형 (시험 문항은 '맵지 않다', '귀엽습니다' 처럼 우리말로 나온다) ----
+// [우리말 기본형, 일본어 단어, 관형형(명사수식), 아/어 형 (~해서)]
+export const LEMMAS = [
+  ['높다', 'たかい', '높은', '높아'], ['비싸다', 'たかい', '비싼', '비싸'], ['싸다', 'やすい', '싼', '싸'],
+  ['덥다', 'あつい', '더운', '더워'], ['두껍다', 'あつい', '두꺼운', '두꺼워'], ['춥다', 'さむい', '추운', '추워'],
+  ['어렵다', 'むずかしい', '어려운', '어려워'], ['쉽다', 'やさしい', '쉬운', '쉬워'], ['착하다', 'やさしい', '착한', '착해'],
+  ['재밌다', 'おもしろい', '재밌는', '재밌어'], ['재미없다', 'つまらない', '재미없는', '재미없어'],
+  ['맛있다', 'おいしい', '맛있는', '맛있어'], ['맛없다', 'まずい', '맛없는', '맛없어'], ['귀엽다', 'かわいい', '귀여운', '귀여워'],
+  ['맵다', 'からい', '매운', '매워'], ['작다', 'ちいさい', '작은', '작아'], ['크다', 'おおきい', '큰', '커'],
+  ['가깝다', 'ちかい', '가까운', '가까워'], ['멀다', 'とおい', '먼', '멀어'], ['많다', 'おおい', '많은', '많아'],
+  ['대단하다', 'すごい', '대단한', '대단해'], ['빠르다', 'はやい', '빠른', '빨라'], ['좋다', 'いい', '좋은', '좋아'],
+  ['예쁘다', 'きれいだ', '예쁜', '예뻐'], ['깨끗하다', 'きれいだ', '깨끗한', '깨끗해'], ['잘하다', 'じょうずだ', '잘하는', '잘해'],
+  ['능숙하다', 'じょうずだ', '능숙한', '능숙해'], ['조용하다', 'しずかだ', '조용한', '조용해'], ['번화하다', 'にぎやかだ', '번화한', '번화해'],
+  ['좋아하다', 'すきだ', '좋아하는', '좋아해'], ['싫어하다', 'きらいだ', '싫어하는', '싫어해'], ['못하다', 'へただ', '못하는', '못해'],
+  ['유명하다', 'ゆうめいだ', '유명한', '유명해'], ['편리하다', 'べんりだ', '편리한', '편리해'], ['친절하다', 'しんせつだ', '친절한', '친절해'],
+  ['괜찮다', 'だいじょうぶだ', '괜찮은', '괜찮아'], ['멋지다', 'すてきだ', '멋진', '멋져'],
+];
+const addJong = (str, j) => { const c = str.charCodeAt(str.length - 1) - 0xAC00; return str.slice(0, -1) + String.fromCharCode(0xAC00 + c + j); };
+const jongOf = ch => (ch.charCodeAt(0) - 0xAC00) % 28;
+function koPolite(stem) {
+  const j = jongOf(stem[stem.length - 1]);
+  if (j === 0) return addJong(stem, 17) + '니다';           // 예쁘 → 예쁩니다
+  if (j === 8) return stem.slice(0, -1) + String.fromCharCode(stem.charCodeAt(stem.length - 1) - 8 + 17) + '니다'; // 멀 → 멉니다
+  return stem + '습니다';                                       // 맵 → 맵습니다
+}
+export function koForm(lemma, cond) {
+  const L = LEMMAS.find(x => x[0] === lemma); if (!L) return '';
+  const stem = L[0].slice(0, -1), past = addJong(L[3], 20);
+  return ({
+    base: L[0], polite: koPolite(stem), attr: L[2], negc: stem + '지 않다', negp: stem + '지 않습니다',
+    pastc: past + '다', pastp: past + '습니다', te: stem + '고, ' + L[3] + '서',
+    pastnegc: stem + '지 않았다', pastnegp: stem + '지 않았습니다',
+  })[cond] || '';
+}
+// 우리말 활용형 10문항 (い형용사 6 + な형용사 4). 같은 단어는 두 번 나오지 않는다.
+export function makeKoTest(rand = Math.random) {
+  const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const used = new Set(), out = [];
+  for (const t of shuffle([...'iiiiiinnnn'])) {
+    const cond = shuffle(CONDS[t].map(c => c[0])).find(c => !out.some(o => o.t === t && o.cond === c)) || CONDS[t][0][0];
+    const lem = shuffle(LEMMAS).find(L => WORDS.find(w => w.k === L[1]).t === t && !used.has(L[1]));
+    used.add(lem[1]); out.push({ t, cond, lemma: lem[0], k: lem[1], ko: koForm(lem[0], cond) });
+  }
+  return out;
+}
+
 // 시험처럼 10문항: い형용사 6 + な형용사 4 (프린트의 활용 가짓수 비율에 가깝게), 조건은 겹치지 않게 섞는다.
 export function makeTest(rand = Math.random) {
   const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };

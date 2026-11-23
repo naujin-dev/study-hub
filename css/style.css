@@ -921,3 +921,5 @@ canvas.ink{display:block;width:100%;max-width:640px;aspect-ratio:900/220;backgro
 .jp-bad{border-left:3px solid var(--bad);padding-left:10px;margin:8px 0}
 .jp-hint{margin:2px 0}
 #jpT{font-size:1.2rem}#jpT.bad{color:var(--bad)}
+
+.jp-ko{font-size:1.5rem;font-weight:700}

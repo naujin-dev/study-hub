@@ -3769,63 +3769,49 @@ function inkPad(host, strokes, onChange = () => {}) {
   };
 }
 function jpStart(mode) {
-  JP = { mode, start: Date.now(), done: false, items: JA.makeTest().map(x => ({ ...x, word: '', typed: '', strokes: [], res: null, read: '' })) };
+  JP = { mode, start: Date.now(), done: false, items: JA.makeKoTest().map(x => ({ ...x, typed: '', strokes: [], res: null, read: '' })) };
   render();
-}
-function jpDupCheck() {
-  const used = JP.items.map(it => it.word).filter(Boolean);
-  JP.items.forEach((it, i) => {
-    const sel = $(`#jpw${i}`); if (!sel) return;
-    [...sel.options].forEach(o => { o.disabled = !!o.value && o.value !== it.word && used.includes(o.value); });
-  });
-  const bank = $('#jpBank'); if (bank) bank.querySelectorAll('[data-w]').forEach(b => b.classList.toggle('used', used.includes(b.dataset.w)));
 }
 async function jpGrade() {
   const btn = $('#jpGo'); btn.disabled = true; btn.textContent = '채점 중…';
-  const seen = new Set();
   for (let i = 0; i < JP.items.length; i++) {
     const it = JP.items[i], pad = JP.pads[i], box = $(`#jpr${i}`);
-    const w = JA.WORDS.find(x => x.k === it.word);
+    const words = [it.k, ...(it.lemma === '괜찮다' ? ['いい'] : [])].map(k => JA.WORDS.find(x => x.k === k));
     it.res = null;
-    if (!w) { it.res = { ok: false, none: true }; }
-    else {
-      let text = it.typed.trim(), via = '입력';
-      if (!text && !pad.empty()) {
-        if (!AI.hasKey()) { it.res = { ok: false, needKey: true, word: w }; }
-        else {
-          try { text = await AI.readHandwriting(pad.png()); via = '손글씨 읽기'; it.read = text; it.typed = text; const ti = $(`#jpt${i}`); if (ti) ti.value = text; }
-          catch (err) { it.res = { ok: false, readFail: err.message || String(err), word: w }; }
-        }
+    let text = it.typed.trim(), via = '입력';
+    if (!text && !pad.empty()) {
+      if (!AI.hasKey()) it.res = { ok: false, needKey: true };
+      else {
+        try { text = await AI.readHandwriting(pad.png()); via = '손글씨 읽기'; it.read = text; it.typed = text; const ti = $(`#jpt${i}`); if (ti) ti.value = text; }
+        catch (err) { it.res = { ok: false, readFail: err.message || String(err) }; }
       }
-      if (!it.res || (!it.res.needKey && !it.res.readFail)) {
-        const r = JA.grade(w, it.cond, text); r.word = w; r.via = via; r.rawRead = text;
-        if (w.t !== it.t) { r.ok = false; r.wrongType = true; r.hints = [`이 문항은 ${JA.TYPE_NAME[it.t]} 조건인데 ${JA.TYPE_NAME[w.t]}(${w.ko})를 골랐다.`, ...(r.hints || [])]; }
-        if (seen.has(w.k)) { r.ok = false; r.dup = true; r.hints = ['같은 단어를 두 번 썼다. 두 번째부터는 점수가 없다.', ...(r.hints || [])]; }
-        seen.add(w.k); it.res = r;
-      }
+    }
+    if (!it.res) {
+      let best = null;
+      for (const w of words) { const r = JA.grade(w, it.cond, text); r.word = w; if (r.ok) { best = r; break; } if (!best) best = r; }
+      best.via = via; best.rawRead = text; it.res = best;
     }
     box.innerHTML = jpResultHtml(it, i);
   }
-  const ok = JP.items.filter(it => it.res?.ok).length;
-  const sc = JA.scoreOf(ok);
+  const ok = JP.items.filter(it => it.res?.ok).length, sc = JA.scoreOf(ok);
   JP.done = true; JP.summary = { ok, sc };
-  S.kvSet('jpadj', Date.now().toString(36), { t: Date.now(), ok, mode: JP.mode, items: JP.items.map(it => ({ t: it.t, cond: it.cond, w: it.word, ok: !!it.res?.ok })) });
+  S.kvSet('jpadj', Date.now().toString(36), { t: Date.now(), ok, mode: JP.mode, items: JP.items.map(it => ({ t: it.t, cond: it.cond, w: it.k, ok: !!it.res?.ok })) });
   $('#jpSum').innerHTML = `<h2 style="margin-top:0">결과 · ${ok}/10 맞음</h2>
     <p>학교 채점표 기준 <b>형용사 활용 ${sc}</b>점 · 활용이 맞은 표현은 글자 오류가 없어서 문자표기는 20점 기준이다${ok < 10 ? ` · 한 개 틀릴 때마다 점수가 크게 깎인다 (10개 100점, 9개 74점, 8개 68점). 아래 빨간 곳부터 고쳐 쓰고 다시 풀어 보자.` : ' · 만점이다. 한 번 더 풀어서 손에 익히자.'}</p>
-    <div class="row"><button class="btn pri" id="jpAgain">새 시험으로 다시</button><a class="btn" href="#/jpadj">처음 화면</a></div>`;
+    <div class="row"><button class="btn pri" id="jpAgain">새 시험으로 다시</button><a class="btn" href="#/jpadj" id="jpHome">처음 화면</a></div>`;
   $('#jpSum').hidden = false; $('#jpSum').scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('#jpAgain').addEventListener('click', () => jpStart(JP.mode));
+  $('#jpHome').addEventListener('click', () => { JP = null; });
   btn.disabled = false; btn.textContent = '다시 채점';
 }
 function jpResultHtml(it, i) {
   const r = it.res; if (!r) return '';
-  if (r.none) return '<p class="note warnbar small">단어를 고르지 않았다. 이 문항은 점수가 없다.</p>';
-  if (r.needKey) return `<p class="note info small">손글씨를 읽으려면 설정에 Gemini 키가 필요하다. 아래 "키보드로 확인"에 쓴 글을 옮겨 적고 다시 채점하거나, "정답 보기"로 내 글씨와 직접 비교한다.</p>${jpAnswerBtn(r.word, it)}`;
-  if (r.readFail) return `<p class="note warnbar small">손글씨를 읽지 못했다: ${esc(r.readFail)} 키보드로 확인에 옮겨 적으면 채점한다.</p>${jpAnswerBtn(r.word, it)}`;
-  const w = r.word;
-  if (r.ok) return `<p class="jp-ok"><b>맞음</b> · ${esc(w.k)} → ${esc(r.text)}${r.noun ? ` (뒤에 쓴 명사 ${esc(r.noun)})` : ''}${it.read && r.via === '입력' && it.typed === it.read ? ` <span class="small muted">AI 가 읽은 글</span>` : ''}</p>`;
+  const w = JA.WORDS.find(x => x.k === it.k);
+  if (r.needKey) return `<p class="note info small">손글씨를 읽으려면 설정에 Gemini 키가 필요하다. 아래 "키보드로 확인"에 쓴 글을 옮겨 적고 다시 채점하거나, "정답 보기"로 내 글씨와 직접 비교한다.</p>${jpAnswerBtn(w, it)}`;
+  if (r.readFail) return `<p class="note warnbar small">손글씨를 읽지 못했다: ${esc(r.readFail)} 키보드로 확인에 옮겨 적으면 채점한다.</p>${jpAnswerBtn(w, it)}`;
+  if (r.ok) return `<p class="jp-ok"><b>맞음</b> · ${esc(r.text)}${r.noun ? ` (뒤에 쓴 명사 ${esc(r.noun)})` : ''}</p>`;
   const marks = (r.ops || []).map(o => o.op === 'ok' ? `<span class="jc ok">${esc(o.c)}</span>` : o.op === 'sub' ? `<span class="jc bad" title="맞는 글자 ${esc(o.e)}">${esc(o.c)}<small>${esc(o.e)}</small></span>` : o.op === 'extra' ? `<span class="jc bad ex" title="없어야 할 글자">${esc(o.c)}</span>` : `<span class="jc bad miss" title="빠진 글자">□<small>${esc(o.e)}</small></span>`).join('');
-  return `<div class="jp-bad"><p><b>틀림</b> · ${esc(w.k)} (${esc(w.ko)}) <span class="small muted">${it.read && it.typed === it.read ? 'AI 가 읽은 글' : '입력한 글'}: <b>${esc(r.text)}</b></span></p>${it.read && it.typed === it.read ? '<p class="small muted">AI 가 잘못 읽었으면 "키보드로 확인"에서 고쳐 쓰고 다시 채점한다.</p>' : ''}
+  return `<div class="jp-bad"><p><b>틀림</b> · <span class="small muted">${it.read && it.typed === it.read ? 'AI 가 읽은 글' : '입력한 글'}: <b>${esc(r.text || '(없음)')}</b></span></p>${it.read && it.typed === it.read ? '<p class="small muted">AI 가 잘못 읽었으면 "키보드로 확인"에서 고쳐 쓰고 다시 채점한다.</p>' : ''}
     ${marks ? `<p class="jp-diff" aria-label="쓴 글과 맞는 글자">${marks}</p>` : ''}
     <p class="small">맞는 표현: <b>${r.correct.map(esc).join(' / ')}</b></p>
     ${(r.hints || []).map(h => `<p class="small jp-hint">${esc(h)}</p>`).join('')}
@@ -3841,14 +3827,13 @@ function viewJpAdj() {
     const weak = Object.entries(wk).sort((a, b) => b[1] - a[1]).slice(0, 4);
     main.innerHTML = `<div class="narrow"><h1>일본어 형용사 활용 수행평가</h1>
     <section class="card flat"><h2 style="margin-top:0">시험 방식</h2>
-      <ul class="plain small"><li>10문항. 문항마다 활용 조건(예: い형용사 정중형, な형용사 정중형)이 나온다.</li>
-      <li>우리말로만 나온 단어 중 하나를 골라 조건에 맞게 <b>히라가나로</b> 쓴다. 같은 단어는 두 번 못 쓴다.</li>
-      <li>한 곳이라도 틀리면 그 문항은 점수가 없다. 시험 시간은 30분이다.</li>
+      <ul class="plain small"><li>10문항. 우리말 활용형(예: <b>맵지 않다</b>, <b>귀엽습니다</b>)이 나오면 그 뜻의 일본어 표현을 <b>히라가나로</b> 쓴다.</li>
+      <li>같은 단어는 두 번 나오지 않는다. 한 곳이라도 틀리면 그 문항은 점수가 없다. 시험 시간은 30분이다.</li>
       <li>채점표: 완전한 표현 10개 100점, 9개 74점, 8개 68점, 7개 62점 … 1개 26점. 히라가나 표기 오류는 따로 감점.</li>
       <li>범위: 형용사 활용 프린트 1장(3·4·5과) + 3·4과 단어 프린트의 형용사.</li></ul></section>
     <section class="card"><h2 style="margin-top:0">시작</h2>
       <p class="small muted">손글씨는 화면에 직접 쓴다. 태블릿 펜이나 손가락, 마우스 모두 된다. 채점은 AI 가 쓴 글을 읽은 뒤 규칙으로 틀린 글자를 짚는다 (설정에 Gemini 키가 있을 때). 키가 없으면 키보드로 입력하거나 정답을 보고 비교한다.</p>
-      <div class="row"><button class="btn pri" id="jpExam">시험처럼 (30분)</button><button class="btn" id="jpPrac">연습 (히라가나 단어 보임)</button></div>
+      <div class="row"><button class="btn pri" id="jpExam">시험처럼 (30분)</button><button class="btn" id="jpPrac">연습 (조건과 규칙 보임)</button></div>
       ${AI.hasKey() ? '' : '<p class="note info small">Gemini 키가 없어서 손글씨 자동 읽기는 못 쓴다. <a href="#/settings">설정</a> 에서 넣으면 된다.</p>'}</section>
     <section class="card flat"><h2 style="margin-top:0">규칙 외우기</h2>
       <div class="tbl-wrap"><table class="wm"><thead><tr><th>활용</th><th>い형용사 (おいしい)</th><th>な형용사 (すきだ)</th></tr></thead><tbody>${JA.CONDS.i.map(c => { const n = JA.CONDS.n.find(x => x[0] === c[0]); const wi = JA.WORDS.find(x => x.k === 'おいしい'), wn = JA.WORDS.find(x => x.k === 'すきだ'); return `<tr><th scope="row">${esc(c[1])}</th><td>${JA.forms(wi, c[0]).main.map(esc).join('<br>')}</td><td>${n ? JA.forms(wn, c[0]).main.map(esc).join('<br>') : '<span class="muted">프린트에 없음</span>'}</td></tr>`; }).join('')}</tbody></table></div>
@@ -3860,12 +3845,9 @@ function viewJpAdj() {
     return;
   }
   const prac = JP.mode === 'prac';
-  const bank = [['i', 'い형용사'], ['n', 'な형용사']].map(([t, nm]) => `<div><b class="small">${nm}</b><div class="chips" style="margin-top:4px">${JA.WORDS.filter(w => w.t === t).map(w => `<span class="chip jp-w" data-w="${w.k}">${esc(w.ko)}${prac ? ` <small>${esc(w.k)}</small>` : ''}</span>`).join('')}</div></div>`).join('');
   main.innerHTML = `<div class="narrow jp"><div class="row between"><h1 style="margin:0">일본어 형용사 활용</h1><span class="mono" id="jpT" role="timer" aria-live="off">30:00</span></div>
-  <p class="small muted">${prac ? '연습' : '시험처럼'}. 단어를 고르고 히라가나로 쓴다. 같은 단어는 한 번만 쓴다. 다 쓰고 맨 아래 "채점하기".</p>
-  <details class="card flat" open><summary><b>쓸 수 있는 단어</b> <span class="small muted">우리말만 나온다</span></summary><div id="jpBank" class="jp-bank">${bank}</div></details>
-  ${JP.items.map((it, i) => `<section class="card jp-item" id="jpi${i}"><h3 style="margin:0 0 6px">${i + 1}. ${JA.TYPE_NAME[it.t]} · ${esc(JA.condName(it.t, it.cond))}${prac ? ` <span class="small muted">(${esc(JA.condRule(it.t, it.cond))})</span>` : ''}</h3>
-    <label class="field"><span>단어 고르기</span><select id="jpw${i}"><option value="">고른다</option>${JA.WORDS.filter(w => w.t === it.t).map(w => `<option value="${w.k}"${it.word === w.k ? ' selected' : ''}>${esc(w.ko)}${prac ? ' (' + w.k + ')' : ''}</option>`).join('')}</select></label>
+  <p class="small muted">${prac ? '연습' : '시험처럼'}. 우리말 표현을 일본어로 히라가나로 쓴다. 다 쓰고 맨 아래 "채점하기".</p>
+  ${JP.items.map((it, i) => `<section class="card jp-item" id="jpi${i}"><h3 style="margin:0 0 6px"><span class="muted">${i + 1}.</span> <span class="jp-ko">${esc(it.ko)}</span>${prac ? ` <span class="small muted">${JA.TYPE_NAME[it.t]} · ${esc(JA.condName(it.t, it.cond))} (${esc(JA.condRule(it.t, it.cond))})</span>` : ''}</h3>
     <div class="ink-host" id="jph${i}"></div>
     <div class="row"><button type="button" class="btn sm" data-undo="${i}">한 획 지우기</button><button type="button" class="btn sm ghost" data-clr="${i}">모두 지우기</button></div>
     <details class="small"><summary>키보드로 확인</summary><input type="text" id="jpt${i}" value="${esc(it.typed)}" placeholder="손글씨 대신 입력한 글로 채점" lang="ja" autocomplete="off" style="max-width:320px"></details>
@@ -3873,15 +3855,11 @@ function viewJpAdj() {
   <div id="jpSum" class="card" hidden></div>
   <div class="row" style="margin:12px 0 24px"><button class="btn pri" id="jpGo">채점하기</button><button class="btn ghost" id="jpQuit">그만하기</button></div></div>`;
   JP.pads = JP.items.map((it, i) => inkPad($(`#jph${i}`), it.strokes, () => { if (it.read && it.typed === it.read) { it.typed = ''; const t = $(`#jpt${i}`); if (t) t.value = ''; } }));
-  JP.items.forEach((it, i) => {
-    $(`#jpw${i}`).addEventListener('change', e => { it.word = e.target.value; jpDupCheck(); });
-    $(`#jpt${i}`).addEventListener('input', e => { it.typed = e.target.value; });
-  });
+  JP.items.forEach((it, i) => { $(`#jpt${i}`).addEventListener('input', e => { it.typed = e.target.value; }); });
   $$('[data-undo]').forEach(b => b.addEventListener('click', () => JP.pads[b.dataset.undo].undo()));
   $$('[data-clr]').forEach(b => b.addEventListener('click', () => JP.pads[b.dataset.clr].clear()));
   $('#jpGo').addEventListener('click', jpGrade);
   $('#jpQuit').addEventListener('click', async () => { if (await askConfirm('쓴 것을 버리고 나갈까?')) { JP = null; render(); } });
-  jpDupCheck();
   if (JP.done) $('#jpGo').textContent = '다시 채점';
   const tick = () => {
     const el = $('#jpT'); if (!el || !JP || !location.hash.startsWith('#/jpadj')) return clearInterval(JP?.timer);
