@@ -2211,7 +2211,7 @@ function paperInk(hosts, keyOf, barAt) {
     const c = document.createElement('canvas'); c.className = 'paper-ink'; host.append(c);
     host.classList.add('inkable');
     const g = c.getContext('2d');
-    let cur = null, penSeen = false;
+    let cur = null;
     const redraw = () => {
       const W = c.width, H = c.height, dpr = window.devicePixelRatio || 1;
       g.clearRect(0, 0, W, H); g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 2.2 * dpr;
@@ -2223,15 +2223,49 @@ function paperInk(hosts, keyOf, barAt) {
       const r = c.getBoundingClientRect();
       for (let i = strokes.length - 1; i >= 0; i--) if (strokes[i].p.some(([a, b]) => ((a - x) * r.width) ** 2 + ((b - y) * r.height) ** 2 < 144)) strokes.splice(i, 1);
     };
+    // 펜(S펜)과 마우스만 쓴다. 손가락은 화면을 움직이고, 가볍게 톡 치면 그 아래 선지·버튼을 누른다.
+    // S펜 측면 버튼(buttons 2)이나 지우개 끝(buttons 32)을 누르고 그으면 지우개가 된다.
+    const sideBtn = e => e.pointerType === 'pen' && ((e.buttons & 2) || (e.buttons & 32) || e.button === 2 || e.button === 5);
+    const cap = e => { try { c.setPointerCapture(e.pointerId); } catch {} };
+    let pan = null, glide = 0;
+    const tapThrough = (x, y) => { c.style.pointerEvents = 'none'; const el = document.elementFromPoint(x, y); c.style.pointerEvents = st.on ? 'auto' : 'none'; el?.closest('button,a,input,textarea,select,label')?.click(); if (el?.matches('input,textarea')) el.focus(); };
     c.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'pen') penSeen = true;
-      if (e.pointerType === 'touch' && penSeen) return; // 펜으로 쓰는 중에는 손바닥 터치를 무시한다
-      e.preventDefault(); c.setPointerCapture(e.pointerId);
-      if (st.erase) { cur = 'erase'; eraseAt(pt(e)); } else { cur = { c: st.color, p: [pt(e)] }; strokes.push(cur); lastKey = key; }
+      if (e.pointerType === 'touch') {
+        if (pan) return; // 두 번째 손가락은 무시
+        pan = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: Date.now(), t: Date.now(), vx: 0, vy: 0, moved: false };
+        cancelAnimationFrame(glide); cap(e);
+        return;
+      }
+      e.preventDefault(); cap(e);
+      if (st.erase || sideBtn(e)) { cur = 'erase'; eraseAt(pt(e)); } else { cur = { c: st.color, p: [pt(e)] }; strokes.push(cur); lastKey = key; }
       redraw();
     });
-    c.addEventListener('pointermove', e => { if (!cur) return; e.preventDefault(); if (cur === 'erase') eraseAt(pt(e)); else cur.p.push(pt(e)); redraw(); });
-    const end = () => { cur = null; };
+    c.addEventListener('pointermove', e => {
+      if (pan && e.pointerId === pan.id) {
+        const dx = e.clientX - pan.x, dy = e.clientY - pan.y, now = Date.now(), dt = Math.max(1, now - pan.t);
+        if (Math.abs(e.clientX - pan.x0) + Math.abs(e.clientY - pan.y0) > 8) pan.moved = true;
+        window.scrollBy(-dx, -dy); $('#paperWrap')?.scrollBy(-dx, 0);
+        pan.vx = -dx / dt; pan.vy = -dy / dt; pan.x = e.clientX; pan.y = e.clientY; pan.t = now;
+        return;
+      }
+      if (!cur) return; e.preventDefault();
+      if (cur !== 'erase' && sideBtn(e)) cur = 'erase'; // 긋는 중에 측면 버튼을 누르면 그때부터 지운다
+      if (cur === 'erase') eraseAt(pt(e)); else cur.p.push(pt(e));
+      redraw();
+    });
+    const end = e => {
+      if (pan && e.pointerId === pan.id) {
+        const p0 = pan; pan = null;
+        if (!p0.moved && Date.now() - p0.t0 < 400) return tapThrough(e.clientX, e.clientY);
+        // 손을 떼도 조금 더 미끄러지게 (관성)
+        let vy = p0.vy, last = performance.now();
+        if (Date.now() - p0.t > 80 || Math.abs(vy) < 0.1) return;
+        const step = t => { const dt = t - last; last = t; window.scrollBy(0, vy * dt); vy *= Math.pow(0.995, dt); if (Math.abs(vy) > 0.02) glide = requestAnimationFrame(step); };
+        glide = requestAnimationFrame(step);
+        return;
+      }
+      cur = null;
+    };
     c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
     c.addEventListener('contextmenu', e => { if (st.on) e.preventDefault(); });
     if (window.ResizeObserver) new ResizeObserver(size).observe(host);
@@ -2241,7 +2275,7 @@ function paperInk(hosts, keyOf, barAt) {
   const btns = k => [...bar.querySelectorAll(`[data-ink="${k}"]`)];
   const apply = () => {
     for (const L of layers) { L.c.style.pointerEvents = st.on ? 'auto' : 'none'; L.c.style.cursor = st.on ? (st.erase ? 'cell' : 'crosshair') : ''; }
-    const on = btns('on')[0]; on.classList.toggle('on', st.on); on.setAttribute('aria-pressed', st.on); on.textContent = st.on ? '필기 켬 (끄면 답 고르기)' : '필기 끔';
+    const on = btns('on')[0]; on.classList.toggle('on', st.on); on.setAttribute('aria-pressed', st.on); on.textContent = st.on ? '필기 켬 · S펜으로 쓰기' : '필기 끔';
     btns('c').forEach(b => { const x = st.on && !st.erase && st.color === b.dataset.c; b.classList.toggle('on', x); b.setAttribute('aria-pressed', x); });
     const er = btns('erase')[0]; er.classList.toggle('on', st.on && st.erase); er.setAttribute('aria-pressed', st.on && st.erase);
   };
