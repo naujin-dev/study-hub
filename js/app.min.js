@@ -2037,7 +2037,7 @@ function drawQuestion0() {
       const n = i + 1;
       let cls = sel.includes(n) ? 'sel' : '';
       if (res) cls = right.includes(n) ? 'right' : (sel.includes(n) ? 'wrong' : '');
-      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span><span${langAttr(c)}>${esc(c)}</span>${res && right.includes(n) ? `<span class="tag ok ctag">${sel.includes(n) ? '정답 · 내 답' : '정답'}</span>` : res && sel.includes(n) ? '<span class="tag bad ctag">내 답</span>' : ''}</button></li>`;
+      return `<li><button type="button" class="choice ${cls}" aria-pressed="${sel.includes(n)}" data-ch="${n}"${locked ? ' disabled' : ''}><span class="n">${'①②③④⑤⑥'[i] || n}</span>${bareChoice(c, i) ? '' : `<span${langAttr(c)}>${esc(c)}</span>`}${res && right.includes(n) ? `<span class="tag ok ctag">${sel.includes(n) ? '정답 · 내 답' : '정답'}</span>` : res && sel.includes(n) ? '<span class="tag bad ctag">내 답</span>' : ''}</button></li>`;
     }).join('')}</ul>`;
   } else if (q.type === 'short') {
     body = `<input type="text" id="ansIn" aria-label="답" placeholder="답을 쓴다" value="${esc(ans || '')}"${locked ? ' disabled' : ''} autocomplete="off" style="margin-top:12px">`;
@@ -2064,7 +2064,7 @@ function drawQuestion0() {
     })()}
     <div class="q-main">
     ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}&srcedit=1">원문 넣으러 가기</a> 또는 <button type="button" class="btn sm" id="noSrcSkip">건너뛰기 <kbd>S</kbd></button> <span class="muted">(오답에 안 넣는다)</span></p>` : ''}
-    <div class="q-text"${langAttr(q.question)}>${qHtml(q.question)}</div>
+    ${imgOnly(q) ? '' : `<div class="q-text"${langAttr(q.question)}>${qHtml(q.question)}</div>`}
     ${qImgs(q)}
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
@@ -2189,10 +2189,19 @@ function citeTexts(pack, q) {
 }
 // 문제 글에 표(| 칸 | 칸 |)가 있으면 정리 노트처럼 표로 그린다. 나머지는 쓴 그대로.
 // 문제 그림: q.img 는 저장소 안 경로(data/img/...) 하나 또는 여러 개
+const IMG_SIZE = {};
+const qImgList = q => [].concat(q.img || []).filter(u => typeof u === 'string' && !u.includes('..') && /^(data\/img\/[^"'<>\s]+\.(png|jpe?g|webp|gif|svg)|data:image\/(png|jpeg|webp|gif);)/i.test(u));
+// 문제 전체가 그림인 문제 (문장은 자리만 채운 것): 문장을 숨기고 그림만 싣는다
+const imgOnly = q => !!q.img && (q.imgOnly || /^그림\(문제 전체가 그림에 있음\)/.test(q.question || ''));
+// 선지가 '①' 처럼 번호뿐이면 번호를 두 번 찍지 않는다
+const bareChoice = (c, j) => /^\s*[①-⑩]?\s*$/.test(c) || c.trim() === String(j + 1);
+function preloadImgs(items) {
+  const urls = [...new Set(items.flatMap(x => qImgList(x.q)))].filter(u => !IMG_SIZE[u]);
+  return Promise.all(urls.map(u => new Promise(res => { const im = new Image(); im.onload = () => { IMG_SIZE[u] = [im.naturalWidth, im.naturalHeight]; res(); }; im.onerror = () => res(); im.src = u; })));
+}
 function qImgs(q) {
-  const ok = u => typeof u === 'string' && !u.includes('..') && /^(data\/img\/[^"'<>\s]+\.(png|jpe?g|webp|gif|svg)|data:image\/(png|jpeg|webp|gif);)/i.test(u);
-  const list = [].concat(q.img || []).filter(ok);
-  return list.length ? `<div class="q-imgs">${list.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="문제 그림${list.length > 1 ? ' ' + (i + 1) : ''}" loading="lazy" decoding="async"></a>`).join('')}</div>` : '';
+  const list = qImgList(q);
+  return list.length ? `<div class="q-imgs">${list.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="문제 그림${list.length > 1 ? ' ' + (i + 1) : ''}"${IMG_SIZE[u] ? ` width="${IMG_SIZE[u][0]}" height="${IMG_SIZE[u][1]}"` : ' loading="lazy"'} decoding="async"></a>`).join('')}</div>` : '';
 }
 // 문제지 필기: 문제 카드(또는 원안지 각 면) 위에 투명한 층을 깔고 펜으로 쓴다.
 // 저장하지 않는다. 세션 메모리에만 두고 제출하면 지운다. 좌표는 면 크기에 대한 비율로 두어 배율이 바뀌어도 제자리에 남는다.
@@ -2449,7 +2458,7 @@ function paperBlocks() {
       const note = j => !res ? '' : right.includes(j + 1) ? '<span class="pmk"> ← 정답</span>' : sel.includes(j + 1) ? '<span class="pmk"> ← 내 답</span>' : '';
       const body = (c, j) => ab ? pair[j].map((x, k) => `${k ? '<span class="pdots" aria-hidden="true">……</span>' : ''}<span class="pcell"${langAttr(x)}>${pInline(x)}</span>`).join('') : `<span${langAttr(c)}>${pInline(c)}</span>`;
       const head = ab ? `<li class="pabh" aria-hidden="true"><span class="pno"></span>${pair[0].map((_, k) => `${k ? '<span class="pdots"></span>' : ''}<span class="pcell">(${'ABC'[k]})</span>`).join('')}</li>` : '';
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}${qImgs(q)}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${head}${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"${mark(j)}${res ? ' disabled' : ''}><span class="pno">${P_CIRC[j] || j + 1}</span> ${body(c, j)}${note(j)}</button></li>`).join('')}</ol>${pAct(i)}</section>`);
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${imgOnly(q) ? '' : stem}</p>${ctx}${qImgs(q)}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${head}${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"${mark(j)}${res ? ' disabled' : ''}><span class="pno">${P_CIRC[j] || j + 1}</span> ${bareChoice(c, j) ? '' : body(c, j)}${note(j)}</button></li>`).join('')}</ol>${pAct(i)}</section>`);
     } else {
       if (!secS) { secS = true; blocks.push('<h2 class="psec">&lt; 서답형(단답형, 서술형) 문항 &gt;</h2><p class="psecnote">※ 문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</p>'); }
       const lab = `서${++nS}(${q.type === 'short' ? '단답형' : '서술형'}).`;
@@ -2457,7 +2466,7 @@ function paperBlocks() {
       const field = q.type === 'short'
         ? `<p class="pline"><input type="text" class="pans" data-pt="${i}" value="${esc(a || '')}" aria-label="서${nS} 답" autocomplete="off" autocapitalize="off" spellcheck="false"${res ? ' readonly' : ''}></p>`
         : `<textarea class="pwrite" data-pt="${i}" rows="5" aria-label="서${nS} 답안"${res ? ' readonly' : ''}>${esc(a || '')}</textarea>`;
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${qImgs(q)}${how}${field}${pAct(i)}</section>`);
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${imgOnly(q) ? '' : stem}</p>${ctx}${qImgs(q)}${how}${field}${pAct(i)}</section>`);
     }
   });
   blocks.push('<p class="pend">※ 마지막 면입니다.</p>');
@@ -2465,10 +2474,10 @@ function paperBlocks() {
 }
 function drawPaper() {
   // 처음 한 번은 시험지 글꼴을 받고 나서 그린다 (글꼴이 바뀌면 줄바꿈이 달라져 면이 다시 나뉘므로). 2.5초 넘으면 그냥 그린다
-  if (!ensurePaperFont.ready) {
+  if (!ensurePaperFont.ready || !session.imgReady) {
     const sid = session.id;
     main.innerHTML = '<h1 class="vh">문제지</h1><p class="muted" role="status"><span class="spin"></span> 문제지를 준비하는 중</p>';
-    Promise.race([ensurePaperFont(), new Promise(r => setTimeout(r, 2500))]).then(() => { ensurePaperFont.ready = true; if (session && session.id === sid && params().path === '/run' && !session.viewing) render(); });
+    Promise.race([Promise.all([ensurePaperFont(), preloadImgs(session.items)]), new Promise(r => setTimeout(r, 8000))]).then(() => { ensurePaperFont.ready = true; if (session) session.imgReady = true; if (session && session.id === sid && params().path === '/run' && !session.viewing) render(); });
     return;
   }
   const exam = session.mode === 'exam';
