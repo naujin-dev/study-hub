@@ -2065,6 +2065,7 @@ function drawQuestion0() {
     <div class="q-main">
     ${citeMissing && !res ? `<p class="note warnbar small">이 문제는 지문을 가리키는데 이 자료에 원문이 없다. <a href="#/pack?id=${encodeURIComponent(pack.id)}&srcedit=1">원문 넣으러 가기</a> 또는 <button type="button" class="btn sm" id="noSrcSkip">건너뛰기 <kbd>S</kbd></button> <span class="muted">(오답에 안 넣는다)</span></p>` : ''}
     <div class="q-text"${langAttr(q.question)}>${qHtml(q.question)}</div>
+    ${qImgs(q)}
     ${body}
     <div id="resBox">${res ? resultHtml(it, res) : ''}</div>
     <div class="row" style="margin-top:14px" id="actions"></div>
@@ -2074,6 +2075,7 @@ function drawQuestion0() {
   </section>
   `;
 
+  if (!locked && $('.qcard')) paperInk([$('.qcard')], () => 'c' + session.i, bar => $('.qcard').before(bar));
   $('.q-src')?.addEventListener('toggle', e => S.save('qSrcOpen', e.target.open));
   $('#noSrcSkip')?.addEventListener('click', () => { session.skipped = session.skipped || {}; session.skipped[session.i] = true; if (session.i < session.items.length - 1) { session.i++; drawQuestion(); focusQuestion(); } else toSummary(); });
   // 답 입력
@@ -2186,6 +2188,75 @@ function citeTexts(pack, q) {
   return main.length ? main : all;
 }
 // 문제 글에 표(| 칸 | 칸 |)가 있으면 정리 노트처럼 표로 그린다. 나머지는 쓴 그대로.
+// 문제 그림: q.img 는 저장소 안 경로(data/img/...) 하나 또는 여러 개
+function qImgs(q) {
+  const ok = u => typeof u === 'string' && !u.includes('..') && /^(data\/img\/[^"'<>\s]+\.(png|jpe?g|webp|gif|svg)|data:image\/(png|jpeg|webp|gif);)/i.test(u);
+  const list = [].concat(q.img || []).filter(ok);
+  return list.length ? `<div class="q-imgs">${list.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="문제 그림${list.length > 1 ? ' ' + (i + 1) : ''}" loading="lazy" decoding="async"></a>`).join('')}</div>` : '';
+}
+// 문제지 필기: 문제 카드(또는 원안지 각 면) 위에 투명한 층을 깔고 펜으로 쓴다.
+// 저장하지 않는다. 세션 메모리에만 두고 제출하면 지운다. 좌표는 면 크기에 대한 비율로 두어 배율이 바뀌어도 제자리에 남는다.
+const INK_COLORS = [['#111', '검정'], ['#d22', '빨강'], ['#1a5fd0', '파랑']];
+function paperInk(hosts, keyOf, barAt) {
+  if (!hosts.length || !barAt) return;
+  session.ink = session.ink || {};
+  const st = session.inkTool || (session.inkTool = { on: false, color: '#111', erase: false });
+  const bar = document.createElement('div');
+  bar.className = 'ink-bar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', '필기 도구');
+  bar.innerHTML = `<button type="button" class="chip" data-ink="on"></button>${INK_COLORS.map(([c, n]) => `<button type="button" class="ink-c" data-ink="c" data-c="${c}" style="--c:${c}" aria-label="${n} 펜" title="${n} 펜"></button>`).join('')}<button type="button" class="chip" data-ink="erase">지우개</button><button type="button" class="chip" data-ink="undo">되돌리기</button><button type="button" class="chip" data-ink="clear">전체 지우기</button>`;
+  barAt(bar);
+  let lastKey = null;
+  const layers = hosts.map((host, hi) => {
+    const key = keyOf(hi), strokes = session.ink[key] || (session.ink[key] = []);
+    const c = document.createElement('canvas'); c.className = 'paper-ink'; host.append(c);
+    host.classList.add('inkable');
+    const g = c.getContext('2d');
+    let cur = null, penSeen = false;
+    const redraw = () => {
+      const W = c.width, H = c.height, dpr = window.devicePixelRatio || 1;
+      g.clearRect(0, 0, W, H); g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 2.2 * dpr;
+      for (const s of strokes) { g.strokeStyle = s.c; g.beginPath(); s.p.forEach(([x, y], i) => (i ? g.lineTo(x * W, y * H) : g.moveTo(x * W, y * H))); if (s.p.length === 1) g.lineTo(s.p[0][0] * W + .1, s.p[0][1] * H); g.stroke(); }
+    };
+    const size = () => { const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr)); redraw(); };
+    const pt = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+    const eraseAt = ([x, y]) => {
+      const r = c.getBoundingClientRect();
+      for (let i = strokes.length - 1; i >= 0; i--) if (strokes[i].p.some(([a, b]) => ((a - x) * r.width) ** 2 + ((b - y) * r.height) ** 2 < 144)) strokes.splice(i, 1);
+    };
+    c.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'pen') penSeen = true;
+      if (e.pointerType === 'touch' && penSeen) return; // 펜으로 쓰는 중에는 손바닥 터치를 무시한다
+      e.preventDefault(); c.setPointerCapture(e.pointerId);
+      if (st.erase) { cur = 'erase'; eraseAt(pt(e)); } else { cur = { c: st.color, p: [pt(e)] }; strokes.push(cur); lastKey = key; }
+      redraw();
+    });
+    c.addEventListener('pointermove', e => { if (!cur) return; e.preventDefault(); if (cur === 'erase') eraseAt(pt(e)); else cur.p.push(pt(e)); redraw(); });
+    const end = () => { cur = null; };
+    c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+    c.addEventListener('contextmenu', e => { if (st.on) e.preventDefault(); });
+    if (window.ResizeObserver) new ResizeObserver(size).observe(host);
+    size();
+    return { c, key, strokes, redraw };
+  });
+  const btns = k => [...bar.querySelectorAll(`[data-ink="${k}"]`)];
+  const apply = () => {
+    for (const L of layers) { L.c.style.pointerEvents = st.on ? 'auto' : 'none'; L.c.style.cursor = st.on ? (st.erase ? 'cell' : 'crosshair') : ''; }
+    const on = btns('on')[0]; on.classList.toggle('on', st.on); on.setAttribute('aria-pressed', st.on); on.textContent = st.on ? '필기 켬 (끄면 답 고르기)' : '필기 끔';
+    btns('c').forEach(b => { const x = st.on && !st.erase && st.color === b.dataset.c; b.classList.toggle('on', x); b.setAttribute('aria-pressed', x); });
+    const er = btns('erase')[0]; er.classList.toggle('on', st.on && st.erase); er.setAttribute('aria-pressed', st.on && st.erase);
+  };
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('[data-ink]'); if (!b) return;
+    const k = b.dataset.ink;
+    if (k === 'on') st.on = !st.on;
+    else if (k === 'c') { st.on = true; st.erase = false; st.color = b.dataset.c; }
+    else if (k === 'erase') { st.on = true; st.erase = !st.erase; }
+    else if (k === 'undo') { const L = layers.find(x => x.key === lastKey && x.strokes.length) || [...layers].reverse().find(x => x.strokes.length); L?.strokes.pop(); }
+    else if (k === 'clear') layers.forEach(L => { L.strokes.length = 0; });
+    apply(); layers.forEach(L => L.redraw());
+  });
+  apply();
+}
 function qHtml(t) {
   const text = String(t || '');
   return /^\s*\|.+\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}/m.test(text) ? `<div class="q-md">${md(text)}</div>` : esc(text);
@@ -2344,7 +2415,7 @@ function paperBlocks() {
       const note = j => !res ? '' : right.includes(j + 1) ? '<span class="pmk"> ← 정답</span>' : sel.includes(j + 1) ? '<span class="pmk"> ← 내 답</span>' : '';
       const body = (c, j) => ab ? pair[j].map((x, k) => `${k ? '<span class="pdots" aria-hidden="true">……</span>' : ''}<span class="pcell"${langAttr(x)}>${pInline(x)}</span>`).join('') : `<span${langAttr(c)}>${pInline(c)}</span>`;
       const head = ab ? `<li class="pabh" aria-hidden="true"><span class="pno"></span>${pair[0].map((_, k) => `${k ? '<span class="pdots"></span>' : ''}<span class="pcell">(${'ABC'[k]})</span>`).join('')}</li>` : '';
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${head}${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"${mark(j)}${res ? ' disabled' : ''}><span class="pno">${P_CIRC[j] || j + 1}</span> ${body(c, j)}${note(j)}</button></li>`).join('')}</ol>${pAct(i)}</section>`);
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${++nM}. ${stem}</p>${ctx}${qImgs(q)}<ol class="pch${cls}" role="group" aria-label="${nM}번 선지">${head}${q.choices.map((c, j) => `<li><button type="button" data-pi="${i}" data-pc="${j + 1}" aria-pressed="${sel.includes(j + 1)}"${mark(j)}${res ? ' disabled' : ''}><span class="pno">${P_CIRC[j] || j + 1}</span> ${body(c, j)}${note(j)}</button></li>`).join('')}</ol>${pAct(i)}</section>`);
     } else {
       if (!secS) { secS = true; blocks.push('<h2 class="psec">&lt; 서답형(단답형, 서술형) 문항 &gt;</h2><p class="psecnote">※ 문항 번호와 문항 내 세부 기호를 반드시 기입한 후 답안을 작성하시오(미기입한 서답형 답안은 오답 처리됨).</p>'); }
       const lab = `서${++nS}(${q.type === 'short' ? '단답형' : '서술형'}).`;
@@ -2352,7 +2423,7 @@ function paperBlocks() {
       const field = q.type === 'short'
         ? `<p class="pline"><input type="text" class="pans" data-pt="${i}" value="${esc(a || '')}" aria-label="서${nS} 답" autocomplete="off" autocapitalize="off" spellcheck="false"${res ? ' readonly' : ''}></p>`
         : `<textarea class="pwrite" data-pt="${i}" rows="5" aria-label="서${nS} 답안"${res ? ' readonly' : ''}>${esc(a || '')}</textarea>`;
-      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${how}${field}${pAct(i)}</section>`);
+      blocks.push(`<section class="pq" data-pq="${i}"><p class="pstem"${langAttr(q.question)}>${lab} ${stem}</p>${ctx}${qImgs(q)}${how}${field}${pAct(i)}</section>`);
     }
   });
   blocks.push('<p class="pend">※ 마지막 면입니다.</p>');
@@ -2499,6 +2570,7 @@ function drawPaper() {
   });
   if (keepY != null) scrollTo(0, keepY);
   else if (drawPaper.backY != null) { scrollTo(0, drawPaper.backY); drawPaper.backY = null; }
+  if (!(exam && session.submitted)) paperInk($$('.ppage', paper), n => 'p' + n, bar => $('.ptool').append(bar));
   if (exam) tickTimer();
 }
 // 화면 폭에 맞춰 종이를 통째로 줄이거나 키운다 (A4 비율 그대로). 창 크기 듣기는 한 번만 건다
@@ -2743,6 +2815,7 @@ async function submitExam() {
   if (session.endAt > Date.now() && unanswered && !(await askConfirm(`안 쓴 문제가 ${unanswered}개 있다. 안 쓴 문제는 채점하지 않고 '안 푼 문제' 로 남긴다. 제출할까?`, '제출', '계속 풀기'))) return;
   tickSpent();
   session.submitted = true;
+  session.ink = null; // 필기는 시험 중에만 쓰고 제출하면 지운다
   clearInterval(tickTimer._t);
   session.usedMs = Date.now() - session.startedAt;
   // 원안지는 문제마다 시간을 재지 않으므로 걸린 시간을 고르게 나눈다
